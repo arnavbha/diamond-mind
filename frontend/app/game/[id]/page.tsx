@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, type GameBundle, type WeatherData } from "@/lib/api";
+import { api, type GameBundle, type WeatherData, type GameAnalysis } from "@/lib/api";
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
@@ -137,10 +137,95 @@ function WeatherCard({ w }: { w: WeatherData }) {
   );
 }
 
+function tierColor(tier: string) {
+  if (tier === "STRONG LEAN") return "var(--green)";
+  if (tier === "LEAN") return "var(--amber)";
+  if (tier === "AVOID") return "var(--red)";
+  return "var(--text-3)";
+}
+
+function AnalysisPanel({ a }: { a: GameAnalysis }) {
+  const tc = tierColor(a.ml_tier);
+  const isActionable = a.ml_lean !== "PASS" && a.ml_tier !== "AVOID";
+  const leanAbbr = a.ml_lean === "HOME" ? a.home_team_abbr : a.away_team_abbr;
+
+  return (
+    <div style={{ marginBottom: "24px" }}>
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--amber)", marginBottom: "12px" }}>
+        Model Analysis
+      </div>
+
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderLeft: `3px solid ${tc}`, borderRadius: "6px", padding: "20px" }}>
+        {/* Top row */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+          {/* ML Lean */}
+          <div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-3)", textTransform: "uppercase", marginBottom: "6px" }}>ML Lean</div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", color: tc }}>
+              {isActionable ? `${leanAbbr} ML` : a.ml_tier}
+            </div>
+            {isActionable && (
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "2px" }}>
+                {Math.round(a.ml_confidence * 100)}% · Kelly {(a.ml_kelly_fraction * 100).toFixed(1)}%
+              </div>
+            )}
+          </div>
+
+          {/* Win Probability */}
+          <div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-3)", textTransform: "uppercase", marginBottom: "6px" }}>Win Prob</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--amber)", marginBottom: "2px" }}>{a.home_team_abbr} {Math.round(a.model_home_win_prob * 100)}%</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--text-2)" }}>{a.away_team_abbr} {Math.round(a.model_away_win_prob * 100)}%</div>
+          </div>
+
+          {/* Total */}
+          <div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-3)", textTransform: "uppercase", marginBottom: "6px" }}>Total</div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", color: a.total_lean === "OVER" ? "var(--amber)" : a.total_lean === "UNDER" ? "var(--green)" : "var(--text-3)" }}>
+              {a.total_lean}
+            </div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "2px" }}>
+              Proj {a.projected_total.toFixed(1)} runs
+            </div>
+          </div>
+        </div>
+
+        {/* Component edges */}
+        {(a.sp_advantage || a.bullpen_edge || a.offense_edge) && (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
+            {a.sp_advantage && <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "3px", padding: "3px 8px" }}>SP: {a.sp_advantage}</span>}
+            {a.bullpen_edge && <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "3px", padding: "3px 8px" }}>BP: {a.bullpen_edge}</span>}
+          </div>
+        )}
+
+        {/* Key factors */}
+        {a.key_factors.length > 0 && (
+          <div style={{ paddingTop: "14px", borderTop: "1px solid var(--border)" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-3)", textTransform: "uppercase", marginBottom: "8px" }}>Key Factors</div>
+            {a.key_factors.map((f, i) => (
+              <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", marginBottom: "4px" }}>· {f}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Cautions */}
+        {a.cautions.length > 0 && (
+          <div style={{ marginTop: "10px" }}>
+            {a.cautions.map((c, i) => (
+              <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--orange)", marginBottom: "2px" }}>{c}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function GameDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [bundle, setBundle] = useState<GameBundle | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -148,6 +233,7 @@ export default function GameDetailPage() {
     const today = new Date().toISOString().split("T")[0];
     api.bundle(gameId, today).then((b) => { setBundle(b); setLoading(false); });
     api.weather(gameId).then((w) => setWeather(w));
+    api.analyze(gameId, today).then((a) => setAnalysis(a));
   }, [id]);
 
   if (loading) return <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>;
@@ -192,10 +278,13 @@ export default function GameDetailPage() {
 
       {/* Weather */}
       {weather && (
-        <div style={{ maxWidth: "360px" }}>
+        <div style={{ maxWidth: "360px", marginBottom: "24px" }}>
           <WeatherCard w={weather} />
         </div>
       )}
+
+      {/* Analysis */}
+      {analysis && <AnalysisPanel a={analysis} />}
     </div>
   );
 }
