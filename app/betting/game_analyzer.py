@@ -31,6 +31,48 @@ KELLY_FRACTION = 0.25          # fractional Kelly multiplier (conservative)
 WIND_OUT_THRESHOLD_MPH = 12    # wind blowing out at this speed favors Over
 WIND_OUT_DEGREES = (30, 120)   # approximate "blowing out to CF" range
 
+# Park run factors — multiplier on projected total (1.0 = neutral).
+# Coors Field is the canonical outlier; domes are slightly pitcher-friendly.
+PARK_FACTORS: dict[str, float] = {
+    # Hitter-friendly
+    "Coors Field": 1.16,
+    "Great American Ball Park": 1.10,
+    "Wrigley Field": 1.06,
+    "Globe Life Field": 1.05,
+    "American Family Field": 1.04,
+    "Fenway Park": 1.03,
+    "Oriole Park at Camden Yards": 1.02,
+    "Yankee Stadium": 1.02,
+    "Citizens Bank Park": 1.01,
+    "Chase Field": 1.01,
+    "Rate Field": 1.01,              # White Sox (formerly Guaranteed Rate Field)
+    "Truist Park": 1.00,
+    "Rogers Centre": 1.00,
+    "Angel Stadium": 0.99,
+    "Busch Stadium": 0.99,
+    "Citi Field": 0.99,
+    "Progressive Field": 0.99,
+    "Target Field": 0.99,
+    # Pitcher-friendly
+    "Nationals Park": 0.98,
+    "Kauffman Stadium": 0.98,
+    "Daikin Park": 0.98,             # Astros (dome)
+    "Comerica Park": 0.97,
+    "loanDepot park": 0.97,
+    "PNC Park": 0.97,
+    "Tropicana Field": 0.97,
+    "T-Mobile Park": 0.96,
+    "UNIQLO Field at Dodger Stadium": 0.96,
+    "Petco Park": 0.93,
+    "Oracle Park": 0.92,
+}
+
+# Days-rest win probability adjustments for the pitcher (home perspective).
+# Short rest (<4 days): fatigue penalty.  Long rest (6+ days): rust penalty.
+REST_ADJ_SHORT = -0.018   # <4 days
+REST_ADJ_OPTIMAL = +0.010  # 4-5 days (ideal)
+REST_ADJ_LONG = -0.008    # 6+ days (possible rust)
+
 TREND_ADJUSTMENTS = {
     # TrendLabel enum values (from contracts.py)
     "heating_up": +0.025,
@@ -91,6 +133,8 @@ class GameAnalysis:
     component_trend: float = 0.0
     component_k_matchup: float = 0.0
     component_weather: float = 0.0
+    component_rest: float = 0.0
+    component_park: float = 0.0
 
 
 # ── Kelly criterion ────────────────────────────────────────────────────────────
@@ -239,13 +283,18 @@ def analyze_game(
     home_form: Optional[TeamFormWindow],
     away_form: Optional[TeamFormWindow],
     weather: Optional[WeatherSnapshot],
-    home_ml_odds: Optional[int] = None,   # actual moneyline (e.g. -150, +130)
+    home_ml_odds: Optional[int] = None,
     away_ml_odds: Optional[int] = None,
-    total_line: Optional[float] = None,   # posted O/U total (e.g. 8.5)
-    home_k_rate: Optional[float] = None,  # team strikeout rate (0-1) from batting
+    total_line: Optional[float] = None,
+    home_k_rate: Optional[float] = None,
     away_k_rate: Optional[float] = None,
-    home_iso: Optional[float] = None,     # team ISO from batting
+    home_iso: Optional[float] = None,
     away_iso: Optional[float] = None,
+    home_bb_rate: Optional[float] = None,   # team walk rate (BB/PA)
+    away_bb_rate: Optional[float] = None,
+    home_sp_days_rest: Optional[int] = None,  # days since last appearance
+    away_sp_days_rest: Optional[int] = None,
+    venue: Optional[str] = None,           # ballpark name for park factor
 ) -> GameAnalysis:
 
     factors: list[str] = []
@@ -360,6 +409,46 @@ def analyze_game(
         side = "HOME" if trend_adj > 0 else "AWAY"
         factors.append(f"{side} team trending better recently")
 
+    # 6. Pitcher days rest
+    comp_rest = 0.0
+    for days, sp, side_label in [
+        (home_sp_days_rest, home_sp, "HOME"),
+        (away_sp_days_rest, away_sp, "AWAY"),
+    ]:
+        if days is None or sp is None or sp.insufficient_sample:
+            continue
+        if days < 4:
+            adj = REST_ADJ_SHORT if side_label == "HOME" else -REST_ADJ_SHORT
+            prob += adj
+            comp_rest += adj
+            cautions.append(f"⚠ {side_label} SP on short rest ({days}d) — fatigue risk")
+        elif days in (4, 5):
+            adj = REST_ADJ_OPTIMAL if side_label == "HOME" else -REST_ADJ_OPTIMAL
+            prob += adj
+            comp_rest += adj
+            factors.append(f"{side_label} SP on optimal rest ({days}d)")
+        elif days >= 6:
+            adj = REST_ADJ_LONG if side_label == "HOME" else -REST_ADJ_LONG
+            prob += adj
+            comp_rest += adj
+            cautions.append(f"⚠ {side_label} SP on extended rest ({days}d) — possible rust")
+
+    # 7. Team walk rate offensive signal — high BB% offenses reach base more
+    BB_RATE_HIGH = 0.095
+    BB_RATE_LOW = 0.065
+    for bb_rate, side_label in [(home_bb_rate, "HOME"), (away_bb_rate, "AWAY")]:
+        if bb_rate is None:
+            continue
+        if bb_rate >= BB_RATE_HIGH:
+            adj = 0.012 if side_label == "HOME" else -0.012
+            prob += adj
+            comp_off += adj
+            factors.append(f"{side_label} lineup patient at plate: {bb_rate:.1%} BB% — on-base advantage")
+        elif bb_rate <= BB_RATE_LOW:
+            adj = -0.008 if side_label == "HOME" else +0.008
+            prob += adj
+            comp_off += adj
+
     # Clamp
     prob = round(min(0.72, max(0.30, prob)), 4)
     away_prob = round(1 - prob, 4)
@@ -449,6 +538,17 @@ def analyze_game(
     if weather_caution:
         cautions.append(weather_caution)
 
+    # Park factor adjustment on projected total
+    comp_park = 0.0
+    if venue:
+        pf = PARK_FACTORS.get(venue)
+        if pf is not None and pf != 1.0:
+            original = projected_total
+            projected_total = round(projected_total * pf, 1)
+            comp_park = round((projected_total - original) * 0.005, 4)
+            direction = "hitter-friendly" if pf > 1.0 else "pitcher-friendly"
+            factors.append(f"Park factor {pf:.2f}x — {venue} is {direction}")
+
     # Compare against actual posted line if available, else typical
     compare_line = total_line if total_line is not None else 8.5
     threshold = 0.6 if total_line is not None else 0.8  # tighter when real line exists
@@ -492,4 +592,6 @@ def analyze_game(
         component_trend=round(comp_trend, 4),
         component_k_matchup=round(comp_k, 4),
         component_weather=round(comp_weather, 4),
+        component_rest=round(comp_rest, 4),
+        component_park=round(comp_park, 4),
     )

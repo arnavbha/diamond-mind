@@ -630,7 +630,8 @@ def _batting_stats_for_team(db: Session, *, team_id: int, as_of: date) -> dict:
     avg = _safe_rate(hits, ab)
     iso = (slg - avg) if slg is not None and avg is not None else None
     k_rate = _safe_rate(strikeouts, pa)
-    return {"woba": woba, "iso": iso, "k_rate": k_rate}
+    bb_rate = _safe_rate(walks, pa)
+    return {"woba": woba, "iso": iso, "k_rate": k_rate, "bb_rate": bb_rate}
 
 
 def _estimated_woba_for_team(db: Session, *, team_id: int, as_of: date) -> Optional[float]:
@@ -706,9 +707,23 @@ def _build_analysis(game_id: int, as_of: date, db: Session):
                 w = dataclasses.replace(w, team_woba=woba)
         return w
 
-    # Fetch batting aggregates for K% matchup edge and ISO power signal
+    # Fetch batting aggregates for K%, ISO, and BB% signals
     home_batting = _batting_stats_for_team(db, team_id=home_id, as_of=as_of)
     away_batting = _batting_stats_for_team(db, team_id=away_id, as_of=as_of)
+
+    # Pitcher days rest — most recent appearance before as_of
+    def _days_rest(pitcher_id: Optional[int]) -> Optional[int]:
+        if pitcher_id is None:
+            return None
+        last = db.execute(
+            select(PitcherGameLog.game_date)
+            .where(PitcherGameLog.pitcher_id == pitcher_id, PitcherGameLog.game_date < as_of)
+            .order_by(PitcherGameLog.game_date.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if last is None:
+            return None
+        return (as_of - last).days
 
     # Fetch actual odds if available
     from app.models.odds import OddsSnapshotRow
@@ -773,6 +788,11 @@ def _build_analysis(game_id: int, as_of: date, db: Session):
         away_k_rate=away_batting.get("k_rate"),
         home_iso=home_batting.get("iso"),
         away_iso=away_batting.get("iso"),
+        home_bb_rate=home_batting.get("bb_rate"),
+        away_bb_rate=away_batting.get("bb_rate"),
+        home_sp_days_rest=_days_rest(game.home_probable_starter_id),
+        away_sp_days_rest=_days_rest(game.away_probable_starter_id),
+        venue=game.venue,
     )
 
 
