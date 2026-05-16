@@ -32,6 +32,7 @@ from app.ingestion.mlb_stats_api import (
     MLBStatsClient,
     ingest_boxscore,
     ingest_schedule,
+    ingest_teams,
 )
 from app.ingestion.odds_api import fetch_events, fetch_odds, match_event_id, is_available as odds_available
 from app.ingestion.venue_coords import get_coords
@@ -220,6 +221,9 @@ def run(as_of: date, dry_run: bool = False) -> None:
 
     with MLBStatsClient() as client:
         with SessionLocal() as session:
+            # 0. Ensure teams are seeded (idempotent upsert).
+            ingest_teams(session, client)
+
             # 1. Fetch today's schedule so probable pitchers are populated.
             today_pks = ingest_schedule(session, client, as_of)
             log.info("Fetched %d games for %s", len(today_pks), as_of)
