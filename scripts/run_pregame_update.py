@@ -99,6 +99,7 @@ def _upsert_starter(session, w) -> None:
         starts=w.starts,
         innings_pitched=w.innings_pitched,
         era=w.era,
+        fip=w.fip,
         whip=w.whip,
         k_per_9=w.k_per_9,
         bb_per_9=w.bb_per_9,
@@ -113,8 +114,15 @@ def _upsert_starter(session, w) -> None:
             starts=w.starts,
             innings_pitched=w.innings_pitched,
             era=w.era,
+            fip=w.fip,
             whip=w.whip,
+            k_per_9=w.k_per_9,
+            bb_per_9=w.bb_per_9,
+            hr_per_9=w.hr_per_9,
+            avg_innings_per_start=w.avg_innings_per_start,
+            avg_pitches_per_start=w.avg_pitches_per_start,
             trend_label=w.trend_label.value,
+            insufficient_sample=w.insufficient_sample,
         ),
     )
     session.execute(stmt)

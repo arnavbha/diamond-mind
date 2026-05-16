@@ -78,6 +78,7 @@ DEFAULT_WINDOW_WEIGHTS = {
 TEAM_STRONG_RUNS_PER_GAME = 4.7
 HITTER_STRONG_OPS = 0.740
 PITCHER_STRONG_ERA = 3.80  # lower is better
+FIP_CONSTANT = 3.10
 
 
 # --- Pure: trend classifier -------------------------------------------------
@@ -181,9 +182,16 @@ def aggregate_pitcher(
     k9 = _safe_div(9 * strikeouts, innings_pitched)
     bb9 = _safe_div(9 * walks, innings_pitched)
     hr9 = _safe_div(9 * home_runs_allowed, innings_pitched)
+    fip = (
+        ((13 * home_runs_allowed + 3 * walks - 2 * strikeouts) / innings_pitched)
+        + FIP_CONSTANT
+        if innings_pitched
+        else 0.0
+    )
     return {
         "innings_pitched": round(innings_pitched, 1),
         "era": round(era, 2),
+        "fip": round(fip, 2),
         "whip": round(whip, 2),
         "k_per_9": round(k9, 1),
         "bb_per_9": round(bb9, 1),
@@ -544,6 +552,7 @@ def build_starter_form_window(
         starts=starts,
         innings_pitched=agg["innings_pitched"],
         era=agg["era"],
+        fip=agg["fip"],
         whip=agg["whip"],
         k_per_9=agg["k_per_9"],
         bb_per_9=agg["bb_per_9"],
@@ -641,6 +650,7 @@ def build_reliever_form_window(
         appearances=apps,
         innings_pitched=agg["innings_pitched"],
         era=agg["era"],
+        fip=agg["fip"],
         whip=agg["whip"],
         k_per_9=agg["k_per_9"],
         bb_per_9=agg["bb_per_9"],
