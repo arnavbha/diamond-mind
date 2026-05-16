@@ -62,7 +62,7 @@ Run this each morning before first pitch (~9–10 AM ET).
 ## 6. Start the backend
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+uvicorn app.api.routes:app --reload --port 8000
 ```
 
 API is live at `http://localhost:8000`. Docs at `http://localhost:8000/docs`.
