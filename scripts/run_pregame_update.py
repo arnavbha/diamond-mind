@@ -31,6 +31,7 @@ from app.features.recent_form import (
 from app.ingestion.mlb_stats_api import (
     MLBStatsClient,
     ingest_boxscore,
+    ingest_roster,
     ingest_schedule,
     ingest_teams,
 )
@@ -221,8 +222,13 @@ def run(as_of: date, dry_run: bool = False) -> None:
 
     with MLBStatsClient() as client:
         with SessionLocal() as session:
-            # 0. Ensure teams are seeded (idempotent upsert).
+            # 0. Ensure teams and rosters are seeded (idempotent upserts).
             ingest_teams(session, client)
+            team_ids_for_roster = _active_team_ids(session)
+            for tid in team_ids_for_roster:
+                ingest_roster(session, client, tid)
+            session.flush()
+            log.info("Rosters seeded for %d teams.", len(team_ids_for_roster))
 
             # 1. Fetch today's schedule so probable pitchers are populated.
             today_pks = ingest_schedule(session, client, as_of)
