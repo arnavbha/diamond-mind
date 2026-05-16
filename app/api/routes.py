@@ -198,6 +198,70 @@ def pitcher_form(
 
 
 # ---------------------------------------------------------------------------
+# GameBundle — single-call composite for the frontend
+# ---------------------------------------------------------------------------
+
+@app.get("/games/{game_id}/bundle")
+def game_bundle(
+    game_id: int,
+    as_of: date = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(_get_db),
+):
+    """Return a full GameBundle payload in one call — home/away form, bullpen,
+    starters, all windows. Saves multiple round trips from the frontend."""
+    game = db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(404, f"Game {game_id} not found")
+
+    def _team_form(team_id: int, window: WindowKey):
+        w = load_team_form_window(db, team_id=team_id, window=window, as_of_date=as_of)
+        if w is None:
+            w = build_team_form_window(db, team_id=team_id, window=window, as_of_date=as_of)
+        return _dc(w)
+
+    def _starter(pitcher_id):
+        if pitcher_id is None:
+            return None
+        w = build_starter_form_window(
+            db, pitcher_id=pitcher_id,
+            window=WindowKey.LAST_5_STARTS, as_of_date=as_of,
+        )
+        return _dc(w)
+
+    def _bullpen(team_id: int):
+        state = build_bullpen_state(db, team_id=team_id, as_of_date=as_of)
+        return _dc(state)
+
+    home_id = game.home_team_id
+    away_id = game.away_team_id
+
+    return {
+        "game_id": game_id,
+        "game_date": game.game_date.isoformat(),
+        "status": game.status,
+        "venue": game.venue,
+        "home_team_id": home_id,
+        "away_team_id": away_id,
+        "is_doubleheader": game.is_doubleheader,
+        "game_number": game.game_number,
+        "home_form": {
+            "season": _team_form(home_id, WindowKey.SEASON),
+            "l10": _team_form(home_id, WindowKey.L10),
+            "l5": _team_form(home_id, WindowKey.L5),
+        },
+        "away_form": {
+            "season": _team_form(away_id, WindowKey.SEASON),
+            "l10": _team_form(away_id, WindowKey.L10),
+            "l5": _team_form(away_id, WindowKey.L5),
+        },
+        "home_starter": _starter(game.home_probable_starter_id),
+        "away_starter": _starter(game.away_probable_starter_id),
+        "home_bullpen": _bullpen(home_id),
+        "away_bullpen": _bullpen(away_id),
+    }
+
+
+# ---------------------------------------------------------------------------
 # LLM polish (optional — stubs if key missing)
 # ---------------------------------------------------------------------------
 
