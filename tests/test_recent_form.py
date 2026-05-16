@@ -80,6 +80,7 @@ def test_aggregate_pitcher_basic():
     )
     # ERA = 9 * 18 / 63 = 2.57
     assert out["era"] == round(9 * 18 / 63, 2)
+    assert out["fip"] == round(((13 * 6 + 3 * 14 - 2 * 72) / 63) + 3.10, 2)
     assert out["whip"] == round((14 + 52) / 63, 2)
     assert out["k_per_9"] == round(9 * 72 / 63, 1)
     assert out["avg_innings_per_start"] == round(63 / 10, 2)
@@ -369,4 +370,5 @@ def test_build_starter_form_window(db_session):
     assert w.starts == 5
     assert w.innings_pitched == 30.0
     assert w.era == round(9 * (2 * 5) / 30.0, 2)
+    assert w.fip == round(((13 * 5 + 3 * 5 - 2 * 40) / 30.0) + 3.10, 2)
     assert w.avg_pitches_per_start == 95.0

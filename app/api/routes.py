@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.contracts import WindowKey
 from app.database import SessionLocal
 from app.features.recent_form import (
+    FIP_CONSTANT,
     build_bullpen_state,
     build_hitter_form_window,
     build_starter_form_window,
@@ -32,8 +33,8 @@ from app.features.recent_form import (
     load_team_form_window,
 )
 from app.features.bullpen_vulnerability import score_bullpen
-from app.models.entities import Team
-from app.models.games import Game
+from app.models.entities import Player, Team
+from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
 
 app = FastAPI(
     title="diamond-mind API",
@@ -69,6 +70,79 @@ def _dc(obj) -> dict:
     if hasattr(obj, "value"):  # Enum
         return obj.value
     return obj
+
+
+def _safe_rate(num: float, den: float) -> Optional[float]:
+    if den == 0:
+        return None
+    return num / den
+
+
+def _last_team_game_dates(
+    db: Session,
+    *,
+    team_id: int,
+    window: WindowKey,
+    as_of: date,
+) -> Optional[tuple[date, date]]:
+    if window is WindowKey.SEASON:
+        return date(as_of.year, 1, 1), as_of
+    game_counts = {
+        WindowKey.L5: 5,
+        WindowKey.L10: 10,
+        WindowKey.L20: 20,
+    }
+    if window not in game_counts:
+        raise HTTPException(400, f"Unsupported team window: {window.value}")
+    dates = [
+        d
+        for (d,) in db.execute(
+            select(TeamGameLog.game_date)
+            .where(TeamGameLog.team_id == team_id, TeamGameLog.game_date <= as_of)
+            .order_by(TeamGameLog.game_date.desc())
+            .limit(game_counts[window])
+        ).all()
+    ]
+    if not dates:
+        return None
+    return min(dates), max(dates)
+
+
+def _pitcher_rows_for_window(
+    db: Session,
+    *,
+    pitcher_id: int,
+    window: WindowKey,
+    as_of: date,
+) -> list[PitcherGameLog]:
+    stmt = select(PitcherGameLog).where(
+        PitcherGameLog.pitcher_id == pitcher_id,
+        PitcherGameLog.game_date <= as_of,
+    )
+    if window is WindowKey.SEASON:
+        return list(
+            db.execute(
+                stmt.where(PitcherGameLog.game_date >= date(as_of.year, 1, 1))
+                .order_by(PitcherGameLog.game_date.desc())
+            ).scalars()
+        )
+    if window is WindowKey.L5:
+        limit = 5
+    elif window is WindowKey.L10:
+        limit = 10
+    elif window is WindowKey.L20:
+        limit = 20
+    elif window is WindowKey.LAST_5_STARTS:
+        limit = 5
+        stmt = stmt.where(PitcherGameLog.started.is_(True))
+    elif window is WindowKey.LAST_10_STARTS:
+        limit = 10
+        stmt = stmt.where(PitcherGameLog.started.is_(True))
+    else:
+        raise HTTPException(400, f"Unsupported pitcher window: {window.value}")
+    return list(
+        db.execute(stmt.order_by(PitcherGameLog.game_date.desc()).limit(limit)).scalars()
+    )
 
 
 @app.get("/health")
@@ -150,6 +224,115 @@ def team_form(
     return _dc(w)
 
 
+@app.get("/teams/{team_id}/batting")
+def team_batting(
+    team_id: int,
+    window: str = Query("l10", description="season|l20|l10|l5"),
+    as_of: date = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(_get_db),
+):
+    """Aggregate team batting rates from hitter game logs.
+
+    This is intentionally computed from stored box-score counters only. True
+    handedness splits require per-PA handedness outcomes and are not available
+    in the MVP schema.
+    """
+    try:
+        wk = WindowKey(window)
+    except ValueError:
+        raise HTTPException(400, f"Unknown window: {window}")
+
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(404, f"Team {team_id} not found")
+
+    bounds = _last_team_game_dates(db, team_id=team_id, window=wk, as_of=as_of)
+    if bounds is None:
+        raise HTTPException(404, f"No batting data for team {team_id}")
+    start, end = bounds
+
+    rows = db.execute(
+        select(PlayerGameLog).where(
+            PlayerGameLog.team_id == team_id,
+            PlayerGameLog.game_date >= start,
+            PlayerGameLog.game_date <= end,
+        )
+    ).scalars().all()
+
+    games = db.execute(
+        select(TeamGameLog.game_id).where(
+            TeamGameLog.team_id == team_id,
+            TeamGameLog.game_date >= start,
+            TeamGameLog.game_date <= end,
+        )
+    ).all()
+    game_count = len(games)
+
+    pa = sum(r.plate_appearances for r in rows)
+    ab = sum(r.at_bats for r in rows)
+    hits = sum(r.hits for r in rows)
+    doubles = sum(r.doubles for r in rows)
+    triples = sum(r.triples for r in rows)
+    home_runs = sum(r.home_runs for r in rows)
+    walks = sum(r.walks for r in rows)
+    strikeouts = sum(r.strikeouts for r in rows)
+    hbp = sum(r.hit_by_pitch for r in rows)
+    sac_flies = sum(r.sac_flies for r in rows)
+    stolen_bases = sum(r.stolen_bases for r in rows)
+    singles = hits - doubles - triples - home_runs
+    total_bases = singles + 2 * doubles + 3 * triples + 4 * home_runs
+    avg = _safe_rate(hits, ab)
+    obp = _safe_rate(hits + walks + hbp, ab + walks + hbp + sac_flies)
+    slg = _safe_rate(total_bases, ab)
+    ops = (obp + slg) if obp is not None and slg is not None else None
+    iso = (slg - avg) if slg is not None and avg is not None else None
+    woba_denom = ab + walks + hbp + sac_flies
+    estimated_woba = _safe_rate(
+        0.69 * walks
+        + 0.72 * hbp
+        + 0.89 * singles
+        + 1.27 * doubles
+        + 1.62 * triples
+        + 2.10 * home_runs,
+        woba_denom,
+    )
+    min_games = 1 if wk is WindowKey.SEASON else 5
+
+    return {
+        "team_id": team_id,
+        "team_abbr": team.abbr,
+        "window": wk.value,
+        "as_of_date": as_of.isoformat(),
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "games": game_count,
+        "plate_appearances": pa,
+        "at_bats": ab,
+        "hits": hits,
+        "doubles": doubles,
+        "triples": triples,
+        "home_runs": home_runs,
+        "walks": walks,
+        "strikeouts": strikeouts,
+        "hit_by_pitch": hbp,
+        "sac_flies": sac_flies,
+        "stolen_bases": stolen_bases,
+        "batting_avg": avg,
+        "on_base_pct": obp,
+        "slugging_pct": slg,
+        "ops": ops,
+        "iso": iso,
+        "strikeout_rate": _safe_rate(strikeouts, pa),
+        "walk_rate": _safe_rate(walks, pa),
+        "estimated_woba": estimated_woba,
+        "unsupported": {
+            "true_woba": "not stored; estimated_woba uses static linear weights",
+            "handedness_splits": "not stored in MVP box-score logs",
+        },
+        "insufficient_sample": game_count < min_games,
+    }
+
+
 @app.get("/teams/{team_id}/bullpen")
 def team_bullpen(
     team_id: int,
@@ -206,6 +389,81 @@ def pitcher_form(
     if w is None:
         raise HTTPException(404, f"No starter form data for pitcher {pitcher_id}")
     return _dc(w)
+
+
+@app.get("/pitchers/{pitcher_id}/advanced")
+def pitcher_advanced(
+    pitcher_id: int,
+    window: str = Query("last_5_starts"),
+    as_of: date = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(_get_db),
+):
+    """Aggregate pitcher advanced-ish rates from stored pitching logs.
+
+    FIP uses the MVP constant from the recent-form engine. BABIP is approximate because the
+    schema lacks sacrifice and batted-ball detail. Strand rate and true L/R
+    splits are explicitly unavailable until richer play-by-play ingestion.
+    """
+    try:
+        wk = WindowKey(window)
+    except ValueError:
+        raise HTTPException(400, f"Unknown window: {window}")
+
+    pitcher = db.get(Player, pitcher_id)
+    rows = _pitcher_rows_for_window(db, pitcher_id=pitcher_id, window=wk, as_of=as_of)
+    if not rows:
+        raise HTTPException(404, f"No pitching data for pitcher {pitcher_id}")
+
+    appearances = len(rows)
+    starts = sum(1 for r in rows if r.started)
+    innings = sum(r.innings_pitched for r in rows)
+    batters_faced = sum(r.batters_faced for r in rows)
+    hits = sum(r.hits_allowed for r in rows)
+    earned_runs = sum(r.earned_runs for r in rows)
+    walks = sum(r.walks for r in rows)
+    strikeouts = sum(r.strikeouts for r in rows)
+    home_runs = sum(r.home_runs_allowed for r in rows)
+    pitches = sum(r.pitches for r in rows)
+    fip = ((13 * home_runs + 3 * walks - 2 * strikeouts) / innings + FIP_CONSTANT) if innings else None
+    balls_in_play = batters_faced - strikeouts - walks - home_runs
+    babip = _safe_rate(hits - home_runs, balls_in_play)
+
+    return {
+        "pitcher_id": pitcher_id,
+        "pitcher_name": pitcher.full_name if pitcher else None,
+        "throws": pitcher.throws if pitcher else None,
+        "team_id": rows[0].team_id,
+        "window": wk.value,
+        "as_of_date": as_of.isoformat(),
+        "start_date": min(r.game_date for r in rows).isoformat(),
+        "end_date": max(r.game_date for r in rows).isoformat(),
+        "appearances": appearances,
+        "starts": starts,
+        "innings_pitched": innings,
+        "batters_faced": batters_faced,
+        "hits_allowed": hits,
+        "earned_runs": earned_runs,
+        "walks": walks,
+        "strikeouts": strikeouts,
+        "home_runs_allowed": home_runs,
+        "pitches": pitches,
+        "era": (earned_runs * 9 / innings) if innings else None,
+        "fip": fip,
+        "fip_constant": FIP_CONSTANT,
+        "babip": babip,
+        "whip": _safe_rate(walks + hits, innings),
+        "k_rate": _safe_rate(strikeouts, batters_faced),
+        "bb_rate": _safe_rate(walks, batters_faced),
+        "k_per_9": (strikeouts * 9 / innings) if innings else None,
+        "bb_per_9": (walks * 9 / innings) if innings else None,
+        "hr_per_9": (home_runs * 9 / innings) if innings else None,
+        "avg_pitches_per_start": _safe_rate(pitches, starts),
+        "unsupported": {
+            "strand_rate": "not stored; needs baserunner/LOB or play-by-play state",
+            "left_right_splits": "not stored; needs batter handedness outcomes per PA",
+        },
+        "insufficient_sample": appearances < 3 or innings < 10,
+    }
 
 
 # ---------------------------------------------------------------------------
