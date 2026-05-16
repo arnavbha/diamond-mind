@@ -741,6 +741,37 @@ def _build_analysis(game_id: int, as_of: date, db: Session):
     home_h2h = _h2h(home_id, away_id)
     away_h2h = _h2h(away_id, home_id)
 
+    # Home/road splits — season win rate at home (for home team) and on road (for away team)
+    def _split_record(team_id: int, is_home: bool) -> tuple[int, int]:
+        season_start = date(as_of.year, 1, 1)
+        logs = db.execute(
+            select(TeamGameLog.won).where(
+                TeamGameLog.team_id == team_id,
+                TeamGameLog.game_date >= season_start,
+                TeamGameLog.game_date <= as_of,
+                TeamGameLog.is_home == is_home,
+            )
+        ).scalars().all()
+        return sum(1 for w in logs if w), len(logs)
+
+    home_home_record = _split_record(home_id, True)   # home team's home record
+    away_road_record = _split_record(away_id, False)   # away team's road record
+
+    # Pitcher last-start pitch count (within 7 days)
+    def _last_pitch_count(pitcher_id: Optional[int]) -> Optional[int]:
+        if pitcher_id is None:
+            return None
+        from datetime import timedelta
+        row = db.execute(
+            select(PitcherGameLog.pitches).where(
+                PitcherGameLog.pitcher_id == pitcher_id,
+                PitcherGameLog.started.is_(True),
+                PitcherGameLog.game_date < as_of,
+                PitcherGameLog.game_date >= as_of - timedelta(days=7),
+            ).order_by(PitcherGameLog.game_date.desc()).limit(1)
+        ).scalar_one_or_none()
+        return row
+
     # Pitcher days rest — most recent appearance before as_of
     def _days_rest(pitcher_id: Optional[int]) -> Optional[int]:
         if pitcher_id is None:
@@ -825,6 +856,10 @@ def _build_analysis(game_id: int, as_of: date, db: Session):
         venue=game.venue,
         home_h2h=home_h2h,
         away_h2h=away_h2h,
+        home_home_record=home_home_record,
+        away_road_record=away_road_record,
+        home_sp_last_pitch_count=_last_pitch_count(game.home_probable_starter_id),
+        away_sp_last_pitch_count=_last_pitch_count(game.away_probable_starter_id),
     )
 
 
