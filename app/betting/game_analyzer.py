@@ -69,9 +69,8 @@ PARK_FACTORS: dict[str, float] = {
 
 # Days-rest win probability adjustments for the pitcher (home perspective).
 # Short rest (<4 days): fatigue penalty.  Long rest (6+ days): rust penalty.
-REST_ADJ_SHORT = -0.018   # <4 days
-REST_ADJ_OPTIMAL = +0.010  # 4-5 days (ideal)
-REST_ADJ_LONG = -0.008    # 6+ days (possible rust)
+REST_ADJ_SHORT = -0.018   # <4 days (short rest)
+REST_ADJ_LONG  = -0.008   # 8+ days (skipped turn / injury return)
 
 TREND_ADJUSTMENTS = {
     # TrendLabel enum values (from contracts.py)
@@ -470,16 +469,14 @@ def analyze_game(
             prob += adj
             comp_rest += adj
             cautions.append(f"⚠ {side_label} SP on short rest ({days}d) — fatigue risk")
-        elif days in (4, 5):
-            adj = REST_ADJ_OPTIMAL if side_label == "HOME" else -REST_ADJ_OPTIMAL
-            prob += adj
-            comp_rest += adj
-            factors.append(f"{side_label} SP on optimal rest ({days}d)")
-        elif days >= 6:
+        elif days <= 6:
+            # 4-6 days is normal rotation cadence — no adjustment
+            pass
+        elif days >= 8:
             adj = REST_ADJ_LONG if side_label == "HOME" else -REST_ADJ_LONG
             prob += adj
             comp_rest += adj
-            cautions.append(f"⚠ {side_label} SP on extended rest ({days}d) — possible rust")
+            cautions.append(f"⚠ {side_label} SP on extended rest ({days}d) — skipped turn, possible rust")
 
     # Pitcher last-outing pitch count workload
     for pitches, sp, side_label in [
