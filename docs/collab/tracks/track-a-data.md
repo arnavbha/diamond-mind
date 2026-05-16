@@ -25,8 +25,8 @@
 - [x] Data contracts drafted in `interfaces/data-contracts.md` (strawman; Jack to review)
 - [x] Phase 3 — DB models (`app/models/*`, `scripts/init_db.py`, 17 tables, tests green)
 - [x] Phase 5 — recent form engine (`app/features/recent_form.py`, fixtures, loaders for Track B)
-- [ ] Phase 7 — MLB Stats API ingestion ← next
-- [ ] Phase 11 — CLI scripts (data side)
+- [x] Phase 7 — MLB Stats API ingestion (`app/ingestion/mlb_stats_api.py`, 15 tests, idempotent upserts)
+- [ ] Phase 11 — CLI scripts (`run_pregame_update.py`, `backfill_history.py`) ← next
 
 ## Working order (so Jack is never blocked)
 
