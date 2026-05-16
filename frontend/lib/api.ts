@@ -99,6 +99,8 @@ export type GameAnalysis = {
   component_trend: number;
   component_k_matchup: number;
   component_weather: number;
+  component_rest: number;
+  component_park: number;
   // from picks endpoint
   game_date?: string;
   venue?: string;
