@@ -35,19 +35,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             { href: "/report", label: "Report" },
             { href: "/verify", label: "Verifier" },
           ].map(({ href, label }) => (
-            <Link key={href} href={href} style={{
+            <Link key={href} href={href} className="nav-link" style={{
               fontFamily: "var(--font-display)",
               fontWeight: 600,
               fontSize: "13px",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
-              color: "var(--text-2)",
-              textDecoration: "none",
-              transition: "color 0.15s",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--text)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-2)")}
-            >
+            }}>
               {label}
             </Link>
           ))}
