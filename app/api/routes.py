@@ -590,6 +590,124 @@ def game_weather(game_id: int, db: Session = Depends(_get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Game Analysis — algorithmic betting intelligence
+# ---------------------------------------------------------------------------
+
+def _build_analysis(game_id: int, as_of: date, db: Session):
+    """Load all data for a game and return a GameAnalysis dataclass."""
+    from sqlalchemy import desc
+    from app.betting.game_analyzer import analyze_game
+    from app.models.odds import WeatherSnapshotRow
+
+    game = db.get(Game, game_id)
+    if game is None:
+        return None
+
+    home_id = game.home_team_id
+    away_id = game.away_team_id
+    home_team = db.get(Team, home_id)
+    away_team = db.get(Team, away_id)
+
+    def _sp(pitcher_id):
+        if pitcher_id is None:
+            return None
+        return build_starter_form_window(
+            db, pitcher_id=pitcher_id,
+            window=WindowKey.LAST_5_STARTS, as_of_date=as_of,
+        )
+
+    def _bp(team_id):
+        state = build_bullpen_state(db, team_id=team_id, as_of_date=as_of)
+        return score_bullpen(state) if state else None
+
+    def _form(team_id):
+        w = load_team_form_window(db, team_id=team_id, window=WindowKey.L10, as_of_date=as_of)
+        if w is None:
+            w = build_team_form_window(db, team_id=team_id, window=WindowKey.L10, as_of_date=as_of)
+        return w
+
+    # Weather — best available snapshot
+    weather_row = db.execute(
+        select(WeatherSnapshotRow)
+        .where(WeatherSnapshotRow.game_id == game_id)
+        .order_by(desc(WeatherSnapshotRow.captured_at))
+        .limit(1)
+    ).scalar_one_or_none()
+
+    weather = None
+    if weather_row is not None:
+        from app.contracts import WeatherSnapshot
+        weather = WeatherSnapshot(
+            game_id=weather_row.game_id,
+            temperature_f=weather_row.temperature_f,
+            wind_speed_mph=weather_row.wind_speed_mph,
+            wind_direction_deg=weather_row.wind_direction_deg,
+            precipitation_chance=weather_row.precipitation_chance,
+            humidity_pct=weather_row.humidity_pct,
+            is_dome=weather_row.is_dome,
+            captured_at=weather_row.captured_at,
+        )
+
+    return analyze_game(
+        game_id=game_id,
+        home_abbr=home_team.abbr if home_team else "???",
+        away_abbr=away_team.abbr if away_team else "???",
+        home_sp=_sp(game.home_probable_starter_id),
+        away_sp=_sp(game.away_probable_starter_id),
+        home_bullpen=_bp(home_id),
+        away_bullpen=_bp(away_id),
+        home_form=_form(home_id),
+        away_form=_form(away_id),
+        weather=weather,
+    )
+
+
+@app.get("/games/{game_id}/analyze")
+def game_analyze(
+    game_id: int,
+    as_of: date = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(_get_db),
+):
+    """Run the full deterministic model for a single game."""
+    analysis = _build_analysis(game_id, as_of, db)
+    if analysis is None:
+        raise HTTPException(404, f"Game {game_id} not found")
+    return _dc(analysis)
+
+
+@app.get("/games/picks")
+def daily_picks(
+    game_date: date = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(_get_db),
+):
+    """Run the analyzer across all games on a date and return picks ranked by edge."""
+    from app.models.entities import Team as TeamModel
+    HomeTeam = aliased(TeamModel)
+    AwayTeam = aliased(TeamModel)
+    rows = db.execute(
+        select(Game, HomeTeam, AwayTeam)
+        .join(HomeTeam, Game.home_team_id == HomeTeam.id)
+        .join(AwayTeam, Game.away_team_id == AwayTeam.id)
+        .where(Game.game_date == game_date)
+        .order_by(Game.id)
+    ).all()
+
+    results = []
+    for game, _home, _away in rows:
+        analysis = _build_analysis(game.id, game_date, db)
+        if analysis is not None:
+            d = _dc(analysis)
+            d["game_date"] = game.game_date.isoformat()
+            d["venue"] = game.venue
+            results.append(d)
+
+    # Sort: STRONG LEAN first, then LEAN, then PASS, then AVOID
+    tier_order = {"STRONG LEAN": 0, "LEAN": 1, "PASS": 2, "AVOID": 3}
+    results.sort(key=lambda r: (tier_order.get(r.get("ml_tier", "PASS"), 2), -r.get("ml_confidence", 0)))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # LLM polish (optional — stubs if key missing)
 # ---------------------------------------------------------------------------
 

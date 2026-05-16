@@ -73,6 +73,29 @@ export type GameBundle = {
   away_bullpen: BullpenData | null;
 };
 
+export type GameAnalysis = {
+  game_id: number;
+  home_team_abbr: string;
+  away_team_abbr: string;
+  model_home_win_prob: number;
+  model_away_win_prob: number;
+  ml_lean: string;
+  ml_confidence: number;
+  ml_tier: string;
+  total_lean: string;
+  total_confidence: number;
+  projected_total: number;
+  ml_kelly_fraction: number;
+  key_factors: string[];
+  cautions: string[];
+  sp_advantage: string;
+  bullpen_edge: string;
+  offense_edge: string;
+  // from picks endpoint
+  game_date?: string;
+  venue?: string;
+};
+
 export type WeatherData = {
   temperature_f: number | null;
   wind_speed_mph: number | null;
@@ -91,4 +114,8 @@ export const api = {
   pitcher: (id: number, asOf: string) => get<PitcherForm>(`/pitchers/${id}/form?as_of=${asOf}`),
   polishReport: (markdown: string) =>
     post<{ markdown: string; polished: boolean; method: "sdk" | "cli" | "none" }>("/report/polish", { markdown }),
+  analyze: (gameId: number, asOf: string) =>
+    get<GameAnalysis>(`/games/${gameId}/analyze?as_of=${asOf}`),
+  picks: (date: string) =>
+    get<GameAnalysis[]>(`/games/picks?game_date=${date}`),
 };

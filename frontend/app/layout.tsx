@@ -39,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </span>
           {[
             { href: "/", label: "Slate" },
+            { href: "/picks", label: "Picks" },
             { href: "/report", label: "Report" },
             { href: "/verify", label: "Verifier" },
           ].map(({ href, label }) => (
