@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, type GameBundle, type WeatherData, type GameAnalysis, type TeamBatting } from "@/lib/api";
+import { api, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 
 function TeamLogo({ abbr, size = 40 }: { abbr: string; size?: number }) {
@@ -60,7 +60,7 @@ function vulnColor(score: number) {
   return "var(--green)";
 }
 
-function BullpenCard({ abbr, bp }: { abbr: string; bp: NonNullable<GameBundle["home_bullpen"]> }) {
+function BullpenCard({ abbr, bp }: { abbr: string; bp: NonNullable<GameContext["home_bullpen"]> }) {
   const vc = vulnColor(bp.vulnerability_score);
   return (
     <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderTop: `2px solid ${vc}`, borderRadius: "6px", padding: "16px" }}>
@@ -111,7 +111,7 @@ function BullpenCard({ abbr, bp }: { abbr: string; bp: NonNullable<GameBundle["h
   );
 }
 
-function StarterCard({ abbr, starter }: { abbr: string; starter: NonNullable<GameBundle["home_starter"]> | null }) {
+function StarterCard({ abbr, starter }: { abbr: string; starter: NonNullable<GameContext["home_starter"]> | null }) {
   const fipColor = starter?.fip != null
     ? starter.fip <= 3.20 ? "var(--green)" : starter.fip >= 4.50 ? "var(--red)" : "var(--text)"
     : "var(--text)";
@@ -575,9 +575,7 @@ function ModelMethodologyPanel({ homeAbbr, awayAbbr, analysis }: {
 
 export default function GameDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [bundle, setBundle] = useState<GameBundle | null>(null);
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
+  const [ctx, setCtx] = useState<GameContext | null>(null);
   const [homeBatting, setHomeBatting] = useState<TeamBatting | null>(null);
   const [awayBatting, setAwayBatting] = useState<TeamBatting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -585,20 +583,20 @@ export default function GameDetailPage() {
   useEffect(() => {
     const gameId = Number(id);
     const today = new Date().toISOString().split("T")[0];
-    api.bundle(gameId, today).then((b) => {
-      setBundle(b);
+    api.context(gameId, today).then((c) => {
+      setCtx(c);
       setLoading(false);
-      if (b) {
-        api.batting(b.home_team_id, today).then(d => setHomeBatting(d));
-        api.batting(b.away_team_id, today).then(d => setAwayBatting(d));
+      if (c) {
+        api.batting(c.home_team_id, today).then(d => setHomeBatting(d));
+        api.batting(c.away_team_id, today).then(d => setAwayBatting(d));
       }
     });
-    api.weather(gameId).then((w) => setWeather(w));
-    api.analyze(gameId, today).then((a) => setAnalysis(a));
   }, [id]);
 
   if (loading) return <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>;
-  if (!bundle) return <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)" }}>Game not found.</div>;
+  if (!ctx) return <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)" }}>Game not found.</div>;
+
+  const analysis = ctx.analysis;
 
   return (
     <div>
@@ -608,30 +606,30 @@ export default function GameDetailPage() {
 
       <div style={{ marginTop: "16px", marginBottom: "28px", borderBottom: "1px solid var(--border)", paddingBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <TeamLogo abbr={bundle.away_team_abbr} size={48} />
+          <TeamLogo abbr={ctx.away_team_abbr} size={48} />
           <div>
             <h1 style={{ fontWeight: 700, fontSize: "28px", letterSpacing: "-0.03em", margin: 0, lineHeight: 1.1 }}>
-              {bundle.away_team_abbr} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>@</span> {bundle.home_team_abbr}
+              {ctx.away_team_abbr} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>@</span> {ctx.home_team_abbr}
             </h1>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "6px" }}>
-              {bundle.venue} · {bundle.game_date}
+              {ctx.venue} · {ctx.game_date}
             </div>
           </div>
-          <TeamLogo abbr={bundle.home_team_abbr} size={48} />
+          <TeamLogo abbr={ctx.home_team_abbr} size={48} />
         </div>
       </div>
 
       {/* Team Stats */}
-      {(bundle.home_form || bundle.away_form) && (
+      {(ctx.home_form || ctx.away_form) && (
         <div style={{ marginBottom: "24px" }}>
           <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "12px" }}>
             Team Stats
           </div>
           <TeamStatsCard
-            homeAbbr={bundle.home_team_abbr}
-            awayAbbr={bundle.away_team_abbr}
-            homeForm={(bundle.home_form as Record<string, unknown>)?.l10 as FormWindow}
-            awayForm={(bundle.away_form as Record<string, unknown>)?.l10 as FormWindow}
+            homeAbbr={ctx.home_team_abbr}
+            awayAbbr={ctx.away_team_abbr}
+            homeForm={(ctx.home_form as Record<string, unknown>)?.l10 as FormWindow}
+            awayForm={(ctx.away_form as Record<string, unknown>)?.l10 as FormWindow}
             homeBatting={homeBatting}
             awayBatting={awayBatting}
           />
@@ -644,8 +642,8 @@ export default function GameDetailPage() {
           Starting Pitchers
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <StarterCard abbr={bundle.home_team_abbr} starter={bundle.home_starter} />
-          <StarterCard abbr={bundle.away_team_abbr} starter={bundle.away_starter} />
+          <StarterCard abbr={ctx.home_team_abbr} starter={ctx.home_starter} />
+          <StarterCard abbr={ctx.away_team_abbr} starter={ctx.away_starter} />
         </div>
       </div>
 
@@ -655,15 +653,15 @@ export default function GameDetailPage() {
           Bullpen Intelligence
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          {bundle.home_bullpen && <BullpenCard abbr={bundle.home_team_abbr} bp={bundle.home_bullpen} />}
-          {bundle.away_bullpen && <BullpenCard abbr={bundle.away_team_abbr} bp={bundle.away_bullpen} />}
+          {ctx.home_bullpen && <BullpenCard abbr={ctx.home_team_abbr} bp={ctx.home_bullpen} />}
+          {ctx.away_bullpen && <BullpenCard abbr={ctx.away_team_abbr} bp={ctx.away_bullpen} />}
         </div>
       </div>
 
       {/* Weather */}
-      {weather && (
+      {ctx.weather && (
         <div style={{ maxWidth: "360px", marginBottom: "24px" }}>
-          <WeatherCard w={weather} />
+          <WeatherCard w={ctx.weather} />
         </div>
       )}
 
@@ -671,7 +669,7 @@ export default function GameDetailPage() {
       {analysis && <AnalysisPanel a={analysis} />}
 
       {/* Model methodology */}
-      <ModelMethodologyPanel homeAbbr={bundle.home_team_abbr} awayAbbr={bundle.away_team_abbr} analysis={analysis} />
+      <ModelMethodologyPanel homeAbbr={ctx.home_team_abbr} awayAbbr={ctx.away_team_abbr} analysis={analysis} />
     </div>
   );
 }

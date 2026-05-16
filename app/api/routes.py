@@ -682,6 +682,100 @@ def game_bundle(
     }
 
 
+@app.get("/games/{game_id}/context", tags=["games"])
+def game_context(
+    game_id: int,
+    as_of: date = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(_get_db),
+):
+    """Bundle + analysis + weather in one call.
+
+    Replaces the 4-request waterfall the detail page previously needed:
+      bundle, weather, analyze, (batting fetched separately per team).
+    Now the detail page only needs this call + one batting call per team.
+    Analysis result is cache-backed.
+    """
+    game = db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(404, f"Game {game_id} not found")
+
+    from sqlalchemy import desc as _desc
+    from app.models.odds import WeatherSnapshotRow
+
+    def _team_form(team_id: int, window: WindowKey):
+        w = load_team_form_window(db, team_id=team_id, window=window, as_of_date=as_of)
+        if w is None:
+            w = build_team_form_window(db, team_id=team_id, window=window, as_of_date=as_of)
+        return _dc(w)
+
+    def _starter(pitcher_id):
+        if pitcher_id is None:
+            return None
+        w = build_starter_form_window(
+            db, pitcher_id=pitcher_id,
+            window=WindowKey.LAST_5_STARTS, as_of_date=as_of,
+        )
+        return _dc(w)
+
+    def _bullpen(team_id: int):
+        state = build_bullpen_state(db, team_id=team_id, as_of_date=as_of)
+        if state is None:
+            return None
+        return _dc(score_bullpen(state))
+
+    home_id = game.home_team_id
+    away_id = game.away_team_id
+    home_team = db.get(Team, home_id)
+    away_team = db.get(Team, away_id)
+
+    weather_row = db.execute(
+        select(WeatherSnapshotRow)
+        .where(WeatherSnapshotRow.game_id == game_id)
+        .order_by(_desc(WeatherSnapshotRow.captured_at))
+        .limit(1)
+    ).scalar_one_or_none()
+
+    weather = None
+    if weather_row:
+        weather = {
+            "game_id": weather_row.game_id,
+            "temperature_f": weather_row.temperature_f,
+            "wind_speed_mph": weather_row.wind_speed_mph,
+            "wind_direction_deg": weather_row.wind_direction_deg,
+            "precipitation_chance": weather_row.precipitation_chance,
+            "humidity_pct": weather_row.humidity_pct,
+            "is_dome": weather_row.is_dome,
+            "captured_at": weather_row.captured_at.isoformat(),
+        }
+
+    return {
+        "game_id": game_id,
+        "game_date": game.game_date.isoformat(),
+        "status": game.status,
+        "venue": game.venue,
+        "home_team_id": home_id,
+        "away_team_id": away_id,
+        "home_team_abbr": home_team.abbr if home_team else None,
+        "away_team_abbr": away_team.abbr if away_team else None,
+        "home_form": {
+            "season": _team_form(home_id, WindowKey.SEASON),
+            "l10": _team_form(home_id, WindowKey.L10),
+            "l5": _team_form(home_id, WindowKey.L5),
+        },
+        "away_form": {
+            "season": _team_form(away_id, WindowKey.SEASON),
+            "l10": _team_form(away_id, WindowKey.L10),
+            "l5": _team_form(away_id, WindowKey.L5),
+        },
+        "home_starter": _starter(game.home_probable_starter_id),
+        "away_starter": _starter(game.away_probable_starter_id),
+        "home_bullpen": _bullpen(home_id),
+        "away_bullpen": _bullpen(away_id),
+        "weather": weather,
+        "analysis": _build_analysis_cached(game_id, as_of, db),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Odds and weather
 # ---------------------------------------------------------------------------

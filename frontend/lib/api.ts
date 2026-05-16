@@ -135,6 +135,26 @@ export type WeatherData = {
   is_dome: boolean;
 };
 
+/** Returned by /games/{id}/context — bundle + weather + analysis in one call. */
+export type GameContext = {
+  game_id: number;
+  game_date: string;
+  status: string;
+  venue: string;
+  home_team_id: number;
+  away_team_id: number;
+  home_team_abbr: string;
+  away_team_abbr: string;
+  home_form: Record<string, unknown> | null;
+  away_form: Record<string, unknown> | null;
+  home_starter: PitcherForm | null;
+  away_starter: PitcherForm | null;
+  home_bullpen: BullpenData | null;
+  away_bullpen: BullpenData | null;
+  weather: WeatherData | null;
+  analysis: GameAnalysis | null;
+};
+
 /** Returned by /games/slate — one entry per game, everything bundled. */
 export type SlateGame = {
   game_id: number;
@@ -169,4 +189,6 @@ export const api = {
     get<GameAnalysis[]>(`/games/picks?game_date=${date}`),
   batting: (teamId: number, date: string) =>
     get<TeamBatting>(`/teams/${teamId}/batting?as_of=${date}&window=l10`),
+  context: (gameId: number, asOf: string) =>
+    get<GameContext>(`/games/${gameId}/context?as_of=${asOf}`),
 };
