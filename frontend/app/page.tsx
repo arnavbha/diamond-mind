@@ -45,8 +45,10 @@ function GameCard({ game, date, index }: { game: Game; date: string; index: numb
   const [awayBp, setAwayBp] = useState<BullpenData | null>(null);
 
   useEffect(() => {
-    api.bullpen(game.home_team_id, date).then(setHomeBp);
-    api.bullpen(game.away_team_id, date).then(setAwayBp);
+    let alive = true;
+    api.bullpen(game.home_team_id, date).then(bp => { if (alive) setHomeBp(bp); });
+    api.bullpen(game.away_team_id, date).then(bp => { if (alive) setAwayBp(bp); });
+    return () => { alive = false; };
   }, [game, date]);
 
   const topVuln = Math.max(homeBp?.vulnerability_score ?? 0, awayBp?.vulnerability_score ?? 0);
@@ -109,9 +111,12 @@ export default function SlatePage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    setGames(null); setError(false);
     api.games(date).then((g) => { if (g === null) setError(true); else setGames(g); });
   }, [date]);
+
+  function changeDate(d: string) {
+    setGames(null); setError(false); setDate(d);
+  }
 
   return (
     <div>
@@ -128,7 +133,7 @@ export default function SlatePage() {
         <input
           type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => changeDate(e.target.value)}
           style={{
             background: "var(--surface)",
             border: "1px solid var(--border-2)",

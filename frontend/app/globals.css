@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
 
 :root {
   --bg:        #090B0E;
@@ -70,3 +70,7 @@ body {
 /* ── Card hover lift ───────────────────────────── */
 .game-card { transition: border-color 0.15s ease, transform 0.15s ease; }
 .game-card:hover { transform: translateY(-1px); }
+
+/* ── Nav link hover ─────────────────────────────── */
+.nav-link { color: var(--text-2); text-decoration: none; transition: color 0.15s; }
+.nav-link:hover { color: var(--text); }
