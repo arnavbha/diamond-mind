@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import List
 
 from fastapi import FastAPI, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="diamond-mind collab", docs_url="/")
 
@@ -25,12 +25,10 @@ _next_id: int = 1
 
 
 class Outgoing(BaseModel):
-    from_: str
-    message: str
+    model_config = {"populate_by_name": True}
 
-    class Config:
-        populate_by_name = True
-        fields = {"from_": "from"}
+    from_: str = Field(alias="from")
+    message: str
 
 
 @app.post("/send")
