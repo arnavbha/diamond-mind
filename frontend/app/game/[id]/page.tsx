@@ -137,6 +137,76 @@ function WeatherCard({ w }: { w: WeatherData }) {
   );
 }
 
+type FormWindow = {
+  runs_per_game?: number | null;
+  runs_allowed_per_game?: number | null;
+  team_ops?: number | null;
+  team_woba?: number | null;
+  record_wins?: number | null;
+  record_losses?: number | null;
+  trend_label?: string | null;
+  games?: number | null;
+};
+
+function CompareRow({ label, home, away, higherBetter = true, fmt = (v: number) => v.toFixed(2) }: {
+  label: string;
+  home: number | null | undefined;
+  away: number | null | undefined;
+  higherBetter?: boolean;
+  fmt?: (v: number) => string;
+}) {
+  const hVal = home ?? null;
+  const aVal = away ?? null;
+  const homeWins = hVal !== null && aVal !== null && (higherBetter ? hVal > aVal : hVal < aVal);
+  const awayWins = hVal !== null && aVal !== null && (higherBetter ? aVal > hVal : aVal < hVal);
+  const winColor = "var(--amber)";
+  const loseColor = "var(--text-2)";
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", alignItems: "center", padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: homeWins ? winColor : loseColor, fontWeight: homeWins ? 600 : 400, textAlign: "right" }}>
+        {hVal !== null ? fmt(hVal) : "—"}
+      </span>
+      <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", textAlign: "center", letterSpacing: "0.04em" }}>{label}</span>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: awayWins ? winColor : loseColor, fontWeight: awayWins ? 600 : 400, textAlign: "left" }}>
+        {aVal !== null ? fmt(aVal) : "—"}
+      </span>
+    </div>
+  );
+}
+
+function TeamStatsCard({ homeAbbr, awayAbbr, homeForm, awayForm }: {
+  homeAbbr: string;
+  awayAbbr: string;
+  homeForm: FormWindow | null | undefined;
+  awayForm: FormWindow | null | undefined;
+}) {
+  const hf = homeForm as FormWindow | null;
+  const af = awayForm as FormWindow | null;
+  if (!hf && !af) return null;
+  return (
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", marginBottom: "12px" }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "16px", color: "var(--amber)", textAlign: "right" }}>{homeAbbr}</div>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-3)", textTransform: "uppercase", textAlign: "center", paddingTop: "4px" }}>L10</div>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "16px", color: "var(--text-2)", textAlign: "left" }}>{awayAbbr}</div>
+      </div>
+      <CompareRow label="R/G" home={hf?.runs_per_game} away={af?.runs_per_game} fmt={v => v.toFixed(1)} />
+      <CompareRow label="RA/G" home={hf?.runs_allowed_per_game} away={af?.runs_allowed_per_game} higherBetter={false} fmt={v => v.toFixed(1)} />
+      <CompareRow label="OPS" home={hf?.team_ops} away={af?.team_ops} fmt={v => v.toFixed(3)} />
+      <CompareRow label="wOBA" home={hf?.team_woba} away={af?.team_woba} fmt={v => v.toFixed(3)} />
+      <CompareRow label="Wins" home={hf?.record_wins} away={af?.record_wins} fmt={v => String(Math.round(v))} />
+      <CompareRow label="Losses" home={hf?.record_losses} away={af?.record_losses} higherBetter={false} fmt={v => String(Math.round(v))} />
+      {(hf?.trend_label || af?.trend_label) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", padding: "5px 0", marginTop: "2px" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", textAlign: "right" }}>{hf?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
+          <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", textAlign: "center" }}>Trend</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", textAlign: "left" }}>{af?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function tierColor(tier: string) {
   if (tier === "STRONG LEAN") return "var(--green)";
   if (tier === "LEAN") return "var(--amber)";
@@ -253,6 +323,21 @@ export default function GameDetailPage() {
           {bundle.venue} · {bundle.game_date}
         </div>
       </div>
+
+      {/* Team Stats */}
+      {(bundle.home_form || bundle.away_form) && (
+        <div style={{ marginBottom: "24px" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--amber)", marginBottom: "12px" }}>
+            Team Stats
+          </div>
+          <TeamStatsCard
+            homeAbbr={bundle.home_team_abbr}
+            awayAbbr={bundle.away_team_abbr}
+            homeForm={(bundle.home_form as Record<string, unknown>)?.l10 as FormWindow}
+            awayForm={(bundle.away_form as Record<string, unknown>)?.l10 as FormWindow}
+          />
+        </div>
+      )}
 
       {/* Starters */}
       <div style={{ marginBottom: "24px" }}>
