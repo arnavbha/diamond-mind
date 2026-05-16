@@ -80,7 +80,7 @@ def health():
 
 @app.get("/games")
 def list_games(
-    game_date: date = Query(..., description="YYYY-MM-DD"),
+    game_date: date = Query(..., alias="date", description="YYYY-MM-DD"),
     db: Session = Depends(_get_db),
 ):
     """Return all games scheduled for a date."""
