@@ -295,8 +295,12 @@ def analyze_game(
     home_sp_days_rest: Optional[int] = None,
     away_sp_days_rest: Optional[int] = None,
     venue: Optional[str] = None,
-    home_h2h: Optional[tuple] = None,  # (wins, games) this season vs this opponent
+    home_h2h: Optional[tuple] = None,
     away_h2h: Optional[tuple] = None,
+    home_home_record: Optional[tuple] = None,   # (wins, home_games) this season
+    away_road_record: Optional[tuple] = None,   # (wins, road_games) this season
+    home_sp_last_pitch_count: Optional[int] = None,
+    away_sp_last_pitch_count: Optional[int] = None,
 ) -> GameAnalysis:
 
     factors: list[str] = []
@@ -411,7 +415,32 @@ def analyze_game(
         side = "HOME" if trend_adj > 0 else "AWAY"
         factors.append(f"{side} team trending better recently")
 
-    # 6. Head-to-head season record
+    # 6. Home/road split — how each team performs in their specific context
+    if home_home_record and home_home_record[1] >= 10:
+        h_wins, h_games = home_home_record
+        home_win_rate = h_wins / h_games
+        split_adj = (home_win_rate - HOME_ADVANTAGE) * 0.5
+        split_adj = round(min(0.04, max(-0.04, split_adj)), 4)
+        prob += split_adj
+        comp_trend += split_adj
+        if split_adj >= 0.025:
+            factors.append(f"HOME team elite at home: {h_wins}-{h_games - h_wins} home record")
+        elif split_adj <= -0.025:
+            cautions.append(f"⚠ HOME team struggles at home: {h_wins}-{h_games - h_wins} home record")
+
+    if away_road_record and away_road_record[1] >= 10:
+        a_wins, a_games = away_road_record
+        road_win_rate = a_wins / a_games
+        road_adj = (road_win_rate - (1 - HOME_ADVANTAGE)) * 0.5
+        road_adj = round(min(0.04, max(-0.04, road_adj)), 4)
+        prob -= road_adj   # positive road_adj means away team is strong on road → hurt home prob
+        comp_trend -= road_adj
+        if road_adj >= 0.025:
+            cautions.append(f"⚠ AWAY team strong on road: {a_wins}-{a_games - a_wins} road record")
+        elif road_adj <= -0.025:
+            factors.append(f"AWAY team poor on road: {a_wins}-{a_games - a_wins} road record")
+
+    # 7. Head-to-head season record
     if home_h2h and home_h2h[1] >= 4:
         h_wins, h_games = home_h2h
         h_win_rate = h_wins / h_games
@@ -447,6 +476,23 @@ def analyze_game(
             prob += adj
             comp_rest += adj
             cautions.append(f"⚠ {side_label} SP on extended rest ({days}d) — possible rust")
+
+    # Pitcher last-outing pitch count workload
+    for pitches, sp, side_label in [
+        (home_sp_last_pitch_count, home_sp, "HOME"),
+        (away_sp_last_pitch_count, away_sp, "AWAY"),
+    ]:
+        if pitches is None or sp is None or sp.insufficient_sample:
+            continue
+        if pitches >= 105:
+            adj = -0.012 if side_label == "HOME" else +0.012
+            prob += adj
+            comp_rest += adj
+            cautions.append(f"⚠ {side_label} SP threw {pitches} pitches last outing — high workload")
+        elif pitches >= 95:
+            adj = -0.006 if side_label == "HOME" else +0.006
+            prob += adj
+            comp_rest += adj
 
     # 7. Team walk rate offensive signal — high BB% offenses reach base more
     BB_RATE_HIGH = 0.095
