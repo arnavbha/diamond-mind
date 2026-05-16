@@ -256,6 +256,30 @@ def analyze_game(
             factors.append(f"{side} SP K/9 edge: {sp_name} {max(home_sp.k_per_9, away_sp.k_per_9):.1f} K/9")
             prob += k_diff * 0.005
 
+    # BB/9 control edge — high walk rate signals instability
+    for sp, side_label in [(home_sp, "HOME"), (away_sp, "AWAY")]:
+        if sp and sp.bb_per_9 and sp.bb_per_9 > 4.5 and not sp.insufficient_sample:
+            cautions.append(f"⚠ {side_label} SP walk rate {sp.bb_per_9:.1f} BB/9 — control concern")
+            adj = -0.015 if side_label == "HOME" else +0.015
+            prob += adj
+
+    # ERA vs FIP divergence — flags regression risk
+    for sp, side_label in [(home_sp, "HOME"), (away_sp, "AWAY")]:
+        if sp and sp.era and not sp.insufficient_sample:
+            fip_val = _derive_fip(sp)
+            if fip_val:
+                divergence = sp.era - fip_val
+                # ERA much lower than FIP → pitcher getting lucky, likely to regress
+                if divergence < -1.0:
+                    cautions.append(
+                        f"⚠ {side_label} SP ERA {sp.era:.2f} significantly below FIP {fip_val:.2f} — regression risk"
+                    )
+                # ERA much higher than FIP → pitcher unlucky, likely to improve
+                elif divergence > 1.2:
+                    factors.append(
+                        f"{side_label} SP ERA ({sp.era:.2f}) above FIP ({fip_val:.2f}) — positive regression candidate"
+                    )
+
     # 3. Bullpen vulnerability
     home_vuln = home_bullpen.vulnerability_score if home_bullpen else 50.0
     away_vuln = away_bullpen.vulnerability_score if away_bullpen else 50.0
