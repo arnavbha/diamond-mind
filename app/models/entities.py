@@ -18,10 +18,10 @@ class Team(Base):
     __tablename__ = "teams"
 
     id: Mapped[int] = mapped_column(primary_key=True)  # MLB Stats API team id
-    abbr: Mapped[str] = mapped_column(String(4), unique=True, index=True)
+    abbr: Mapped[str] = mapped_column(String(8), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(64))
-    league: Mapped[Optional[str]] = mapped_column(String(2))   # "AL" / "NL"
-    division: Mapped[Optional[str]] = mapped_column(String(16))
+    league: Mapped[Optional[str]] = mapped_column(String(32))
+    division: Mapped[Optional[str]] = mapped_column(String(32))
 
 
 class Player(Base):
