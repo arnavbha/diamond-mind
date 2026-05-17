@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import date, timedelta
 
@@ -47,6 +48,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 log = logging.getLogger("run_pregame_update")
+
+DEFAULT_HISTORY_DAYS = int(os.environ.get("PREGAME_HISTORY_DAYS", "60"))
 
 
 def _active_team_ids(session) -> list[int]:
@@ -206,14 +209,21 @@ def _map_odds_event_ids(session, as_of: date) -> None:
     log.info("Mapped odds event_ids for %d/%d games.", mapped, len(games))
 
 
-def _ingest_completed_games(session, client: MLBStatsClient, yesterday: date) -> int:
-    pks = ingest_schedule(session, client, yesterday)
+def _date_range(start: date, end: date):
+    d = start
+    while d <= end:
+        yield d
+        d += timedelta(days=1)
+
+
+def _ingest_completed_games(session, client: MLBStatsClient, game_date: date) -> int:
+    pks = ingest_schedule(session, client, game_date)
     session.flush()
 
     completed = session.execute(
         select(Game.id, Game.game_date).where(
             Game.status.in_(["Final", "Game Over", "Completed Early"]),
-            Game.game_date == yesterday,
+            Game.game_date == game_date,
         )
     ).all()
 
@@ -225,6 +235,27 @@ def _ingest_completed_games(session, client: MLBStatsClient, yesterday: date) ->
         except Exception as exc:
             log.warning("Failed to ingest box score game=%d: %s", pk, exc)
     return ingested
+
+
+def _ingest_completed_history(
+    session,
+    client: MLBStatsClient,
+    *,
+    start: date,
+    end: date,
+) -> int:
+    """Backfill completed games over a date range before form windows are built."""
+    if start > end:
+        return 0
+
+    total = 0
+    days = (end - start).days + 1
+    log.info("Backfilling completed games %s → %s (%d days)", start, end, days)
+    for i, game_date in enumerate(_date_range(start, end), 1):
+        ingested = _ingest_completed_games(session, client, game_date)
+        total += ingested
+        log.info("  History: %s (%d/%d) ingested %d completed games", game_date, i, days, ingested)
+    return total
 
 
 def _auto_track_picks(session, as_of: date) -> None:
@@ -248,11 +279,17 @@ def _auto_track_picks(session, as_of: date) -> None:
         log.warning("Auto-track skipped (backend not running?): %s", exc)
 
 
-def run(as_of: date, dry_run: bool = False) -> None:
+def run(as_of: date, dry_run: bool = False, history_days: int = DEFAULT_HISTORY_DAYS) -> None:
     settings = get_settings()
     yesterday = as_of - timedelta(days=1)
 
-    log.info("Pregame update for %s (yesterday=%s, dry_run=%s)", as_of, yesterday, dry_run)
+    log.info(
+        "Pregame update for %s (yesterday=%s, dry_run=%s, history_days=%d)",
+        as_of,
+        yesterday,
+        dry_run,
+        history_days,
+    )
 
     with MLBStatsClient() as client:
         with SessionLocal() as session:
@@ -272,10 +309,18 @@ def run(as_of: date, dry_run: bool = False) -> None:
             if odds_available():
                 _map_odds_event_ids(session, as_of)
 
-            # 2. Ingest completed games from yesterday.
+            # 2. Ingest completed games over a rolling history window.
+            # A fresh Render/Postgres DB otherwise has only yesterday's games,
+            # which makes "season", L20, L10, and starter windows nonsense.
             if not dry_run:
-                ingested = _ingest_completed_games(session, client, yesterday)
-                log.info("Ingested %d completed box scores from %s", ingested, yesterday)
+                history_start = max(date(as_of.year, 3, 1), as_of - timedelta(days=max(1, history_days) - 1))
+                ingested = _ingest_completed_history(
+                    session,
+                    client,
+                    start=history_start,
+                    end=yesterday,
+                )
+                log.info("Ingested %d completed box scores from %s through %s", ingested, history_start, yesterday)
 
             # 3. Recompute form windows for all teams.
             team_ids = _active_team_ids(session)
@@ -329,6 +374,12 @@ def main() -> None:
         action="store_true",
         help="Fetch schedule only; skip DB writes.",
     )
+    parser.add_argument(
+        "--history-days",
+        type=int,
+        default=DEFAULT_HISTORY_DAYS,
+        help=f"Rolling history days to backfill before recomputing form windows (default: {DEFAULT_HISTORY_DAYS}).",
+    )
     args = parser.parse_args()
 
     try:
@@ -337,7 +388,7 @@ def main() -> None:
         print(f"Invalid date: {args.date}", file=sys.stderr)
         sys.exit(1)
 
-    run(run_date, dry_run=args.dry_run)
+    run(run_date, dry_run=args.dry_run, history_days=args.history_days)
 
 
 if __name__ == "__main__":
