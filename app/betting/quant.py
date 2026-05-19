@@ -117,6 +117,8 @@ def _expit(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
+_MAX_SHRINK_WEIGHT = 0.75  # market always gets at least 25% weight
+
 def shrink_to_market(p_model: float, p_market_vf: float, reliability: float) -> float:
     """Blend model and market in log-odds space.
 
@@ -127,8 +129,14 @@ def shrink_to_market(p_model: float, p_market_vf: float, reliability: float) -> 
     model is pulled hard toward the market; a high-evidence model is allowed
     to express its disagreement. Log-odds blending is the correct space — it
     is the conjugate update for a Bernoulli and never leaves (0,1).
+
+    The market is capped at _MAX_SHRINK_WEIGHT (0.75) even at perfect reliability.
+    A sharp liquid market aggregates information the model never sees — lineup
+    changes, same-day scratches, bullpen usage decisions — so w=1.0 (full model
+    trust) is never justified. This prevents 40pp+ model-market gaps from
+    generating confident recommendations off stale data.
     """
-    w = min(1.0, max(0.0, reliability))
+    w = min(_MAX_SHRINK_WEIGHT, max(0.0, reliability))
     return _expit(w * _logit(p_model) + (1.0 - w) * _logit(p_market_vf))
 
 
@@ -340,6 +348,8 @@ def compute_quant_edge(
     )
 
 
+_LARGE_DISAGREEMENT_THRESHOLD = 0.20  # |p_shrunk - p_market| gap that triggers demotion
+
 def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_quality: float) -> str:
     """Tier driven by P(edge>0) and growth rate, not raw edge magnitude.
 
@@ -351,13 +361,25 @@ def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_qualit
       AVOID        shrunk edge ≤ −4.0pp
       NEED MORE    confidence < 0.40 or evidence < 0.40
       PASS         otherwise
+
+    Large-disagreement guard: if |p_shrunk − p_market| > 20pp after shrinkage,
+    the model-market gap is so large it almost always signals stale data (e.g.
+    a scratched starter the model hasn't seen). STRONG LEAN is demoted to LEAN
+    in this case — we still flag the edge but don't send a high-confidence signal
+    off potentially bad inputs.
     """
     if model_confidence < 0.40 or evidence_quality < 0.40:
         return "NEED MORE INFO"
     if qe.edge_quant <= -0.04:
         return "AVOID"
+
+    # If the shrunk probability still disagrees with the market by >20pp,
+    # cap at LEAN — the gap likely reflects missing info, not a real edge.
+    market_gap = abs(qe.p_shrunk - qe.shin_vig_free)
+    large_disagreement = market_gap > _LARGE_DISAGREEMENT_THRESHOLD
+
     if qe.prob_positive >= 0.65 and qe.edge_quant >= 0.03 and qe.growth_rate > 0:
-        return "STRONG LEAN"
+        return "LEAN" if large_disagreement else "STRONG LEAN"
     if qe.prob_positive >= 0.58 and qe.edge_quant >= 0.015 and qe.growth_rate > 0:
         return "LEAN"
     return "PASS"
