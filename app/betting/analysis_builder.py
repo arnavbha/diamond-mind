@@ -39,6 +39,12 @@ from app.features.bullpen_vulnerability import score_bullpen
 from app.models.entities import Player, Team
 from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
 
+# MLB regular season starts in late March/early April.  Using March 1 as the
+# season-open boundary matches run_pregame_update.py and avoids pulling
+# non-existent spring-training data if a stale row ever pre-dates the season.
+_SEASON_OPEN_MONTH = 3
+_SEASON_OPEN_DAY = 1
+
 
 def _safe_rate(num: float, den: float) -> Optional[float]:
     if den == 0:
@@ -54,7 +60,7 @@ def _last_team_game_dates(
     as_of: date,
 ) -> Optional[tuple[date, date]]:
     if window is WindowKey.SEASON:
-        return date(as_of.year, 1, 1), as_of
+        return date(as_of.year, _SEASON_OPEN_MONTH, _SEASON_OPEN_DAY), as_of
     game_counts = {
         WindowKey.L5: 5,
         WindowKey.L10: 10,
@@ -90,7 +96,7 @@ def _pitcher_rows_for_window(
     if window is WindowKey.SEASON:
         return list(
             db.execute(
-                stmt.where(PitcherGameLog.game_date >= date(as_of.year, 1, 1))
+                stmt.where(PitcherGameLog.game_date >= date(as_of.year, _SEASON_OPEN_MONTH, _SEASON_OPEN_DAY))
                 .order_by(PitcherGameLog.game_date.desc())
             ).scalars()
         )
@@ -252,7 +258,7 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
     # Head-to-head season record between these two teams
     def _h2h(team_id: int, opp_id: int) -> tuple[int, int]:
         """Return (wins, games_played) for team_id vs opp_id this season."""
-        season_start = date(as_of.year, 1, 1)
+        season_start = date(as_of.year, _SEASON_OPEN_MONTH, _SEASON_OPEN_DAY)
         matchup_game_ids = [
             gid for (gid,) in db.execute(
                 select(Game.id).where(
@@ -281,7 +287,7 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
 
     # Home/road splits — season win rate at home (for home team) and on road (for away team)
     def _split_record(team_id: int, is_home: bool) -> tuple[int, int]:
-        season_start = date(as_of.year, 1, 1)
+        season_start = date(as_of.year, _SEASON_OPEN_MONTH, _SEASON_OPEN_DAY)
         logs = db.execute(
             select(TeamGameLog.won).where(
                 TeamGameLog.team_id == team_id,
@@ -315,7 +321,7 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
 
     # Team stolen base rate this season (speed/pressure signal)
     def _sb_rate(team_id: int) -> Optional[float]:
-        season_start = date(as_of.year, 1, 1)
+        season_start = date(as_of.year, _SEASON_OPEN_MONTH, _SEASON_OPEN_DAY)
         rows = db.execute(
             select(PlayerGameLog).where(
                 PlayerGameLog.team_id == team_id,
