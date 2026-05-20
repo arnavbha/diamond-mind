@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { api, todayET, getAdminToken } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
 
+type SettleResult = { date: string; settled: number; skipped_not_final: number; skipped_no_score: number; bets: { bet_id: number; game: string; market: string; selection: string; result: string; score: string; units_returned: number }[] };
+
 const today = todayET();
 
 export default function AdminPage() {
@@ -15,6 +17,9 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [totalLines, setTotalLines] = useState(0);
+  const [settling, setSettling] = useState(false);
+  const [settleResult, setSettleResult] = useState<SettleResult | null>(null);
+  const [settleError, setSettleError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -67,6 +72,21 @@ export default function AdminPage() {
       setRunning(false);
       setStatus("error");
       setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handleAutoSettle() {
+    setSettling(true);
+    setSettleResult(null);
+    setSettleError(null);
+    try {
+      const data = await api.trackerAutoSettle(date) as SettleResult | null;
+      if (!data) throw new Error("No response from server");
+      setSettleResult(data);
+    } catch (e: unknown) {
+      setSettleError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSettling(false);
     }
   }
 
@@ -147,6 +167,51 @@ export default function AdminPage() {
                   <div className="text-slate-500 animate-pulse mt-1">▌</div>
                 )}
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Settle bets panel */}
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-5 mt-4">
+          <h2 className="text-lg font-semibold mb-3">Settle Bets</h2>
+          <p className="text-slate-400 text-sm mb-4">
+            Resolves all unsettled bets for the selected date using final scores.
+            Only settles games with status&nbsp;<code className="text-slate-300">Final</code>.
+          </p>
+
+          <div className="flex gap-3 items-center mb-4">
+            <span className="text-sm text-slate-400 font-mono">{date}</span>
+            <button
+              onClick={handleAutoSettle}
+              disabled={settling || !unlocked}
+              className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors"
+            >
+              {settling ? "Settling…" : "Settle Bets"}
+            </button>
+          </div>
+
+          {settleError && (
+            <div className="bg-red-900/30 border border-red-700 rounded p-3 text-red-300 text-sm mb-3">
+              {settleError}
+            </div>
+          )}
+
+          {settleResult && (
+            <div>
+              <div className="text-sm text-slate-400 mb-2">
+                Settled <span className="text-emerald-400 font-semibold">{settleResult.settled}</span> bet(s)
+                {settleResult.skipped_not_final > 0 && <span className="ml-2 text-slate-500">· {settleResult.skipped_not_final} not Final</span>}
+                {settleResult.skipped_no_score > 0 && <span className="ml-2 text-slate-500">· {settleResult.skipped_no_score} missing score</span>}
+              </div>
+              {settleResult.bets.length > 0 && (
+                <div className="bg-slate-950 border border-slate-800 rounded p-3 font-mono text-xs text-slate-300 leading-5 space-y-0.5">
+                  {settleResult.bets.map((b) => (
+                    <div key={b.bet_id} className={b.result === "WIN" ? "text-emerald-400" : b.result === "LOSS" ? "text-red-400" : "text-slate-400"}>
+                      #{b.bet_id} {b.game} {b.market} {b.selection} → {b.result} ({b.score}) {b.units_returned > 0 ? "+" : ""}{b.units_returned.toFixed(2)}u
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

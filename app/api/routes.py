@@ -1631,6 +1631,100 @@ def auto_track(
     return {"created": created, "skipped": skipped, "date": game_date.isoformat()}
 
 
+@app.post("/tracker/auto-settle", tags=["tracker"])
+def auto_settle(
+    game_date: date = Query(..., description="YYYY-MM-DD — settle all Final games on this date"),
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Settle all unsettled bets on a date using final scores from the games table.
+
+    Only settles bets whose game.status contains 'Final'. Skips in-progress games
+    and any game whose score is missing. Idempotent — already-settled bets are
+    left unchanged.
+
+    Returns a summary dict: settled / skipped_not_final / skipped_no_score / already_settled.
+    """
+    unsettled = db.execute(
+        select(BetRecord)
+        .where(BetRecord.game_date == game_date, BetRecord.result.is_(None))
+        .order_by(BetRecord.game_id)
+    ).scalars().all()
+
+    if not unsettled:
+        return {"settled": 0, "skipped_not_final": 0, "skipped_no_score": 0, "date": game_date.isoformat(), "detail": "No unsettled bets found"}
+
+    game_ids = list({b.game_id for b in unsettled})
+    games_by_id: dict[int, Game] = {
+        g.id: g
+        for g in db.execute(select(Game).where(Game.id.in_(game_ids))).scalars().all()
+    }
+    team_abbrs: dict[int, str] = {
+        t.id: t.abbr
+        for t in db.execute(select(Team)).scalars().all()
+    }
+
+    settled_count = skipped_not_final = skipped_no_score = 0
+    results = []
+
+    for bet in unsettled:
+        game = games_by_id.get(bet.game_id)
+        if game is None or "Final" not in game.status:
+            skipped_not_final += 1
+            continue
+
+        home_abbr = team_abbrs.get(game.home_team_id, bet.home_team_abbr)
+        away_abbr = team_abbrs.get(game.away_team_id, bet.away_team_abbr)
+
+        if bet.market == "moneyline":
+            if game.home_score is None or game.away_score is None:
+                skipped_no_score += 1
+                continue
+            if game.home_score == game.away_score:
+                result = "PUSH"
+            elif bet.selection == home_abbr:
+                result = "WIN" if game.home_score > game.away_score else "LOSS"
+            else:
+                result = "WIN" if game.away_score > game.home_score else "LOSS"
+
+        elif bet.market == "total":
+            if game.home_score is None or game.away_score is None or bet.total_line is None:
+                skipped_no_score += 1
+                continue
+            actual = game.home_score + game.away_score
+            if actual == bet.total_line:
+                result = "PUSH"
+            elif bet.selection == "OVER":
+                result = "WIN" if actual > bet.total_line else "LOSS"
+            else:
+                result = "WIN" if actual < bet.total_line else "LOSS"
+        else:
+            skipped_no_score += 1
+            continue
+
+        bet.result = result
+        bet.units_returned = compute_units_returned(result, bet.units, bet.american_odds)
+        settled_count += 1
+        results.append({
+            "bet_id": bet.id,
+            "game": f"{away_abbr}@{home_abbr}",
+            "market": bet.market,
+            "selection": bet.selection,
+            "result": result,
+            "score": f"{game.away_score}-{game.home_score}",
+            "units_returned": round(bet.units_returned, 4),
+        })
+
+    db.commit()
+    return {
+        "date": game_date.isoformat(),
+        "settled": settled_count,
+        "skipped_not_final": skipped_not_final,
+        "skipped_no_score": skipped_no_score,
+        "bets": results,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Admin — server-side ingestion
 # Runs run_pregame_update.py as a subprocess so it executes on the Render VM,

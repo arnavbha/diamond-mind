@@ -355,6 +355,11 @@ export const api = {
       `/tracker/auto-track?game_date=${date}`,
       {},
     ),
+  trackerAutoSettle: (date: string) =>
+    post<{ date: string; settled: number; skipped_not_final: number; skipped_no_score: number; bets: object[] }>(
+      `/tracker/auto-settle?game_date=${date}`,
+      {},
+    ),
   adminRunIngestion: (date: string) =>
     post<{ job_id: string; as_of: string; status: string }>(
       `/admin/run-ingestion?game_date=${date}`,
