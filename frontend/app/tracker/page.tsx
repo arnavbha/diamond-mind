@@ -289,6 +289,7 @@ export default function TrackerPage() {
   const [autoTracking, setAutoTracking] = useState(false);
   const [autoResult, setAutoResult] = useState<{ created: number; skipped: number } | null>(null);
   const [autoError, setAutoError] = useState<string | null>(null);
+  const [settleError, setSettleError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(() => Boolean(getAdminToken()));
 
   const today = todayET();
@@ -324,12 +325,14 @@ export default function TrackerPage() {
   }
 
   async function handleSettle(id: number, result: "WIN" | "LOSS" | "PUSH") {
+    setSettleError(null);
     const updated = await api.trackerSettleBet(id, result);
     if (updated) {
       setBets((prev) => prev?.map((b) => b.id === id ? updated : b) ?? null);
-      // refresh summary
       const s = await api.trackerSummary();
       if (s) setSummary(s);
+    } else {
+      setSettleError(`Failed to settle bet #${id} — check admin token and API status.`);
     }
   }
 
@@ -424,6 +427,16 @@ export default function TrackerPage() {
           )}
         </div>
       </div>
+
+      {settleError && (
+        <div style={{
+          fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--orange)",
+          padding: "10px 12px", border: "1px solid var(--orange)", borderRadius: "4px", marginBottom: "12px",
+          cursor: "pointer",
+        }} onClick={() => setSettleError(null)}>
+          ⚠ {settleError}
+        </div>
+      )}
 
       {error && (
         <div style={{
