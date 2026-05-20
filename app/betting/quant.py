@@ -311,8 +311,10 @@ def compute_quant_edge(
     p_h, p_a, z, _ = shin_probabilities(side_odds, other_odds)
     shin_vf = p_h  # shin_probabilities returns (this_side, other_side, ...)
 
-    # Shrink model toward the Shin market prior, weighted by evidence
-    w = min(1.0, max(0.0, evidence_quality))
+    # Shrink model toward the Shin market prior, weighted by evidence.
+    # Cap at _MAX_SHRINK_WEIGHT here so q_shrink_weight in the response
+    # reflects the actual weight used, not the raw evidence_quality input.
+    w = min(_MAX_SHRINK_WEIGHT, max(0.0, evidence_quality))
     p_shrunk = shrink_to_market(p_model_side, shin_vf, w)
 
     post = edge_posterior(p_shrunk, shin_vf, evidence_quality, max_effective_n=max_effective_n)
