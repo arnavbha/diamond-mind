@@ -179,29 +179,29 @@ function BetRow({
 
       {/* actions — only shown when admin is unlocked */}
       <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-        {unlocked && isPending && (
+        {unlocked && (
           <>
             <button
               onClick={() => onSettle(bet.id, "WIN")}
-              style={{ ...btnBase, color: "var(--green)", borderColor: "var(--green)", background: "transparent" }}
-              title="Mark WIN"
+              style={{ ...btnBase, color: "var(--green)", borderColor: isPending ? "var(--green)" : "var(--border-2)", background: "transparent", opacity: isPending ? 1 : 0.45 }}
+              title={isPending ? "Mark WIN" : "Correct to WIN"}
             >W</button>
             <button
               onClick={() => onSettle(bet.id, "LOSS")}
-              style={{ ...btnBase, color: "var(--red)", borderColor: "var(--red)", background: "transparent" }}
-              title="Mark LOSS"
+              style={{ ...btnBase, color: "var(--red)", borderColor: isPending ? "var(--red)" : "var(--border-2)", background: "transparent", opacity: isPending ? 1 : 0.45 }}
+              title={isPending ? "Mark LOSS" : "Correct to LOSS"}
             >L</button>
             <button
               onClick={() => onSettle(bet.id, "PUSH")}
-              style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--text-3)", background: "transparent" }}
-              title="Mark PUSH"
+              style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", opacity: isPending ? 1 : 0.45 }}
+              title={isPending ? "Mark PUSH" : "Correct to PUSH"}
             >P</button>
           </>
         )}
         {unlocked && (
           <button
             onClick={() => onDelete(bet.id)}
-            style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", marginLeft: isPending ? "2px" : "0" }}
+            style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", marginLeft: "2px" }}
             title="Delete"
           >×</button>
         )}
@@ -288,6 +288,7 @@ export default function TrackerPage() {
   const [error, setError] = useState(false);
   const [autoTracking, setAutoTracking] = useState(false);
   const [autoResult, setAutoResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [autoError, setAutoError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(() => Boolean(getAdminToken()));
 
   const today = todayET();
@@ -311,11 +312,14 @@ export default function TrackerPage() {
   async function handleAutoTrack() {
     setAutoTracking(true);
     setAutoResult(null);
+    setAutoError(null);
     const result = await api.trackerAutoTrack(today);
     setAutoTracking(false);
     if (result) {
       setAutoResult(result);
       await load();
+    } else {
+      setAutoError("Auto-track failed — check that admin is unlocked and the API is reachable.");
     }
   }
 
@@ -411,6 +415,11 @@ export default function TrackerPage() {
               {autoResult.created > 0
                 ? `+${autoResult.created} logged · ${autoResult.skipped} already tracked`
                 : `All picks already tracked (${autoResult.skipped} skipped)`}
+            </div>
+          )}
+          {autoError && (
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--orange)" }}>
+              {autoError}
             </div>
           )}
         </div>

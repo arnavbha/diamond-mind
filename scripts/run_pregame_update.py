@@ -294,15 +294,43 @@ def _ingest_completed_history(
     return total
 
 
+def _auto_settle_bets(session, settle_date: date) -> None:
+    """Settle all unsettled bets for settle_date using final scores already in the DB."""
+    import httpx as _httpx
+    import os as _os
+
+    admin_token = _os.environ.get("ADMIN_TOKEN", "")
+    port = _os.environ.get("PORT", "8000")
+    url = f"http://localhost:{port}/tracker/auto-settle?game_date={settle_date.isoformat()}"
+    headers = {"X-Admin-Token": admin_token} if admin_token else {}
+    try:
+        resp = _httpx.post(url, headers=headers, timeout=60)
+        if resp.is_success:
+            data = resp.json()
+            log.info(
+                "Auto-settle %s: %d settled, %d skipped (not Final), %d skipped (no score).",
+                settle_date,
+                data.get("settled", 0),
+                data.get("skipped_not_final", 0),
+                data.get("skipped_no_score", 0),
+            )
+        else:
+            log.warning("Auto-settle call returned %s: %s", resp.status_code, resp.text[:200])
+    except Exception as exc:
+        log.warning("Auto-settle skipped (backend not running?): %s", exc)
+
+
 def _auto_track_picks(session, as_of: date) -> None:
     """Log all non-PASS picks for the date with Kelly-derived units (idempotent)."""
     import httpx as _httpx
     import os as _os
 
+    admin_token = _os.environ.get("ADMIN_TOKEN", "")
     port = _os.environ.get("PORT", "8000")
     url = f"http://localhost:{port}/tracker/auto-track?game_date={as_of.isoformat()}"
+    headers = {"X-Admin-Token": admin_token} if admin_token else {}
     try:
-        resp = _httpx.post(url, timeout=60)
+        resp = _httpx.post(url, headers=headers, timeout=60)
         if resp.is_success:
             data = resp.json()
             log.info(
@@ -401,7 +429,10 @@ def run(as_of: date, dry_run: bool = False, history_days: int = DEFAULT_HISTORY_
                 session.commit()
                 log.info("All changes committed.")
 
-                # 8. Auto-track all non-PASS picks for today.
+                # 8. Auto-settle yesterday's bets now that box scores are in.
+                _auto_settle_bets(session, yesterday)
+
+                # 9. Auto-track all non-PASS picks for today.
                 _auto_track_picks(session, as_of)
             else:
                 log.info("[dry-run] skipping DB writes.")

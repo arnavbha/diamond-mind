@@ -2,8 +2,10 @@ name: Daily Pregame Ingestion
 
 on:
   schedule:
-    # 10:00 AM ET = 14:00 UTC (adjusts naturally with EST/EDT)
-    - cron: "0 14 * * *"
+    # 9:00 AM ET = 13:00 UTC during EDT (Apr–Oct, all of MLB season)
+    # Yesterday's final scores are in by midnight; probable pitchers confirmed
+    # by ~9 AM; gives 3+ hours buffer before the earliest 12:05 PM ET games.
+    - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
       game_date:
