@@ -22,7 +22,7 @@ from typing import List, Optional
 from app.contracts import PitcherFormWindow, TeamFormWindow, WeatherSnapshot
 from app.features.bullpen_vulnerability import BullpenReport
 from app.betting.implied_probability import vig_free_probability, expected_value
-from app.betting.quant import compute_quant_edge, quant_recommendation
+from app.betting.quant import QuantEdge, compute_quant_edge, quant_recommendation
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 HOME_ADVANTAGE = 0.535         # 2022-2024 MLB home win rate (declining from old 54% avg)
@@ -95,6 +95,18 @@ RECOMMENDATION_TIERS = [
     ("PASS",        0.00, 0.00),
     ("AVOID",      -0.05, 0.00),
 ]
+
+
+# Sentinel used when no real market odds exist — all quant fields are zeroed so
+# callers can't accidentally interpret fallback -110/-110 computations as real edges.
+_NULL_QUANT_EDGE = QuantEdge(
+    prop_vig_free=0.0, shin_vig_free=0.0, shin_z=0.0, booksum=0.0,
+    p_model=0.0, p_shrunk=0.0, shrink_weight=0.0,
+    edge_naive=0.0, edge_quant=0.0, edge_sd=0.0,
+    prob_positive=0.0, ci_low=0.0, ci_high=0.0, effective_n=0.0,
+    kelly_full=0.0, kelly_sized=0.0, kelly_multiplier=0.0,
+    growth_rate=0.0, doubling_bets=None, ev_per_dollar=0.0,
+)
 
 
 # ── Output types ──────────────────────────────────────────────────────────────
@@ -177,6 +189,9 @@ class GameAnalysis:
     q_growth_rate: float = 0.0        # expected log-growth per bet
     q_doubling_bets: float = 0.0      # bets to double bankroll (0 = never)
     q_evidence_quality: float = 0.0   # data-completeness proxy ∈ [0,1]
+    # False when market odds were missing — all q_* / qt_* fields are zeroed in that case.
+    q_has_real_odds: bool = False
+    qt_has_real_odds: bool = False
 
     # Component breakdown for transparency (each value = prob shift from that factor)
     component_fip: float = 0.0
@@ -761,13 +776,16 @@ def analyze_game(
     # ── Quant pipeline: Shin devig → shrinkage → posterior → sized Kelly ─────
     # Only run if we have real market odds. Comparing model prob to -110/-110
     # fallback generates false edges — every game would look like STRONG LEAN.
+    # When has_real_odds=False, qe is set to _NULL_QUANT_EDGE so that all q_*
+    # fields in the response are explicitly zero, not misleading fallback values.
     has_real_odds = home_ml_odds is not None and away_ml_odds is not None
-    qe = compute_quant_edge(lean_prob, actual_odds, other_odds, evidence_quality)
     if not has_real_odds:
+        qe = _NULL_QUANT_EDGE
         tier = "PASS"
         ml_lean = "PASS"
         ml_kelly = 0.0
     else:
+        qe = compute_quant_edge(lean_prob, actual_odds, other_odds, evidence_quality)
         tier = quant_recommendation(qe, model_confidence=lean_prob, evidence_quality=evidence_quality)
         if tier == "NEED MORE INFO":
             tier = "PASS"
@@ -899,20 +917,22 @@ def analyze_game(
     # run-total projection carries ~3-run inherent SD that is not captured
     # in evidence_quality alone. A large projection-line gap does not imply
     # the same certainty as a large ML edge — runs are much noisier.
-    qt = compute_quant_edge(
-        p_model_side=p_lean_side,
-        side_odds=lean_over_odds,
-        other_odds=lean_under_odds,
-        evidence_quality=total_evidence_quality,
-        max_effective_n=25.0,
-    )
-
+    # When has_total_odds=False, qt is set to _NULL_QUANT_EDGE so qt_* fields
+    # in the response are explicitly zero, not misleading fallback values.
     if not has_total_odds:
+        qt = _NULL_QUANT_EDGE
         total_tier = "PASS"
         total_kelly = 0.0
         total_lean = "PASS"
         total_conf = 0.5
     else:
+        qt = compute_quant_edge(
+            p_model_side=p_lean_side,
+            side_odds=lean_over_odds,
+            other_odds=lean_under_odds,
+            evidence_quality=total_evidence_quality,
+            max_effective_n=25.0,
+        )
         total_tier = quant_recommendation(qt, model_confidence=p_lean_side, evidence_quality=total_evidence_quality)
         if total_tier == "NEED MORE INFO":
             total_tier = "PASS"
@@ -991,6 +1011,8 @@ def analyze_game(
         q_growth_rate=qe.growth_rate,
         q_doubling_bets=qe.doubling_bets if qe.doubling_bets is not None else 0.0,
         q_evidence_quality=evidence_quality,
+        q_has_real_odds=has_real_odds,
+        qt_has_real_odds=has_total_odds,
         component_fip=round(comp_fip, 4),
         component_bullpen=round(comp_bp, 4),
         component_offense=round(comp_off, 4),

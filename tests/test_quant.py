@@ -58,8 +58,17 @@ class TestShin:
 
 
 class TestShrinkage:
-    def test_full_reliability_keeps_model(self):
-        assert shrink_to_market(0.60, 0.50, 1.0) == pytest.approx(0.60, abs=1e-6)
+    def test_full_reliability_capped_at_max_shrink_weight(self):
+        # _MAX_SHRINK_WEIGHT=0.75 means market always gets ≥25% weight.
+        # At reliability=1.0, the result should be 75% model + 25% market,
+        # NOT pure model. This is the intended behavior after the cap was added.
+        result = shrink_to_market(0.60, 0.50, 1.0)
+        pure_model = shrink_to_market(0.60, 0.50, 0.75)  # 75% weight reference
+        assert result == pytest.approx(pure_model, abs=1e-6), (
+            "reliability=1.0 should behave identically to reliability=0.75 due to cap"
+        )
+        # Result should be between market and model, but not equal to model
+        assert 0.50 < result < 0.60
 
     def test_zero_reliability_becomes_market(self):
         assert shrink_to_market(0.60, 0.50, 0.0) == pytest.approx(0.50, abs=1e-6)
