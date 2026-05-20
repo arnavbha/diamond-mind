@@ -433,7 +433,7 @@ def _ensure_game_log_player(
             VALUES (:id, :full_name, :primary_position, :team_id)
             ON CONFLICT (id) DO UPDATE
               SET full_name = CASE
-                    WHEN players.full_name IS NULL OR players.full_name = 'Player ' || players.id::text
+                    WHEN players.full_name IS NULL OR players.full_name = 'Player ' || CAST(players.id AS TEXT)
                     THEN EXCLUDED.full_name
                     ELSE players.full_name
                   END,
