@@ -1,22 +1,28 @@
 name: Post-Game Settlement
 
-# Settles tracker bets once game scores are Final.
+# Polls today's games from first pitch until every game is Final,
+# then does one trailing settle to catch any MLB Stats API lag.
 #
-# Strategy — two windows to cover all MLB time zones:
+# Lifecycle:
 #
-#   Run 1  4:30 PM ET (20:30 UTC)  Day games done; polls until evening slate
-#                                   finishes or 5.5 h elapses (~10 PM ET cap).
-#   Run 2  2:00 AM ET (06:00 UTC)  Late West Coast games done by 1:30 AM ET;
-#                                   quick settle + one trailing check.
+#   1. Triggered automatically when Daily Pregame Ingestion succeeds.
+#   2. Fetches today's game schedule — finds the first game start time.
+#   3. Sleeps until first game start (skip if already past).
+#   4. Polls every POLL_MINS, settling any newly-Final games each pass.
+#   5. When live count hits 0: waits TRAIL_MINS, settles once more, exits.
+#   6. If the 6-hour GitHub Actions hard limit would be hit before all
+#      games finish (late West Coast slates), the job exits gracefully
+#      and the 2 AM ET safety cron picks up the rest.
 #
-# Each run calls /tracker/auto-settle (idempotent — only touches Final games).
-# After all games on the slate are terminal it waits TRAIL_MINS then settles
-# once more to catch any status lag from the MLB Stats API.
+# Cron safety net (2:00 AM ET = 06:00 UTC): runs a short poll loop
+# for any games that outlasted the primary job window.
 
 on:
+  workflow_run:
+    workflows: ["Daily Pregame Ingestion"]
+    types: [completed]
   schedule:
-    - cron: "30 20 * * *"   # 4:30 PM ET — evening window
-    - cron: "0  6  * * *"   # 2:00 AM ET — late-game safety net
+    - cron: "0 6 * * *"    # 2:00 AM ET safety net for late West Coast games
   workflow_dispatch:
     inputs:
       game_date:
@@ -25,15 +31,22 @@ on:
         default: ""
 
 env:
-  API_BASE: https://diamond-mind-api.onrender.com
-  POLL_INTERVAL: 1800      # 30 minutes between settlement calls
-  TRAIL_MINS: 30           # extra wait after last game goes Final
-  MAX_POLLS: 11            # 11 × 30 min = 5.5 h hard cap per run
+  API_BASE:    https://diamond-mind-api.onrender.com
+  POLL_MINS:   30     # minutes between settlement passes
+  TRAIL_MINS:  30     # extra wait after last game goes Final
+  # Safety cap: leave 10 min before GitHub's 6-hour wall (350 min usable)
+  MAX_RUNTIME: 350
 
 jobs:
   settle:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # 6-hour GitHub Actions hard limit
+    timeout-minutes: 360
+
+    # For workflow_run triggers: only proceed if ingestion succeeded.
+    # For cron/manual triggers: always run.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Determine game date (ET)
@@ -48,18 +61,73 @@ jobs:
       - name: Wake API if sleeping
         run: |
           for i in 1 2 3; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "${{ env.API_BASE }}/health")
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+              "${{ env.API_BASE }}/health" 2>/dev/null)
             [ "$status" = "200" ] && echo "API healthy." && exit 0
-            echo "  Attempt $i: HTTP $status — waiting 15s…"
-            sleep 15
+            echo "  Attempt $i: HTTP ${status:-timeout} — waiting 20s…"
+            sleep 20
           done
           echo "API not responding — continuing anyway."
 
-      - name: Poll until all games Final, then trail
+      - name: Sleep until first game starts
+        if: github.event_name == 'workflow_run'
+        env:
+          GAME_DATE: ${{ steps.date.outputs.game_date }}
+        run: |
+          # Fetch today's game schedule and find the earliest game_time_utc.
+          FIRST_START=$(curl -s --max-time 30 \
+            "${{ env.API_BASE }}/games?game_date=${GAME_DATE}" \
+            | python3 - <<'PYEOF'
+          import json, sys
+          from datetime import datetime, timezone
+          try:
+              games = json.load(sys.stdin)
+              times = [g["game_time_utc"] for g in games if g.get("game_time_utc")]
+              if times:
+                  print(min(times))
+              else:
+                  print("")
+          except Exception as e:
+              print("", file=sys.stdout)
+              print(f"Error: {e}", file=sys.stderr)
+          PYEOF
+          )
+
+          if [ -z "$FIRST_START" ]; then
+            echo "No game times found — starting poll loop immediately."
+            exit 0
+          fi
+
+          echo "First game starts: $FIRST_START"
+
+          NOW_EPOCH=$(date -u +%s)
+          START_EPOCH=$(date -u -d "$FIRST_START" +%s 2>/dev/null \
+                        || python3 -c "
+          from datetime import datetime, timezone
+          import sys
+          s = '$FIRST_START'
+          # Handle both 'Z' suffix and '+00:00'
+          s = s.replace('Z','+00:00')
+          print(int(datetime.fromisoformat(s).timestamp()))
+          ")
+
+          SLEEP_SECS=$(( START_EPOCH - NOW_EPOCH ))
+
+          if [ "$SLEEP_SECS" -le 0 ]; then
+            echo "First game already started — beginning poll loop now."
+          else
+            echo "Sleeping ${SLEEP_SECS}s until first pitch…"
+            echo "($(( SLEEP_SECS / 60 )) min)"
+            sleep "$SLEEP_SECS"
+            echo "First pitch reached — starting poll loop."
+          fi
+
+      - name: Poll → settle → repeat until all Final
         env:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           GAME_DATE:   ${{ steps.date.outputs.game_date }}
         run: |
+          # ── helpers ──────────────────────────────────────────────────────
           settle() {
             curl -s -X POST \
               -H "X-Admin-Token: ${ADMIN_TOKEN}" \
@@ -67,62 +135,86 @@ jobs:
               "${API_BASE}/tracker/auto-settle?game_date=${GAME_DATE}"
           }
 
-          # Returns: number of games that are NOT yet in a terminal status.
-          # Terminal = status contains "Final", "Game Over", or "Completed Early".
           count_live() {
+            # Returns integer: games NOT yet in a terminal status.
             curl -s --max-time 30 \
               "${API_BASE}/games?game_date=${GAME_DATE}" \
             | python3 - <<'PYEOF'
           import json, sys
+          TERMINAL = ("Final", "Game Over", "Completed Early")
           try:
               games = json.load(sys.stdin)
-              terminal = ("Final", "Game Over", "Completed Early")
+              if not isinstance(games, list):
+                  print(0); sys.exit()
               live = [g for g in games
-                      if not any(t in (g.get("status") or "") for t in terminal)]
+                      if not any(t in (g.get("status") or "") for t in TERMINAL)]
               print(len(live))
           except Exception as e:
-              print("ERR", e, file=sys.stderr)
               print(0)
+              print(f"count_live error: {e}", file=sys.stderr)
           PYEOF
           }
 
-          POLL=0
-          ALL_DONE=false
+          summarise_settle() {
+            echo "$1" | python3 - <<'PYEOF'
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+              settled = d.get("settled", 0)
+              skipped = d.get("skipped_not_final", 0)
+              bets = d.get("bets", [])
+              print(f"  settled={settled}  still_pending={skipped}")
+              for b in bets:
+                  sign = "+" if b.get("units_returned", 0) >= 0 else ""
+                  print(f"    #{b['bet_id']} {b['game']} {b['market']} {b['selection']}"
+                        f" → {b['result']} ({b['score']}) {sign}{b.get('units_returned',0):.2f}u")
+          except:
+              print("  (could not parse response)")
+          PYEOF
+          }
 
-          while [ $POLL -lt ${{ env.MAX_POLLS }} ]; do
-            POLL=$((POLL + 1))
+          # ── poll loop ────────────────────────────────────────────────────
+          JOB_START=$(date +%s)
+          PASS=0
+
+          while true; do
+            PASS=$(( PASS + 1 ))
+            NOW=$(date +%s)
+            ELAPSED_MIN=$(( (NOW - JOB_START) / 60 ))
+
             echo ""
-            echo "=== Poll $POLL / ${{ env.MAX_POLLS }} — $(TZ=America/New_York date '+%Y-%m-%d %H:%M ET') ==="
+            echo "=== Pass ${PASS} — $(TZ=America/New_York date '+%H:%M ET') (+${ELAPSED_MIN} min) ==="
 
-            # Settle whatever is Final right now
             RESULT=$(settle)
-            SETTLED=$(echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('settled',0))" 2>/dev/null || echo 0)
-            echo "  Settled this pass: $SETTLED"
+            summarise_settle "$RESULT"
 
-            # Check how many games are still live
             LIVE=$(count_live)
-            echo "  Games still in progress: $LIVE"
+            echo "  Games still live: ${LIVE}"
 
+            # ── all done ─────────────────────────────────────────────────
             if [ "$LIVE" = "0" ]; then
-              echo "  All games terminal. Waiting ${{ env.TRAIL_MINS }} min for trailing status updates…"
+              echo ""
+              echo "All games terminal. Waiting ${{ env.TRAIL_MINS }} min for any MLB Stats API lag…"
               sleep $(( ${{ env.TRAIL_MINS }} * 60 ))
 
-              echo "  Final trailing settle…"
+              echo ""
+              echo "=== Trailing settle — $(TZ=America/New_York date '+%H:%M ET') ==="
               FINAL=$(settle)
-              FINAL_SETTLED=$(echo "$FINAL" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('settled',0))" 2>/dev/null || echo 0)
-              echo "  Trailing settle caught: $FINAL_SETTLED additional bet(s)"
-              ALL_DONE=true
-              break
+              summarise_settle "$FINAL"
+              echo "Settlement complete for ${GAME_DATE}."
+              exit 0
             fi
 
-            echo "  ${LIVE} game(s) still live — sleeping ${{ env.POLL_INTERVAL }}s…"
-            sleep ${{ env.POLL_INTERVAL }}
-          done
+            # ── safety cap ───────────────────────────────────────────────
+            REMAINING=$(( ${{ env.MAX_RUNTIME }} - ELAPSED_MIN ))
+            NEXT_COST=$(( ${{ env.POLL_MINS }} ))
+            if [ "$REMAINING" -lt "$NEXT_COST" ]; then
+              echo ""
+              echo "Approaching runtime cap with ${LIVE} game(s) still live."
+              echo "Deferring to the 2:00 AM ET safety-net run."
+              exit 0
+            fi
 
-          if [ "$ALL_DONE" = "true" ]; then
-            echo ""
-            echo "Settlement complete for ${GAME_DATE}."
-          else
-            echo ""
-            echo "Reached poll cap with ${LIVE} game(s) still live — next scheduled run will catch them."
-          fi
+            echo "  Sleeping ${{ env.POLL_MINS }} min…"
+            sleep $(( ${{ env.POLL_MINS }} * 60 ))
+          done
