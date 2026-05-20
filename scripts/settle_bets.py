@@ -132,7 +132,9 @@ def settle_range(
             skipped_unknown += 1
             continue
 
-        if "Final" not in game.status:
+        # MLB terminal statuses: "Final", "Game Over", "Completed Early" (rain/mercy)
+        _TERMINAL = ("Final", "Game Over", "Completed Early")
+        if not any(t in game.status for t in _TERMINAL):
             print(
                 f"  SKIP  bet #{bet.id} ({bet.game_date} "
                 f"{bet.away_team_abbr}@{bet.home_team_abbr} {bet.market}): "

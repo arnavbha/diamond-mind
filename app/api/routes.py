@@ -398,6 +398,7 @@ def list_games(
         {
             "game_id": g.id,
             "game_date": g.game_date.isoformat(),
+            "game_time_utc": g.game_time_utc.isoformat() if g.game_time_utc else None,
             "status": g.status,
             "home_team_id": g.home_team_id,
             "home_team_abbr": home.abbr,
@@ -1669,7 +1670,9 @@ def auto_settle(
 
     for bet in unsettled:
         game = games_by_id.get(bet.game_id)
-        if game is None or "Final" not in game.status:
+        # MLB terminal statuses: "Final", "Game Over", "Completed Early" (rain/mercy)
+        _TERMINAL = ("Final", "Game Over", "Completed Early")
+        if game is None or not any(t in game.status for t in _TERMINAL):
             skipped_not_final += 1
             continue
 
