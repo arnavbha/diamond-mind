@@ -1423,6 +1423,36 @@ def bulk_create_odds_snapshots(
     }
 
 
+@app.post("/admin/refresh-slate", tags=["admin"])
+def refresh_slate(
+    game_date: date = Query(..., description="YYYY-MM-DD — slate date to refresh"),
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Refresh only the schedule/weather rows for a slate.
+
+    This is intentionally much smaller than the full pregame ingestion job. It
+    is useful when the remote DB needs today's game rows before a manual odds
+    fill, but a long-running Render background ingestion job is unreliable.
+    """
+    from app.ingestion.mlb_stats_api import MLBStatsClient, ingest_schedule
+    from scripts.run_pregame_update import _ingest_odds_and_weather
+
+    with MLBStatsClient() as client:
+        game_ids = ingest_schedule(db, client, game_date, game_type="R")
+
+    games = db.execute(select(Game).where(Game.game_date == game_date)).scalars().all()
+    _ingest_odds_and_weather(db, games, game_date)
+    db.commit()
+    evicted = _cache_invalidate_all()
+    return {
+        "date": game_date.isoformat(),
+        "games_upserted": len(game_ids),
+        "games_for_date": len(games),
+        "cache_evicted": evicted,
+    }
+
+
 @app.get("/tracker/bets", tags=["tracker"])
 def list_bets(
     date_from: Optional[date] = Query(None),
