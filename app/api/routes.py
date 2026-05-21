@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session
 
@@ -1327,6 +1327,21 @@ class BetSettleBody(_BaseModel):
     units_returned: Optional[float] = None
 
 
+class OddsSnapshotCreateBody(_BaseModel):
+    game_id: int
+    bookmaker: str = "draftkings"
+    market: str                         # "moneyline" | "total"
+    selection: str                      # lower-case team name, "over", or "under"
+    american_odds: int
+    line: Optional[float] = None
+    captured_at: Optional[datetime] = None
+
+
+class OddsSnapshotBulkBody(_BaseModel):
+    snapshots: List[OddsSnapshotCreateBody]
+    replace_bookmaker: Optional[str] = None
+
+
 def _bet_to_dict(b: BetRecord) -> dict:
     return {
         "id": b.id,
@@ -1344,6 +1359,67 @@ def _bet_to_dict(b: BetRecord) -> dict:
         "total_line": b.total_line,
         "projected_total": b.projected_total,
         "created_at": b.created_at.isoformat() if b.created_at else None,
+    }
+
+
+@app.post("/admin/odds-snapshots/bulk", tags=["admin"])
+def bulk_create_odds_snapshots(
+    body: OddsSnapshotBulkBody,
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Append manually sourced odds snapshots.
+
+    Set replace_bookmaker to first delete existing rows for the submitted
+    games/bookmaker. This is intended for emergency manual market fills when an
+    upstream odds provider is unavailable.
+    """
+    from app.models.odds import OddsSnapshotRow
+
+    if not body.snapshots:
+        raise HTTPException(400, "snapshots must not be empty")
+
+    game_ids = sorted({snap.game_id for snap in body.snapshots})
+    existing_game_ids = set(
+        db.execute(select(Game.id).where(Game.id.in_(game_ids))).scalars().all()
+    )
+    missing = [game_id for game_id in game_ids if game_id not in existing_game_ids]
+    if missing:
+        raise HTTPException(404, f"Unknown game_id(s): {missing}")
+
+    if body.replace_bookmaker:
+        db.execute(
+            delete(OddsSnapshotRow).where(
+                OddsSnapshotRow.game_id.in_(game_ids),
+                OddsSnapshotRow.bookmaker == body.replace_bookmaker,
+            )
+        )
+
+    now = datetime.utcnow()
+    rows = []
+    for snap in body.snapshots:
+        if snap.market not in {"moneyline", "total"}:
+            raise HTTPException(400, f"Unsupported market: {snap.market}")
+        rows.append(
+            OddsSnapshotRow(
+                game_id=snap.game_id,
+                bookmaker=snap.bookmaker,
+                market=snap.market,
+                selection=snap.selection.lower(),
+                line=snap.line,
+                american_odds=snap.american_odds,
+                captured_at=snap.captured_at or now,
+            )
+        )
+
+    db.add_all(rows)
+    db.commit()
+    evicted = _cache_invalidate_all()
+    return {
+        "inserted": len(rows),
+        "games": game_ids,
+        "replace_bookmaker": body.replace_bookmaker,
+        "cache_evicted": evicted,
     }
 
 
