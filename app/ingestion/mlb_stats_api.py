@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Optional
 
 import httpx
@@ -108,6 +108,9 @@ class _ScheduledGame:
     home_probable_pitcher_name: Optional[str]
     away_probable_pitcher_id: Optional[int]
     away_probable_pitcher_name: Optional[str]
+    home_score: Optional[int]
+    away_score: Optional[int]
+    game_time_utc: Optional[datetime]
 
 
 def parse_schedule(payload: dict) -> list[_ScheduledGame]:
@@ -127,6 +130,15 @@ def parse_schedule(payload: dict) -> list[_ScheduledGame]:
                 pp = side.get("probablePitcher") or {}
                 return pp.get("fullName")
 
+            # MLB Stats API returns gameDate as ISO-8601 UTC, e.g. "2026-05-20T17:05:00Z".
+            _raw_dt = g.get("gameDate")
+            _game_time_utc: Optional[datetime] = None
+            if _raw_dt:
+                try:
+                    _game_time_utc = datetime.fromisoformat(_raw_dt.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    _game_time_utc = None
+
             games.append(_ScheduledGame(
                 game_pk=g["gamePk"],
                 game_date=gdate,
@@ -140,6 +152,9 @@ def parse_schedule(payload: dict) -> list[_ScheduledGame]:
                 home_probable_pitcher_name=_probable_name(home),
                 away_probable_pitcher_id=_probable_id(away),
                 away_probable_pitcher_name=_probable_name(away),
+                home_score=home.get("score"),
+                away_score=away.get("score"),
+                game_time_utc=_game_time_utc,
             ))
     return games
 
@@ -468,15 +483,24 @@ def upsert_game(session: Session, g: _ScheduledGame) -> Game:
         g.away_probable_pitcher_name,
         g.away_team_id,
     )
+    _TERMINAL = ("Final", "Game Over", "Completed Early")
     existing = session.get(Game, g.game_pk)
     if existing:
         existing.status = g.status
         existing.home_probable_starter_id = g.home_probable_pitcher_id
         existing.away_probable_starter_id = g.away_probable_pitcher_id
+        if g.game_time_utc is not None:
+            existing.game_time_utc = g.game_time_utc
+        if any(t in g.status for t in _TERMINAL):
+            if g.home_score is not None:
+                existing.home_score = g.home_score
+            if g.away_score is not None:
+                existing.away_score = g.away_score
         return existing
     obj = Game(
         id=g.game_pk,
         game_date=g.game_date,
+        game_time_utc=g.game_time_utc,
         status=g.status,
         home_team_id=g.home_team_id,
         away_team_id=g.away_team_id,
@@ -682,6 +706,12 @@ def ingest_boxscore(
         session, game_pk, game_date, away_stats,
         runs_allowed=home_stats.runs, is_home=False,
     )
+
+    game = session.get(Game, game_pk)
+    if game:
+        game.home_score = home_stats.runs
+        game.away_score = away_stats.runs
+
     for b in batters:
         upsert_player_game_log(session, game_pk, game_date, b)
     for p in pitchers:

@@ -46,6 +46,7 @@ SCHEDULE_PAYLOAD = {
         "games": [
             {
                 "gamePk": 778001,
+                "gameDate": "2026-05-15T23:05:00Z",
                 "status": {"detailedState": "Scheduled"},
                 "doubleHeader": "N",
                 "gameNumber": 1,
@@ -230,6 +231,26 @@ def test_parse_schedule_missing_probable():
     assert g.away_probable_pitcher_id is None
 
 
+def test_parse_schedule_game_time_utc():
+    """game_time_utc parsed from MLB gameDate (ISO-8601 UTC) into tz-aware datetime."""
+    from datetime import datetime, timezone
+    games = parse_schedule(SCHEDULE_PAYLOAD)
+    g0 = games[0]
+    assert g0.game_time_utc == datetime(2026, 5, 15, 23, 5, 0, tzinfo=timezone.utc)
+    # Second game has no gameDate → None
+    assert games[1].game_time_utc is None
+
+
+def test_parse_schedule_game_time_utc_invalid_payload():
+    """Malformed gameDate strings degrade to None, not exceptions."""
+    payload = {"dates": [{"date": "2026-05-15", "games": [{
+        "gamePk": 1, "gameDate": "not-a-date",
+        "status": {"detailedState": "Scheduled"},
+        "teams": {"home": {"team": {"id": 1}}, "away": {"team": {"id": 2}}},
+    }]}]}
+    assert parse_schedule(payload)[0].game_time_utc is None
+
+
 def test_parse_teams():
     teams = parse_teams(TEAMS_PAYLOAD)
     assert len(teams) == 2
@@ -331,6 +352,11 @@ def test_ingest_schedule(db):
     g = db.get(Game, 778001)
     assert g.home_team_id == 143
     assert g.home_probable_starter_id == 554430
+    # game_time_utc carried through from MLB Stats API gameDate field.
+    # SQLite strips tzinfo so compare naive components (PostgreSQL keeps it).
+    from datetime import datetime
+    assert g.game_time_utc is not None
+    assert g.game_time_utc.replace(tzinfo=None) == datetime(2026, 5, 15, 23, 5, 0)
     assert db.get(Player, 554430).full_name == "Zack Wheeler"
     assert db.get(Player, 554430).primary_position == "P"
 
@@ -441,3 +467,121 @@ def test_ingest_boxscore_idempotent(db):
     from sqlalchemy import select
     assert len(db.execute(select(PitcherGameLog)).scalars().all()) == 2
     assert len(db.execute(select(TeamGameLog)).scalars().all()) == 2
+
+
+# ---------------------------------------------------------------------------
+# Score write-back tests
+# ---------------------------------------------------------------------------
+
+def test_ingest_boxscore_writes_game_scores(db):
+    """ingest_boxscore() must update Game.home_score / Game.away_score."""
+    db.add(Team(id=143, abbr="PHI", name="Phillies"))
+    db.add(Team(id=121, abbr="NYM", name="Mets"))
+    db.add(Player(id=554430, full_name="Zack Wheeler", primary_position="P"))
+    db.add(Player(id=547180, full_name="Bryce Harper", primary_position="1B"))
+    db.add(Player(id=592789, full_name="Sean Manaea", primary_position="P"))
+    db.add(Game(
+        id=778001, game_date=date(2026, 5, 15), status="Final",
+        home_team_id=143, away_team_id=121, venue="Citizens Bank Park",
+        is_doubleheader=False, game_number=1,
+    ))
+    db.flush()
+
+    class _FakeClient:
+        def fetch_boxscore(self, pk):
+            return BOXSCORE_PAYLOAD
+
+    ingest_boxscore(db, _FakeClient(), 778001, date(2026, 5, 15))
+
+    game = db.get(Game, 778001)
+    assert game.home_score == 5   # PHI runs from BOXSCORE_PAYLOAD
+    assert game.away_score == 2   # NYM runs from BOXSCORE_PAYLOAD
+
+
+SCHEDULE_PAYLOAD_WITH_SCORES = {
+    "dates": [{
+        "date": "2026-05-15",
+        "games": [{
+            "gamePk": 778003,
+            "status": {"detailedState": "Final"},
+            "doubleHeader": "N",
+            "gameNumber": 1,
+            "venue": {"name": "Citizens Bank Park"},
+            "teams": {
+                "home": {"team": {"id": 143}, "score": 7},
+                "away": {"team": {"id": 121}, "score": 3},
+            },
+        }],
+    }],
+}
+
+
+def test_upsert_game_writes_scores_from_schedule_for_terminal_game(db):
+    """upsert_game() must write home_score/away_score when the status is terminal
+    and the schedule payload includes scores."""
+    from app.ingestion.mlb_stats_api import upsert_game
+
+    db.add(Team(id=143, abbr="PHI", name="Phillies"))
+    db.add(Team(id=121, abbr="NYM", name="Mets"))
+    # First pass: create the game as Scheduled (no scores).
+    db.add(Game(
+        id=778003, game_date=date(2026, 5, 15), status="Scheduled",
+        home_team_id=143, away_team_id=121, venue="Citizens Bank Park",
+        is_doubleheader=False, game_number=1,
+    ))
+    db.flush()
+
+    # Second pass: schedule poll returns Final with scores.
+    scheduled = parse_schedule(SCHEDULE_PAYLOAD_WITH_SCORES)
+    assert len(scheduled) == 1
+    g = scheduled[0]
+    assert g.home_score == 7
+    assert g.away_score == 3
+
+    upsert_game(db, g)
+    db.flush()
+
+    game = db.get(Game, 778003)
+    assert game.status == "Final"
+    assert game.home_score == 7
+    assert game.away_score == 3
+
+
+def test_upsert_game_does_not_overwrite_scores_for_non_terminal_game(db):
+    """upsert_game() must NOT write scores when the status is not terminal."""
+    from app.ingestion.mlb_stats_api import upsert_game
+
+    db.add(Team(id=143, abbr="PHI", name="Phillies"))
+    db.add(Team(id=121, abbr="NYM", name="Mets"))
+    db.add(Game(
+        id=778004, game_date=date(2026, 5, 15), status="In Progress",
+        home_team_id=143, away_team_id=121, venue="Citizens Bank Park",
+        is_doubleheader=False, game_number=1,
+        home_score=None, away_score=None,
+    ))
+    db.flush()
+
+    # Schedule payload with a mid-game score but non-terminal status.
+    in_progress_payload = {
+        "dates": [{
+            "date": "2026-05-15",
+            "games": [{
+                "gamePk": 778004,
+                "status": {"detailedState": "In Progress"},
+                "doubleHeader": "N",
+                "gameNumber": 1,
+                "venue": {"name": "Citizens Bank Park"},
+                "teams": {
+                    "home": {"team": {"id": 143}, "score": 2},
+                    "away": {"team": {"id": 121}, "score": 1},
+                },
+            }],
+        }],
+    }
+    [g] = parse_schedule(in_progress_payload)
+    upsert_game(db, g)
+    db.flush()
+
+    game = db.get(Game, 778004)
+    assert game.home_score is None
+    assert game.away_score is None
