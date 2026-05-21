@@ -135,6 +135,46 @@ jobs:
             curl -s -o /dev/null --max-time 30 "${API_BASE}/health" || true
           }
 
+          # Fire a server-side pregame ingestion run to pull any new boxscores
+          # for today's Final games into Game.home_score / away_score. Without
+          # this, auto-settle has nothing fresh to read — bets stay PENDING
+          # forever waiting for stale scores.
+          # Returns 0 on success, non-zero on failure (we still settle anyway).
+          refresh_scores() {
+            local resp job_id status attempts
+            resp=$(curl -s -X POST \
+              -H "X-Admin-Token: ${ADMIN_TOKEN}" \
+              --max-time 60 \
+              "${API_BASE}/admin/run-ingestion?game_date=${GAME_DATE}")
+            job_id=$(echo "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id',''))" 2>/dev/null || echo "")
+            if [ -z "$job_id" ]; then
+              echo "  refresh_scores: couldn't start ingestion job (resp: $(echo "$resp" | head -c 200))"
+              return 1
+            fi
+            echo "  refresh_scores: ingestion job $job_id started, polling…"
+            # Poll up to 4 min (24 × 10s) for the job to finish.
+            attempts=0
+            while [ "$attempts" -lt 24 ]; do
+              sleep 10
+              attempts=$(( attempts + 1 ))
+              status=$(curl -s --max-time 30 \
+                "${API_BASE}/admin/ingestion-status/${job_id}" \
+                | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+              case "$status" in
+                done)
+                  echo "  refresh_scores: ingestion job $job_id finished (${attempts}0s)"
+                  return 0
+                  ;;
+                error)
+                  echo "  refresh_scores: ingestion job $job_id errored — continuing to settle anyway"
+                  return 1
+                  ;;
+              esac
+            done
+            echo "  refresh_scores: ingestion job $job_id still running after 240s — moving on"
+            return 1
+          }
+
           settle() {
             # Generous timeout: production auto-settle iterates every unsettled
             # bet for the date and commits. With ~90 bets + Render cold start
@@ -201,6 +241,10 @@ jobs:
             # eat the entire cold-start window.
             warm_api
 
+            # Pull fresh boxscores so any newly-Final games have their
+            # scores in Game.home_score / away_score before we settle.
+            refresh_scores || true
+
             RESULT=$(settle)
             summarise_settle "$RESULT"
 
@@ -218,6 +262,7 @@ jobs:
               echo ""
               echo "=== Trailing settle — $(TZ=America/New_York date '+%H:%M ET') ==="
               warm_api
+              refresh_scores || true
               FINAL=$(settle)
               summarise_settle "$FINAL"
               echo "Settlement complete for ${GAME_DATE}."
