@@ -32,8 +32,8 @@ on:
 
 env:
   API_BASE:    https://diamond-mind-api.onrender.com
-  POLL_MINS:   30     # minutes between settlement passes
-  TRAIL_MINS:  30     # extra wait after last game goes Final
+  POLL_MINS:   15     # minutes between settlement passes
+  TRAIL_MINS:  20     # extra wait after last game goes Final
   # Safety cap: leave 10 min before GitHub's 6-hour wall (350 min usable)
   MAX_RUNTIME: 350
 
