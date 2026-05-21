@@ -1,0 +1,84 @@
+name: Manual DraftKings Odds Fill
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_date:
+        description: "Game date to fill (YYYY-MM-DD)"
+        required: true
+        default: "2026-05-21"
+
+env:
+  API_BASE: https://diamond-mind-api.onrender.com
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Fill DraftKings odds snapshots
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          GAME_DATE: ${{ github.event.inputs.game_date }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GAME_DATE" != "2026-05-21" ]; then
+            echo "This one-off fill is only wired for 2026-05-21."
+            exit 1
+          fi
+
+          python3 - <<'PY' > /tmp/odds_payload.json
+          import json
+
+          lines = {
+              824274: {"away": "guardians", "home": "tigers", "away_ml": -101, "home_ml": -120, "total": 7.0, "over": -120, "under": -101},
+              823056: {"away": "pirates", "home": "cardinals", "away_ml": -120, "home_ml": -101, "total": 7.0, "over": -119, "under": -102},
+              822733: {"away": "mets", "home": "nationals", "away_ml": -112, "home_ml": -108, "total": 8.0, "over": -105, "under": -114},
+              823864: {"away": "braves", "home": "marlins", "away_ml": -143, "home_ml": 119, "total": 7.5, "over": -109, "under": -111},
+              823545: {"away": "blue jays", "home": "yankees", "away_ml": 123, "home_ml": -149, "total": 8.0, "over": -117, "under": -103},
+              824031: {"away": "athletics", "home": "angels", "away_ml": -109, "home_ml": -110, "total": 8.5, "over": -104, "under": -115},
+              825083: {"away": "rockies", "home": "d-backs", "away_ml": 169, "home_ml": -207, "total": 9.5, "over": 101, "under": -122},
+          }
+
+          snapshots = []
+          for game_id, line in lines.items():
+              snapshots.extend([
+                  {"game_id": game_id, "bookmaker": "draftkings", "market": "moneyline", "selection": line["away"], "american_odds": line["away_ml"]},
+                  {"game_id": game_id, "bookmaker": "draftkings", "market": "moneyline", "selection": line["home"], "american_odds": line["home_ml"]},
+                  {"game_id": game_id, "bookmaker": "draftkings", "market": "total", "selection": "over", "line": line["total"], "american_odds": line["over"]},
+                  {"game_id": game_id, "bookmaker": "draftkings", "market": "total", "selection": "under", "line": line["total"], "american_odds": line["under"]},
+              ])
+
+          print(json.dumps({"replace_bookmaker": "draftkings", "snapshots": snapshots}))
+          PY
+
+          for i in 1 2 3; do
+            curl -s -o /dev/null --max-time 30 "$API_BASE/health" || true
+            sleep 5
+          done
+
+          echo "Posting odds payload..."
+          curl -sS -X POST \
+            --max-time 60 \
+            -H "Content-Type: application/json" \
+            -H "X-Admin-Token: ${ADMIN_TOKEN}" \
+            --data @/tmp/odds_payload.json \
+            "$API_BASE/admin/odds-snapshots/bulk" | python3 -m json.tool
+
+          echo "Remote picks after fill:"
+          curl -sS --max-time 60 "$API_BASE/games/picks?game_date=${GAME_DATE}" > /tmp/remote_picks.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/remote_picks.json"))
+          print("count", len(data))
+          for x in data:
+              print(f"{x.get('away_team_abbr')} @ {x.get('home_team_abbr')}: {x.get('ml_tier')} {x.get('ml_lean')} total={x.get('total_tier')} {x.get('total_lean')} line={x.get('total_line')}")
+          PY
+
+          echo "Auto-tracking remote picks..."
+          curl -sS -X POST \
+            --max-time 60 \
+            -H "X-Admin-Token: ${ADMIN_TOKEN}" \
+            "$API_BASE/tracker/auto-track?game_date=${GAME_DATE}" | python3 -m json.tool
