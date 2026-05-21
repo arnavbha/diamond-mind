@@ -14,10 +14,10 @@ env:
 jobs:
   fill:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
 
     steps:
-      - name: Fill DraftKings odds snapshots
+      - name: Run ingestion then fill DraftKings odds snapshots
         env:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           GAME_DATE: ${{ github.event.inputs.game_date }}
@@ -28,6 +28,60 @@ jobs:
             echo "This one-off fill is only wired for 2026-05-21."
             exit 1
           fi
+
+          echo "Waking API..."
+          curl -sS --max-time 60 "$API_BASE/health" | python3 -m json.tool
+
+          echo "Checking remote slate before ingestion..."
+          game_count=$(curl -sS --max-time 60 "$API_BASE/games?game_date=${GAME_DATE}" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else 0)')
+          echo "remote games before ingestion: ${game_count}"
+
+          if [ "$game_count" != "7" ]; then
+            echo "Triggering remote ingestion..."
+            curl -sS -X POST \
+              --max-time 60 \
+              -H "X-Admin-Token: ${ADMIN_TOKEN}" \
+              "$API_BASE/admin/run-ingestion?game_date=${GAME_DATE}" > /tmp/ingestion_start.json
+            cat /tmp/ingestion_start.json | python3 -m json.tool
+
+            job_id=$(python3 -c 'import json; print(json.load(open("/tmp/ingestion_start.json")).get("job_id",""))')
+            if [ -z "$job_id" ]; then
+              echo "No ingestion job_id returned."
+              exit 1
+            fi
+
+            for i in $(seq 1 40); do
+              sleep 30
+              curl -sS --max-time 60 "$API_BASE/admin/ingestion-status/${job_id}?tail=8" > /tmp/ingestion_status.json
+              status=$(python3 -c 'import json; print(json.load(open("/tmp/ingestion_status.json")).get("status",""))')
+              last=$(python3 -c 'import json; d=json.load(open("/tmp/ingestion_status.json")); lines=d.get("log_tail",[]); print(lines[-1] if lines else "")')
+              echo "ingestion poll ${i}: status=${status} last=${last}"
+              if [ "$status" = "done" ]; then
+                break
+              fi
+              if [ "$status" = "error" ]; then
+                cat /tmp/ingestion_status.json | python3 -m json.tool
+                exit 1
+              fi
+              if [ "$i" = "40" ]; then
+                echo "Timed out waiting for ingestion."
+                cat /tmp/ingestion_status.json | python3 -m json.tool
+                exit 1
+              fi
+            done
+          fi
+
+          echo "Checking remote slate after ingestion..."
+          curl -sS --max-time 60 "$API_BASE/games?game_date=${GAME_DATE}" > /tmp/remote_games.json
+          python3 - <<'PY'
+          import json
+          games = json.load(open("/tmp/remote_games.json"))
+          print("games", len(games))
+          for g in games:
+              print(g.get("id"), g.get("away_team_abbr"), "@", g.get("home_team_abbr"), g.get("status"))
+          if len(games) != 7:
+              raise SystemExit("Expected 7 remote games before odds fill")
+          PY
 
           python3 - <<'PY' > /tmp/odds_payload.json
           import json
@@ -60,7 +114,7 @@ jobs:
           done
 
           echo "Posting odds payload..."
-          curl -sS -X POST \
+          curl -sSf -X POST \
             --max-time 60 \
             -H "Content-Type: application/json" \
             -H "X-Admin-Token: ${ADMIN_TOKEN}" \
