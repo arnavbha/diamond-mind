@@ -128,16 +128,28 @@ jobs:
           GAME_DATE:   ${{ steps.date.outputs.game_date }}
         run: |
           # ── helpers ──────────────────────────────────────────────────────
+          # Wake Render before any work — free tier spins down between requests
+          # and our auto-settle endpoint can take >30s cold. One warm /health
+          # call gives subsequent calls a fighting chance.
+          warm_api() {
+            curl -s -o /dev/null --max-time 30 "${API_BASE}/health" || true
+          }
+
           settle() {
+            # Generous timeout: production auto-settle iterates every unsettled
+            # bet for the date and commits. With ~90 bets + Render cold start
+            # this can take well over 30s.
             curl -s -X POST \
               -H "X-Admin-Token: ${ADMIN_TOKEN}" \
-              --max-time 30 \
+              --max-time 180 \
               "${API_BASE}/tracker/auto-settle?game_date=${GAME_DATE}"
           }
 
           count_live() {
             # Returns integer: games NOT yet in a terminal status.
-            curl -s --max-time 30 \
+            # Returns -1 on parse failure (treat as "unknown, keep polling")
+            # so a transient empty body never falsely concludes "all done".
+            curl -s --max-time 60 \
               "${API_BASE}/games?game_date=${GAME_DATE}" \
             | python3 - <<'PYEOF'
           import json, sys
@@ -145,12 +157,12 @@ jobs:
           try:
               games = json.load(sys.stdin)
               if not isinstance(games, list):
-                  print(0); sys.exit()
+                  print(-1); sys.exit()
               live = [g for g in games
                       if not any(t in (g.get("status") or "") for t in TERMINAL)]
               print(len(live))
           except Exception as e:
-              print(0)
+              print(-1)
               print(f"count_live error: {e}", file=sys.stderr)
           PYEOF
           }
@@ -185,6 +197,10 @@ jobs:
             echo ""
             echo "=== Pass ${PASS} — $(TZ=America/New_York date '+%H:%M ET') (+${ELAPSED_MIN} min) ==="
 
+            # Warm Render before the slow POST so the settle call doesn't
+            # eat the entire cold-start window.
+            warm_api
+
             RESULT=$(settle)
             summarise_settle "$RESULT"
 
@@ -192,6 +208,8 @@ jobs:
             echo "  Games still live: ${LIVE}"
 
             # ── all done ─────────────────────────────────────────────────
+            # Only exit on an explicit zero. -1 means count_live couldn't
+            # parse the response (Render hiccup / cold start) — keep polling.
             if [ "$LIVE" = "0" ]; then
               echo ""
               echo "All games terminal. Waiting ${{ env.TRAIL_MINS }} min for any MLB Stats API lag…"
@@ -199,10 +217,15 @@ jobs:
 
               echo ""
               echo "=== Trailing settle — $(TZ=America/New_York date '+%H:%M ET') ==="
+              warm_api
               FINAL=$(settle)
               summarise_settle "$FINAL"
               echo "Settlement complete for ${GAME_DATE}."
               exit 0
+            fi
+
+            if [ "$LIVE" = "-1" ]; then
+              echo "  count_live could not parse response — assuming games still live and continuing."
             fi
 
             # ── safety cap ───────────────────────────────────────────────
