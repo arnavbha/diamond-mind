@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -1618,7 +1618,7 @@ def auto_track(
 
     from app.models.odds import OddsSnapshotRow
 
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
 
     for game, home_t, away_t in rows:
         # Skip games that have already started — picks placed after first pitch
