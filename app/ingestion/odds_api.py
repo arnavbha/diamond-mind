@@ -2,11 +2,21 @@
 
 Returns List[OddsSnapshot] for a given game.
 Stubs gracefully when ODDS_API_KEY is missing — never fabricates data.
+
+Supports multiple comma-separated keys in ODDS_API_KEY so we can rotate
+through them as each free-tier quota (500 req/mo) gets exhausted:
+
+    ODDS_API_KEY=keyA,keyB,keyC
+
+The first key with remaining quota for the current call is used. Keys are
+tried in order; a 401/422 (auth/usage_quota) or empty response fails over
+to the next key.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -16,20 +26,59 @@ from app.config import get_settings
 settings = get_settings()
 from app.contracts import OddsSnapshot
 
+log = logging.getLogger(__name__)
+
 _BASE = "https://api.the-odds-api.com/v4"
 _SPORT = "baseball_mlb"
 
+# Module-level cache of which key index last succeeded — start there next
+# call so we don't waste a request retrying a known-dead key every time.
+_LAST_GOOD_KEY_IDX: int = 0
+
+
+def _keys() -> list[str]:
+    raw = settings.odds_api_key or ""
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
 
 def _get(path: str, params: dict) -> Optional[list]:
-    if not settings.odds_api_key:
+    """Try each configured key until one returns data. None if all fail."""
+    global _LAST_GOOD_KEY_IDX
+    keys = _keys()
+    if not keys:
         return None
+
     query = "&".join(f"{k}={v}" for k, v in params.items())
-    url = f"{_BASE}{path}?{query}&apiKey={settings.odds_api_key}"
-    try:
-        with urllib.request.urlopen(url, timeout=10) as r:
-            return json.loads(r.read())
-    except (urllib.error.URLError, json.JSONDecodeError):
-        return None
+
+    # Try last-good key first, then the rest in declared order.
+    order = [_LAST_GOOD_KEY_IDX] + [i for i in range(len(keys)) if i != _LAST_GOOD_KEY_IDX]
+    for idx in order:
+        if idx >= len(keys):
+            continue
+        key = keys[idx]
+        url = f"{_BASE}{path}?{query}&apiKey={key}"
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                data = json.loads(r.read())
+                # The Odds API returns [] when out of quota on some endpoints
+                # and a {"message": "..."} dict on others. Treat empty list as
+                # "this key has nothing useful for us right now" — try next key.
+                if isinstance(data, list) and len(data) == 0:
+                    log.warning("odds_api key #%d returned empty list — trying next key.", idx)
+                    continue
+                if isinstance(data, dict) and "message" in data:
+                    log.warning("odds_api key #%d error: %s — trying next key.", idx, data.get("message"))
+                    continue
+                _LAST_GOOD_KEY_IDX = idx
+                return data
+        except urllib.error.HTTPError as exc:
+            # 401 invalid, 422 quota exceeded — both warrant fail-over.
+            log.warning("odds_api key #%d HTTP %s — trying next key.", idx, exc.code)
+            continue
+        except (urllib.error.URLError, json.JSONDecodeError) as exc:
+            log.warning("odds_api key #%d transport error %s — trying next key.", idx, exc)
+            continue
+    return None
 
 
 def fetch_odds(game_id: int, event_id: str) -> List[OddsSnapshot]:
@@ -104,7 +153,7 @@ def match_event_id(events: list, home_abbr: str, away_abbr: str) -> "Optional[st
 
 
 def is_available() -> bool:
-    return bool(settings.odds_api_key)
+    return len(_keys()) > 0
 
 
 def _normalize_market(key: str) -> str:
