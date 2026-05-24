@@ -59,7 +59,10 @@ jobs:
           fi
 
       - name: Wake API if sleeping
+        # set +e: curl exit 28 (timeout) on Render cold start would otherwise
+        # trip `bash -e` and kill the whole job before we can fall through.
         run: |
+          set +e
           for i in 1 2 3; do
             status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
               "${{ env.API_BASE }}/health" 2>/dev/null)
@@ -68,6 +71,7 @@ jobs:
             sleep 20
           done
           echo "API not responding — continuing anyway."
+          exit 0
 
       - name: Sleep until first game starts
         if: github.event_name == 'workflow_run'

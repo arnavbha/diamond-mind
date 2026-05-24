@@ -1615,6 +1615,7 @@ def auto_track(
 
     created = 0
     skipped = 0
+    skipped_started: list[dict] = []  # detailed log of picks lost to first-pitch gate
 
     from app.models.odds import OddsSnapshotRow
 
@@ -1622,9 +1623,24 @@ def auto_track(
 
     for game, home_t, away_t in rows:
         # Skip games that have already started — picks placed after first pitch
-        # are not actionable and should not be tracked.
+        # are not actionable and should not be tracked. Log explicitly so
+        # operators can see WHICH actionable picks were dropped (not just count).
         if game.game_time_utc and game.game_time_utc <= now_utc:
             skipped += 1
+            # Only flag this as "lost" if the game had a real pick available.
+            try:
+                a = _build_analysis_cached(game.id, game_date, db) or {}
+                if a.get("ml_tier") in _ACTIONABLE_TIERS or a.get("total_tier") in _ACTIONABLE_TIERS:
+                    skipped_started.append({
+                        "game_id": game.id,
+                        "matchup": f"{away_t.abbr}@{home_t.abbr}",
+                        "game_time_utc": game.game_time_utc.isoformat(),
+                        "ml_tier": a.get("ml_tier"),
+                        "total_tier": a.get("total_tier"),
+                        "minutes_late": int((now_utc - game.game_time_utc).total_seconds() / 60),
+                    })
+            except Exception:
+                pass
             continue
 
         analysis = _build_analysis_cached(game.id, game_date, db)
@@ -1735,7 +1751,12 @@ def auto_track(
                 skipped += 1
 
     db.commit()
-    return {"created": created, "skipped": skipped, "date": game_date.isoformat()}
+    return {
+        "created": created,
+        "skipped": skipped,
+        "skipped_started": skipped_started,
+        "date": game_date.isoformat(),
+    }
 
 
 @app.post("/tracker/auto-settle", tags=["tracker"])

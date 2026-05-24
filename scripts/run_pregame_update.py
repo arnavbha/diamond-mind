@@ -337,6 +337,21 @@ def _auto_track_picks(session, as_of: date) -> None:
                 "Auto-track: +%d new picks logged, %d already tracked.",
                 data.get("created", 0), data.get("skipped", 0),
             )
+            # Surface actionable picks dropped because game already started.
+            # This is the silent-loss case caused by cron lag.
+            lost = data.get("skipped_started") or []
+            if lost:
+                log.warning(
+                    "Auto-track: WARNING — %d actionable pick(s) DROPPED — game already started:",
+                    len(lost),
+                )
+                for p in lost:
+                    log.warning(
+                        "  [x] %s (game %s) — ML:%s TOT:%s — %dm past first pitch",
+                        p.get("matchup"), p.get("game_id"),
+                        p.get("ml_tier") or "-", p.get("total_tier") or "-",
+                        p.get("minutes_late", 0),
+                    )
         else:
             log.warning("Auto-track call returned %s: %s", resp.status_code, resp.text[:200])
     except Exception as exc:

@@ -2,9 +2,14 @@ name: Daily Pregame Ingestion
 
 on:
   schedule:
-    # 9:00 AM ET = 13:00 UTC during EDT (Apr–Oct, all of MLB season)
-    # Yesterday's final scores are in by midnight; probable pitchers confirmed
-    # by ~9 AM; gives 3+ hours buffer before the earliest 12:05 PM ET games.
+    # GitHub Actions cron on free tier is best-effort — observed delays of
+    # 1.5–4 hours from scheduled time. To beat that, fire THREE times:
+    # 11:00 UTC (7 AM ET), 12:00 UTC (8 AM ET), 13:00 UTC (9 AM ET).
+    # The /admin/run-ingestion endpoint is idempotent — first successful run
+    # populates the DB; subsequent runs become no-ops on already-ingested data.
+    # Buys us roughly 6 hours of slack before the earliest 12:05 PM ET games.
+    - cron: "0 11 * * *"
+    - cron: "0 12 * * *"
     - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
