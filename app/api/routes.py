@@ -1906,7 +1906,14 @@ def trigger_ingestion(
     Idempotent: if a job is already running for the same date, returns its job_id.
     """
     if game_date is None:
-        game_date = date.today()
+        # Default to "today" in America/New_York — Render runs UTC and a UTC
+        # default would roll over to tomorrow's date during the 8 PM ET – 8 PM
+        # PT slate, causing the cron-driven ingest to target the wrong slate.
+        try:
+            from zoneinfo import ZoneInfo
+            game_date = datetime.now(ZoneInfo("America/New_York")).date()
+        except Exception:
+            game_date = date.today()
 
     with _INGESTION_LOCK:
         # Prevent double-starts for the same date if already in flight
