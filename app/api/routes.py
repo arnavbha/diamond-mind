@@ -1593,6 +1593,7 @@ def _kelly_units(kelly_sized: float) -> float:
 @app.post("/tracker/auto-track", tags=["tracker"])
 def auto_track(
     game_date: date = Query(..., description="YYYY-MM-DD"),
+    allow_started: bool = Query(default=False, description="If true, also track picks for games already started (manual backfill only)."),
     db: Session = Depends(_get_db),
     _: None = Depends(_require_admin),
 ):
@@ -1625,7 +1626,8 @@ def auto_track(
         # Skip games that have already started — picks placed after first pitch
         # are not actionable and should not be tracked. Log explicitly so
         # operators can see WHICH actionable picks were dropped (not just count).
-        if game.game_time_utc and game.game_time_utc <= now_utc:
+        # Bypass the gate when allow_started=true (admin manual backfill).
+        if game.game_time_utc and game.game_time_utc <= now_utc and not allow_started:
             skipped += 1
             # Only flag this as "lost" if the game had a real pick available.
             try:
