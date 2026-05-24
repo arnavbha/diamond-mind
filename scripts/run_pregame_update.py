@@ -36,7 +36,8 @@ from app.ingestion.mlb_stats_api import (
     ingest_schedule,
     ingest_teams,
 )
-from app.ingestion.odds_api import fetch_events, fetch_odds, match_event_id, is_available as odds_available
+from app.ingestion import odds_api as _paid_odds
+from app.ingestion import espn_odds as _free_odds
 from app.ingestion.venue_coords import get_coords
 from app.ingestion.weather_api import fetch_weather
 from app.models.entities import Player, Team
@@ -138,12 +139,35 @@ def _upsert_starter(session, w) -> None:
             setattr(existing, k, v)
 
 
-def _ingest_odds_and_weather(session, today_games: list, as_of: date) -> None:
+def _pick_odds_provider():
+    """Choose the odds provider for this run.
+
+    Try the paid Odds API first (better breadth — multiple bookmakers). If the
+    key is missing OR the quota probe returns empty, fall back to ESPN's public
+    feed (DraftKings, no key, no quota — battle-tested across fantasy sites).
+    """
+    if _paid_odds.is_available():
+        # Cheap probe: if today's events list isn't empty, the key has budget.
+        # The Odds API events endpoint costs 1 request and counts against quota.
+        from datetime import date as _date
+        probe = _paid_odds.fetch_events(_date.today())
+        if probe:
+            log.info("Odds provider: the-odds-api (paid).")
+            return _paid_odds
+        log.warning("the-odds-api returned empty events — quota likely exhausted, falling back to ESPN.")
+    else:
+        log.info("ODDS_API_KEY not set — using ESPN public feed.")
+    return _free_odds
+
+
+def _ingest_odds_and_weather(session, today_games: list, as_of: date, provider=None) -> None:
     """Fetch odds and weather for today's games and persist snapshots."""
     from datetime import datetime, timezone
-    has_odds = odds_available()
-    if not has_odds:
-        log.info("ODDS_API_KEY not set — skipping odds fetch.")
+    if provider is None:
+        provider = _pick_odds_provider()
+
+    total_snapshots = 0
+    games_with_odds = 0
 
     for game in today_games:
         game_id = game.id
@@ -166,9 +190,21 @@ def _ingest_odds_and_weather(session, today_games: list, as_of: date) -> None:
                 captured_at=weather.captured_at,
             ))
 
-        # Odds — resolve event_id via Odds API events list, then fetch
-        if has_odds and game.odds_event_id:
-            snapshots = fetch_odds(game_id, game.odds_event_id)
+        # Odds — resolve event_id, then fetch via active provider
+        if game.odds_event_id:
+            home_team = session.get(Team, game.home_team_id)
+            away_team = session.get(Team, game.away_team_id)
+            # ESPN needs team display-names for selection field; Odds API ignores extras.
+            home_name = home_team.name if home_team else ""
+            away_name = away_team.name if away_team else ""
+            try:
+                snapshots = provider.fetch_odds(
+                    game_id, game.odds_event_id,
+                    home_team_name=home_name, away_team_name=away_name,
+                )
+            except TypeError:
+                # Old-signature paid provider — fall back.
+                snapshots = provider.fetch_odds(game_id, game.odds_event_id)
             for snap in snapshots:
                 session.add(OddsSnapshotRow(
                     game_id=game_id,
@@ -180,35 +216,53 @@ def _ingest_odds_and_weather(session, today_games: list, as_of: date) -> None:
                     captured_at=snap.captured_at,
                 ))
             if snapshots:
+                games_with_odds += 1
+                total_snapshots += len(snapshots)
                 log.info("Saved %d odds snapshots for game %d.", len(snapshots), game_id)
 
     session.flush()
     log.info("Weather snapshots saved for %d games.", len(today_games))
 
+    # LOUD-FAIL: if we have games but zero odds, scream so it surfaces in CI.
+    if today_games and games_with_odds == 0:
+        log.critical(
+            "ODDS INGESTION FAILED — 0 snapshots saved across %d games. "
+            "Every pick will fall back to has_real_odds=False and be forced to PASS. "
+            "Check provider quota / API key / network.",
+            len(today_games),
+        )
+    else:
+        log.info(
+            "Odds: %d snapshots across %d/%d games (%s).",
+            total_snapshots, games_with_odds, len(today_games),
+            getattr(provider, "__name__", "unknown"),
+        )
 
-def _map_odds_event_ids(session, as_of: date) -> None:
-    """Fetch Odds API events for today and store event_ids on Game rows."""
-    events = fetch_events(as_of)
+
+def _map_odds_event_ids(session, as_of: date, provider=None) -> None:
+    """Fetch events for today and store event_ids on Game rows. Uses the active provider."""
+    if provider is None:
+        provider = _pick_odds_provider()
+    events = provider.fetch_events(as_of)
     if not events:
-        log.info("No Odds API events returned for %s.", as_of)
+        log.warning("No events returned for %s from %s.", as_of, getattr(provider, "__name__", "?"))
         return
     games = session.execute(
         select(Game).where(Game.game_date == as_of)
     ).scalars().all()
     mapped = 0
     for game in games:
-        if game.odds_event_id:
-            continue
+        # Re-map every run — provider may have changed (paid → ESPN) and IDs differ.
         home_team = session.get(Team, game.home_team_id)
         away_team = session.get(Team, game.away_team_id)
         if not home_team or not away_team:
             continue
-        event_id = match_event_id(events, home_team.abbr, away_team.abbr)
-        if event_id:
+        event_id = provider.match_event_id(events, home_team.abbr, away_team.abbr)
+        if event_id and event_id != game.odds_event_id:
             game.odds_event_id = event_id
             mapped += 1
     session.flush()
-    log.info("Mapped odds event_ids for %d/%d games.", mapped, len(games))
+    log.info("Mapped event_ids for %d/%d games.", mapped, len(games))
 
 
 def _date_range(start: date, end: date):
@@ -386,9 +440,10 @@ def run(as_of: date, dry_run: bool = False, history_days: int = DEFAULT_HISTORY_
             today_pks = ingest_schedule(session, client, as_of, game_type="R")
             log.info("Fetched %d games for %s", len(today_pks), as_of)
 
-            # 1b. Map Odds API event_ids to today's games (requires key).
-            if odds_available():
-                _map_odds_event_ids(session, as_of)
+            # 1b. Pick odds provider (paid Odds API → ESPN fallback) once for
+            # this run so both event-mapping and snapshot fetch use the same source.
+            odds_provider = _pick_odds_provider()
+            _map_odds_event_ids(session, as_of, provider=odds_provider)
 
             # 2. Scan for missing box scores back to the start of the season.
             # Since already-ingested games are skipped (cheap DB check), covering
@@ -439,7 +494,7 @@ def run(as_of: date, dry_run: bool = False, history_days: int = DEFAULT_HISTORY_
                 today_games = session.execute(
                     select(Game).where(Game.game_date == as_of)
                 ).scalars().all()
-                _ingest_odds_and_weather(session, today_games, as_of)
+                _ingest_odds_and_weather(session, today_games, as_of, provider=odds_provider)
 
                 session.commit()
                 log.info("All changes committed.")
