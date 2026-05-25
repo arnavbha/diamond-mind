@@ -219,11 +219,6 @@ export function DitherHeader({
       width: "100%",
       height,
       overflow: "hidden",
-      marginBottom: 32,
-      borderRadius: 8,
-      // Fade bottom edge into page background
-      WebkitMaskImage: "linear-gradient(to bottom, black 40%, transparent 100%)",
-      maskImage: "linear-gradient(to bottom, black 40%, transparent 100%)",
     }}>
       <Canvas
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}

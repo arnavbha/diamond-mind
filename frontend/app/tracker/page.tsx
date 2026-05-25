@@ -45,8 +45,9 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
   return (
     <div style={{
       flex: 1, minWidth: 0,
-      background: "var(--surface)",
-      border: "1px solid var(--border)",
+      background: "rgba(13,17,23,0.55)",
+      backdropFilter: "blur(2px)",
+      border: "1px solid rgba(120,140,180,0.15)",
       borderRadius: "6px",
       padding: "14px 16px",
     }}>

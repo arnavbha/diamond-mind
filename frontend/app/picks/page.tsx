@@ -422,9 +422,6 @@ export default function PicksPage() {
 
   return (
     <div>
-      {/* Dither wave header — fades into page bg */}
-      <DitherHeader height={200} color={[0.04, 0.32, 0.14]} speed={0.04} colorNum={5} pixelSize={3} />
-
       {trackModal && (
         <TrackModal
           ctx={trackModal}
@@ -433,19 +430,40 @@ export default function PicksPage() {
         />
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
-        <div>
-          <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase" }}>
-            Daily Picks
-          </h1>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "4px", display: "flex", alignItems: "center", gap: "7px" }}>
-            <span className="live-dot" />
-            {picks
-              ? `${picks.length} games · ${actionable.length} actionable (ML + O/U) · Shin + Bayesian quant · ${date}`
-              : `Shin + Bayesian quant model · ${date}`}
+      {/* Header with dither canvas as background */}
+      <div style={{
+        position: "relative",
+        overflow: "hidden",
+        borderRadius: 8,
+        marginBottom: "24px",
+        borderBottom: "1px solid var(--border)",
+      }}>
+        {/* Dither lives behind header text */}
+        <DitherHeader height={120} color={[0.04, 0.32, 0.14]} speed={0.04} colorNum={5} pixelSize={3} />
+        {/* Header content overlaid on canvas */}
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 4px 16px",
+          // Gradient so text stays readable over the noisy canvas
+          background: "linear-gradient(to right, rgba(8,12,16,0.72) 0%, rgba(8,12,16,0.45) 60%, rgba(8,12,16,0.72) 100%)",
+        }}>
+          <div>
+            <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase" }}>
+              Daily Picks
+            </h1>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "4px", display: "flex", alignItems: "center", gap: "7px" }}>
+              <span className="live-dot" />
+              {picks
+                ? `${picks.length} games · ${actionable.length} actionable (ML + O/U) · Shin + Bayesian quant · ${date}`
+                : `Shin + Bayesian quant model · ${date}`}
+            </div>
           </div>
+          <DateNav date={date} onChange={changeDate} />
         </div>
-        <DateNav date={date} onChange={changeDate} />
       </div>
 
       {error && (
