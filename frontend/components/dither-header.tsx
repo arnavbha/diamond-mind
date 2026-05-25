@@ -14,17 +14,17 @@ import { useRef, useEffect } from "react";
 
 // ── Single-pass shader (waves + dither combined) ─────────────────────────────
 
-const VERT = `
-attribute vec2 position;
-attribute vec2 uv;
-varying vec2 vUv;
+const VERT = `#version 300 es
+in vec2 position;
+in vec2 uv;
+out vec2 vUv;
 void main() {
   vUv = uv;
   gl_Position = vec4(position, 0.0, 1.0);
 }
 `;
 
-const FRAG = `
+const FRAG = `#version 300 es
 precision highp float;
 uniform float uTime;
 uniform vec2  uResolution;
@@ -36,7 +36,8 @@ uniform float uColorNum;
 uniform float uPixelSize;
 uniform vec2  uMouse;
 uniform int   uMouse_active;
-varying vec2 vUv;
+in vec2 vUv;
+out vec4 fragColor;
 
 // ── Perlin noise helpers ──────────────────────────────────────────────────────
 vec4 mod289v(vec4 x){return x-floor(x*(1./289.))*289.;}
@@ -115,20 +116,20 @@ void main(){
 
   vec3 col=mix(vec3(0.),uColor,f);
   col=dither(fragCoord,col);
-  gl_FragColor=vec4(col,1.0);
+  fragColor=vec4(col,1.0);
 }
 `;
 
 // ── Tiny OGL-less WebGL wrapper ───────────────────────────────────────────────
 
-function createShader(gl: WebGLRenderingContext, type: number, src: string) {
+function createShader(gl: WebGL2RenderingContext, type: number, src: string) {
   const s = gl.createShader(type)!;
   gl.shaderSource(s, src);
   gl.compileShader(s);
   return s;
 }
 
-function createProgram(gl: WebGLRenderingContext) {
+function createProgram(gl: WebGL2RenderingContext) {
   const prog = gl.createProgram()!;
   gl.attachShader(prog, createShader(gl, gl.VERTEX_SHADER, VERT));
   gl.attachShader(prog, createShader(gl, gl.FRAGMENT_SHADER, FRAG));
@@ -165,7 +166,7 @@ export function DitherHeader({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext("webgl", { antialias: false })!;
+    const gl = canvas.getContext("webgl2", { antialias: false })!;
     if (!gl) return;
 
     const prog = createProgram(gl);

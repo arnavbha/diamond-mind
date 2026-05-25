@@ -227,6 +227,167 @@ function TotalBadge({
   );
 }
 
+// ── Pick of the Day ───────────────────────────────────────────────────────────
+
+function PickOfTheDay({ picks, date }: { picks: GameAnalysis[]; date: string }) {
+  const [copied, setCopied] = useState(false);
+
+  // Best STRONG LEAN ML by Kelly, fall back to best STRONG LEAN total
+  const potd = (() => {
+    const slMl = picks
+      .filter((p) => p.ml_tier === "STRONG LEAN")
+      .sort((a, b) => b.ml_kelly_fraction - a.ml_kelly_fraction)[0] ?? null;
+    if (slMl) return { pick: slMl, market: "ml" as const };
+
+    const slTotal = picks
+      .filter((p) => p.total_tier === "STRONG LEAN")
+      .sort((a, b) => b.total_kelly_fraction - a.total_kelly_fraction)[0] ?? null;
+    if (slTotal) return { pick: slTotal, market: "total" as const };
+
+    return null;
+  })();
+
+  if (!potd) return null;
+
+  const { pick, market } = potd;
+  const isMl = market === "ml";
+  const leanAbbr = isMl
+    ? (pick.ml_lean === "HOME" ? pick.home_team_abbr : pick.away_team_abbr)
+    : null;
+  const pickLabel = isMl
+    ? `${leanAbbr} ML`
+    : `${pick.total_lean} o/u ${pick.total_line ?? ""}`;
+  const odds = isMl
+    ? (pick.ml_american_odds >= 0 ? `+${pick.ml_american_odds}` : `${pick.ml_american_odds}`)
+    : "-110";
+  const conf = isMl
+    ? Math.round(pick.ml_confidence * 100)
+    : Math.round(pick.total_confidence * 100);
+  const kelly = isMl
+    ? (pick.ml_kelly_fraction * 100).toFixed(1)
+    : (pick.total_kelly_fraction * 100).toFixed(1);
+
+  const tweetText =
+    `🔷 Diamond Mind POTD — ${date}\n\n` +
+    `${pick.away_team_abbr} @ ${pick.home_team_abbr}\n` +
+    `${pickLabel} (${odds})\n\n` +
+    `Model: ${conf}% confidence · ${kelly}% Kelly sizing\n\n` +
+    `#MLB #SportsBetting`;
+
+  function handleCopy(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    void navigator.clipboard.writeText(tweetText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div style={{
+      marginBottom: "28px",
+      border: "1px solid rgba(63,185,80,0.35)",
+      borderRadius: "8px",
+      background: "linear-gradient(135deg, rgba(63,185,80,0.06) 0%, rgba(8,12,16,0) 60%)",
+      overflow: "hidden",
+    }}>
+      {/* Label bar */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "7px 14px",
+        borderBottom: "1px solid rgba(63,185,80,0.2)",
+        background: "rgba(63,185,80,0.07)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--green)",
+          }}>◆ Pick of the Day</span>
+          <span style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "9px",
+            color: "var(--text-3)",
+            letterSpacing: "0.04em",
+          }}>Highest Kelly · Strong Lean</span>
+        </div>
+        <button
+          onClick={handleCopy}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            padding: "4px 10px",
+            borderRadius: "3px",
+            border: "1px solid",
+            cursor: "pointer",
+            background: "transparent",
+            color: copied ? "var(--green)" : "var(--text-3)",
+            borderColor: copied ? "var(--green)" : "var(--border-2)",
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+        >
+          {copied ? "Copied ✓" : "Copy Tweet"}
+        </button>
+      </div>
+
+      {/* Card body */}
+      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+        {/* Matchup */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <TeamLogo abbr={pick.away_team_abbr} size={26} />
+          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "14px", color: "var(--text-2)" }}>
+            {pick.away_team_abbr}
+          </span>
+          <span style={{ color: "var(--text-3)", fontSize: "11px" }}>@</span>
+          <TeamLogo abbr={pick.home_team_abbr} size={26} />
+          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "14px", color: "var(--text-2)" }}>
+            {pick.home_team_abbr}
+          </span>
+        </div>
+
+        {/* Pick */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+          <span style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "26px",
+            fontWeight: 800,
+            color: "var(--green)",
+            letterSpacing: "-0.02em",
+            lineHeight: 1,
+            textTransform: "uppercase",
+          }}>
+            {pickLabel}
+          </span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--text-2)", fontWeight: 600 }}>
+            {odds}
+          </span>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: "flex", gap: "18px", flexShrink: 0 }}>
+          {[
+            ["Confidence", `${conf}%`],
+            ["Kelly", `${kelly}%`],
+          ].map(([k, v]) => (
+            <div key={k} style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "3px" }}>{k}</div>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: "18px", fontWeight: 800, color: "var(--text)", letterSpacing: "-0.01em" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PickCard({
   pick,
   index,
@@ -469,6 +630,10 @@ export default function PicksPage() {
       )}
       {picks?.length === 0 && (
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games found for {date}.</div>
+      )}
+
+      {picks && picks.length > 0 && (
+        <PickOfTheDay picks={picks} date={date} />
       )}
 
       {actionable.length > 0 && (
