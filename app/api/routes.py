@@ -409,6 +409,8 @@ def list_games(
             "game_number": g.game_number,
             "home_probable_starter_id": g.home_probable_starter_id,
             "away_probable_starter_id": g.away_probable_starter_id,
+            "home_score": g.home_score,
+            "away_score": g.away_score,
         }
         for g, home, away in rows
     ]
