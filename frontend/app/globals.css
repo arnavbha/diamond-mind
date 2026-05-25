@@ -70,6 +70,17 @@ body::before {
   z-index: 9999;
 }
 
+/* ── Score ticker ─────────────────────────────── */
+@keyframes scoreTicker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@keyframes tickerPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px 1px var(--green); }
+  50%       { opacity: 0.4; box-shadow: none; }
+}
+
 /* ── Data bar ──────────────────────────────────── */
 @keyframes fillBar {
   from { width: 0; }

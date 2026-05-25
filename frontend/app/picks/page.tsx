@@ -6,7 +6,6 @@ import { api, todayET, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
-import { Scoreboard } from "@/components/scoreboard";
 
 // ── Track button + unit modal ─────────────────────────────────────────────────
 
@@ -438,9 +437,6 @@ export default function PicksPage() {
         </div>
         <DateNav date={date} onChange={changeDate} />
       </div>
-
-      {/* Scoreboard — live MLB scores, auto-refreshes every 30s */}
-      <Scoreboard date={date} />
 
       {error && (
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>
