@@ -606,10 +606,10 @@ export default function PicksPage() {
           background: "linear-gradient(to right, rgba(8,12,16,0.6) 0%, rgba(8,12,16,0.25) 50%, rgba(8,12,16,0.6) 100%)",
         }}>
           <div>
-            <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase" }}>
+            <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
               Daily Picks
             </h1>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "4px", display: "flex", alignItems: "center", gap: "7px" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "rgba(255,255,255,0.7)", marginTop: "4px", display: "flex", alignItems: "center", gap: "7px", textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>
               <span className="live-dot" />
               {picks
                 ? `${picks.length} games · ${actionable.length} actionable (ML + O/U) · Shin + Bayesian quant · ${date}`
