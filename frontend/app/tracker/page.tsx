@@ -74,7 +74,7 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
           animateOn="view"
           sequential
           revealDirection="start"
-          speed={30}
+          speed={70}
           characters="0123456789+-.u"
           useOriginalCharsOnly={false}
         />

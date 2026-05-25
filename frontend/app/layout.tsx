@@ -49,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 animateOn="view"
                 sequential
                 revealDirection="start"
-                speed={40}
+                speed={80}
                 characters="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%"
               />
             </span>
