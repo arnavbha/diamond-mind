@@ -3,8 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
-import { LiquidChromeBg } from "@/components/liquid-chrome-bg";
-import DecryptedText from "@/components/decrypted-text";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,9 +44,8 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
   return (
     <div style={{
       flex: 1, minWidth: 0,
-      background: "rgba(13,17,23,0.55)",
-      backdropFilter: "blur(2px)",
-      border: "1px solid rgba(120,140,180,0.15)",
+      background: "var(--surface-2)",
+      border: "1px solid var(--border)",
       borderRadius: "6px",
       padding: "14px 16px",
     }}>
@@ -69,15 +66,7 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
         color: netColor,
         lineHeight: 1,
       }}>
-        <DecryptedText
-          text={`${g.units_net >= 0 ? "+" : ""}${g.units_net.toFixed(2)}u`}
-          animateOn="view"
-          sequential
-          revealDirection="start"
-          speed={70}
-          characters="0123456789+-.u"
-          useOriginalCharsOnly={false}
-        />
+        {g.units_net >= 0 ? "+" : ""}{g.units_net.toFixed(2)}u
       </div>
       <div style={{ marginTop: "8px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
         {[
@@ -464,20 +453,14 @@ export default function TrackerPage() {
         </div>
       )}
 
-      {/* Summary stats — liquid chrome accent behind the P&L cards */}
-      <LiquidChromeBg
-        baseColor={[0.03, 0.05, 0.09]}
-        speed={0.12}
-        amplitude={0.22}
-        borderRadius={8}
-        padding="12px"
-      >
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: 0 }}>
+      {/* Summary stats */}
+      <div className="pnl-summary-wrap">
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <SummaryGroup label="Combined" g={s.combined} />
           <SummaryGroup label="Moneyline" g={s.ml} />
           <SummaryGroup label="Over / Under" g={s.total} />
         </div>
-      </LiquidChromeBg>
+      </div>
       <div style={{ marginBottom: 20 }} />
 
       {/* Tabs */}
@@ -501,14 +484,7 @@ export default function TrackerPage() {
       )}
 
       {visible.length > 0 && (
-        <LiquidChromeBg
-          baseColor={[0.03, 0.05, 0.09]}
-          speed={0.1}
-          amplitude={0.2}
-          borderRadius={6}
-          padding="0"
-        >
-        <div style={{ borderRadius: "6px", overflow: "hidden" }}>
+        <div style={{ borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-2)" }}>
           <TableHeader />
 
           {pending.length > 0 && (
@@ -583,7 +559,6 @@ export default function TrackerPage() {
             );
           })()}
         </div>
-        </LiquidChromeBg>
       )}
     </div>
   );

@@ -70,15 +70,31 @@ body::before {
   z-index: 9999;
 }
 
+/* ── Motion tokens ─────────────────────────────── */
+:root {
+  --ease-out:   cubic-bezier(0.2, 0, 0, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-instant:  100ms;
+  --motion-quick:    180ms;
+  --motion-standard: 300ms;
+  --motion-slow:     500ms;
+}
+
 /* ── Score ticker ─────────────────────────────── */
 @keyframes scoreTicker {
   from { transform: translateX(0); }
   to   { transform: translateX(-50%); }
 }
 
-@keyframes tickerPulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 4px 1px var(--green); }
-  50%       { opacity: 0.4; box-shadow: none; }
+/* ── Canonical live pulse (replaces tickerPulse + pulse) ── */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+/* legacy alias so existing .live-dot still works */
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
+  50%       { opacity: 0.4; box-shadow: 0 0 0 5px rgba(63,185,80,0); }
 }
 
 /* ── Data bar ──────────────────────────────────── */
@@ -95,29 +111,106 @@ body::before {
 .stat-bar-fill {
   height: 100%;
   width: 0;
-  animation: fillBar 0.6s cubic-bezier(0.4,0,0.2,1) forwards;
+  animation: fillBar 0.6s var(--ease-out) forwards;
   animation-delay: var(--delay, 0ms);
+}
+
+/* ── Skeleton shimmer ──────────────────────────── */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-2) 50%,
+    var(--surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease-inout) infinite;
+  border-radius: 3px;
 }
 
 /* ── Fade in ───────────────────────────────────── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-up {
   opacity: 0;
-  animation: fadeIn 0.25s ease forwards;
+  animation: fadeIn 0.28s var(--ease-out) forwards;
   animation-delay: var(--delay, 0ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fade-up { animation: none; opacity: 1; }
+  .stat-bar-fill { animation: none; width: var(--fill); }
+  .skeleton { animation: none; }
 }
 
 /* ── Card ─────────────────────────────────────── */
 .game-card {
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background var(--motion-instant) var(--ease-out),
+              border-color var(--motion-instant) var(--ease-out),
+              opacity var(--motion-instant) var(--ease-out);
   cursor: pointer;
 }
 .game-card:hover {
   background: var(--surface-2) !important;
   border-color: var(--border-2) !important;
+  opacity: 1 !important;  /* restore opacity on pass cards */
+}
+
+/* ── Spotlight card (mouse-tracking inner glow) ── */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    300px circle at var(--mouse-x, -100%) var(--mouse-y, -100%),
+    var(--spotlight-color, rgba(255,255,255,0.04)),
+    transparent 70%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s var(--ease-out);
+}
+.spotlight-card:hover::after {
+  opacity: 1;
+}
+
+/* ── Shiny text (one-shot shimmer sweep) ───────── */
+@keyframes shinySwipe {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.shiny-text {
+  background: linear-gradient(
+    90deg,
+    var(--green) 20%,
+    rgba(200,255,210,0.95) 45%,
+    rgba(200,255,210,0.95) 55%,
+    var(--green) 80%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shinySwipe 1.0s var(--ease-out) 0.4s 1 forwards;
+  background-position: -200% center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shiny-text {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: var(--green);
+    color: var(--green);
+  }
 }
 
 /* ── Actionable card glow ─────────────────────── */
@@ -548,23 +641,33 @@ body::before {
   line-height: 1.55;
 }
 
+/* ── P&L summary block (replaces LiquidChromeBg) ── */
+.pnl-summary-wrap {
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    radial-gradient(ellipse at 15% 60%, rgba(63,185,80,0.04) 0%, transparent 60%),
+    var(--surface);
+}
+
 /* ── Bet row result states ────────────────────── */
 /* Left border accent + faint background tint */
 .bet-result-win {
   border-left: 2px solid var(--green) !important;
-  background: linear-gradient(90deg, rgba(63,185,80,0.05) 0%, rgba(13,17,23,0.6) 60%) !important;
+  background: linear-gradient(90deg, rgba(63,185,80,0.06) 0%, var(--surface) 50%) !important;
 }
 .bet-result-loss {
   border-left: 2px solid var(--red) !important;
-  background: linear-gradient(90deg, rgba(248,81,73,0.05) 0%, rgba(13,17,23,0.6) 60%) !important;
+  background: linear-gradient(90deg, rgba(248,81,73,0.06) 0%, var(--surface) 50%) !important;
 }
 .bet-result-push {
   border-left: 2px solid var(--text-3) !important;
-  background: rgba(13,17,23,0.6) !important;
+  background: var(--surface) !important;
 }
 .bet-result-pending {
   border-left: 2px solid var(--amber) !important;
-  background: linear-gradient(90deg, rgba(210,153,34,0.04) 0%, rgba(13,17,23,0.6) 60%) !important;
+  background: linear-gradient(90deg, rgba(210,153,34,0.05) 0%, var(--surface) 50%) !important;
 }
 
 /* ── Date group header in tracker ─────────────── */

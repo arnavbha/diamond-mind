@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { api, todayET, getAdminToken, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
@@ -301,13 +301,12 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
         background: "rgba(63,185,80,0.07)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{
+          <span className="shiny-text" style={{
             fontFamily: "var(--font-mono)",
             fontSize: "9px",
             fontWeight: 700,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
-            color: "var(--green)",
           }}>◆ Pick of the Day</span>
           <span style={{
             fontFamily: "var(--font-mono)",
@@ -411,6 +410,18 @@ function PickCard({
   const totalTrackKey = `${pick.game_id}-total`;
   const mlTracked = trackedIds.has(mlTrackKey);
 
+  const slabRef = useRef<HTMLDivElement>(null);
+  function onSlabMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!slabRef.current) return;
+    const rect = slabRef.current.getBoundingClientRect();
+    slabRef.current.style.setProperty("--mouse-x", `${e.clientX - rect.left}px`);
+    slabRef.current.style.setProperty("--mouse-y", `${e.clientY - rect.top}px`);
+  }
+  const isActionable = isMlAction || isTotalAction;
+  const spotlightColor = isMlAction
+    ? "rgba(63,185,80,0.08)"
+    : isTotalAction ? "rgba(88,166,255,0.08)" : undefined;
+
   function handleMlTrack(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -433,7 +444,15 @@ function PickCard({
         className="fade-up game-card"
         style={{ "--delay": `${index * 45}ms`, "--slab-color": slab } as React.CSSProperties}
       >
-        <div className="verdict-slab" style={{ "--slab-color": slab } as React.CSSProperties}>
+        <div
+          ref={slabRef}
+          className={`verdict-slab${isActionable ? " spotlight-card" : ""}`}
+          style={{
+            "--slab-color": slab,
+            ...(spotlightColor ? { "--spotlight-color": spotlightColor } : {}),
+          } as React.CSSProperties}
+          onMouseMove={isActionable ? onSlabMouseMove : undefined}
+        >
           {/* Top: matchup + tier */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
