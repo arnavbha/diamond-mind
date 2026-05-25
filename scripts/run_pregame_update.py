@@ -142,19 +142,32 @@ def _upsert_starter(session, w) -> None:
 def _pick_odds_provider():
     """Choose the odds provider for this run.
 
-    Try the paid Odds API first (better breadth — multiple bookmakers). If the
-    key is missing OR the quota probe returns empty, fall back to ESPN's public
-    feed (DraftKings, no key, no quota — battle-tested across fantasy sites).
+    Try the paid Odds API first (better breadth — multiple bookmakers). The
+    events endpoint is FREE on the-odds-api, so a non-empty events response
+    proves nothing — quota can be exhausted while events still list. We must
+    probe with a real per-game odds call to know if quota will actually pay
+    out snapshots. If not, fall back to ESPN's public feed.
     """
     if _paid_odds.is_available():
-        # Cheap probe: if today's events list isn't empty, the key has budget.
-        # The Odds API events endpoint costs 1 request and counts against quota.
         from datetime import date as _date
-        probe = _paid_odds.fetch_events(_date.today())
-        if probe:
-            log.info("Odds provider: the-odds-api (paid).")
-            return _paid_odds
-        log.warning("the-odds-api returned empty events — quota likely exhausted, falling back to ESPN.")
+        events = _paid_odds.fetch_events(_date.today())
+        if events:
+            # Real probe: try to fetch odds for the first event. The odds
+            # endpoint IS quota-counted; a 0-snapshot result means we're out.
+            probe_eid = events[0].get("id")
+            if probe_eid:
+                snaps = _paid_odds.fetch_odds(0, probe_eid)
+                if snaps:
+                    log.info("Odds provider: the-odds-api (paid) — probe returned %d snapshots.", len(snaps))
+                    return _paid_odds
+                log.warning(
+                    "the-odds-api events listed but per-game odds returned 0 snapshots — "
+                    "quota almost certainly exhausted, falling back to ESPN."
+                )
+            else:
+                log.warning("the-odds-api events lacked id field — falling back to ESPN.")
+        else:
+            log.warning("the-odds-api events list empty — falling back to ESPN.")
     else:
         log.info("ODDS_API_KEY not set — using ESPN public feed.")
     return _free_odds
