@@ -64,7 +64,7 @@ function TrackModal({
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "16px", marginBottom: "4px" }}>
           Track Bet
         </div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginBottom: "14px" }}>
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-2)", marginBottom: "14px" }}>
           {ctx.away_team_abbr} @ {ctx.home_team_abbr} · {ctx.selection} · {ctx.american_odds >= 0 ? "+" : ""}{ctx.american_odds}
         </div>
         <label style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
@@ -440,7 +440,7 @@ function PickCard({
               <span style={{ color: "var(--text-3)", fontSize: "12px" }}>@</span>
               <TeamLogo abbr={pick.home_team_abbr} size={22} />
               <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "15px" }}>{pick.home_team_abbr}</span>
-              {pick.venue && <span style={{ fontSize: "10px", color: "var(--text-3)", marginLeft: "4px" }}>{pick.venue}</span>}
+              {pick.venue && <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginLeft: "4px" }}>{pick.venue}</span>}
             </div>
             <ExplainTooltip term="tiers">
               <span className="tier-badge" style={{ color: tc, borderColor: tc }}>{pick.ml_tier}</span>
@@ -482,7 +482,7 @@ function PickCard({
               ) : (
                 <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", fontWeight: 800, color: "var(--text-3)", textTransform: "uppercase", lineHeight: 1 }}>
                   {pick.ml_tier === "AVOID" ? "AVOID" : "PASS"}
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginTop: "5px", textTransform: "none" }}>
+                  <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", fontWeight: 400, marginTop: "5px" }}>
                     P(+EV) {(pick.q_prob_positive * 100).toFixed(0)}% — below action threshold
                   </div>
                 </div>
@@ -525,10 +525,10 @@ function PickCard({
           {pick.key_factors.length > 0 && (
             <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
               {pick.key_factors.slice(0, 2).map((f, i) => (
-                <div key={i} style={{ fontSize: "10px", color: "var(--text-3)", marginBottom: "2px", paddingLeft: "6px", borderLeft: "1px solid var(--border-2)" }}>{f}</div>
+                <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginBottom: "3px", paddingLeft: "8px", borderLeft: "1px solid var(--border-2)", lineHeight: 1.4 }}>{f}</div>
               ))}
               {pick.cautions.slice(0, 1).map((c, i) => (
-                <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--orange)", marginTop: "3px" }}>{c}</div>
+                <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)", marginTop: "4px", paddingLeft: "8px", borderLeft: "1px solid rgba(210,153,34,0.4)", lineHeight: 1.4 }}>{c}</div>
               ))}
             </div>
           )}
@@ -621,15 +621,15 @@ export default function PicksPage() {
       </div>
 
       {error && (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>
-          Backend not reachable — run: uvicorn app.api.routes:app --port 8000
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>
+          Backend not reachable — run: <code style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>uvicorn app.api.routes:app --port 8000</code>
         </div>
       )}
       {!error && picks === null && (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>
       )}
       {picks?.length === 0 && (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games found for {date}.</div>
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games found for {date}.</div>
       )}
 
       {picks && picks.length > 0 && (

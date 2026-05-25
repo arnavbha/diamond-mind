@@ -6,7 +6,7 @@ import { ScoreTicker } from "@/components/score-ticker";
 import DecryptedText from "@/components/decrypted-text";
 import "./globals.css";
 
-const FONTS_URL = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap";
+const FONTS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap";
 
 export const metadata: Metadata = {
   title: "Diamond Mind",

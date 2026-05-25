@@ -153,10 +153,10 @@ function BetRow({
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 600 }}>
           {bet.away_team_abbr} @ {bet.home_team_abbr}
         </div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text)", marginTop: "1px", opacity: 0.75 }}>
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text)", marginTop: "2px", lineHeight: 1.3 }}>
           {bet.selection}
           {bet.market === "total" && bet.total_line != null && (
-            <span style={{ color: "var(--text-2)" }}> · o/u {bet.total_line}</span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)" }}> · o/u {bet.total_line}</span>
           )}
         </div>
       </div>
@@ -397,7 +397,7 @@ export default function TrackerPage() {
             letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase",
           }}>Picks Tracker</h1>
           <div style={{
-            fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)",
+            fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)",
             marginTop: "4px",
           }}>
             Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
@@ -428,8 +428,8 @@ export default function TrackerPage() {
           </button>
           {autoResult && (
             <div style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10px",
+              fontFamily: "var(--font-body)",
+              fontSize: "12px",
               color: autoResult.created > 0 ? "var(--green)" : "var(--text-3)",
             }}>
               {autoResult.created > 0
@@ -438,7 +438,7 @@ export default function TrackerPage() {
             </div>
           )}
           {autoError && (
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--orange)" }}>
+            <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)" }}>
               {autoError}
             </div>
           )}
@@ -447,7 +447,7 @@ export default function TrackerPage() {
 
       {settleError && (
         <div style={{
-          fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--orange)",
+          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--orange)",
           padding: "10px 12px", border: "1px solid var(--orange)", borderRadius: "4px", marginBottom: "12px",
           cursor: "pointer",
         }} onClick={() => setSettleError(null)}>
@@ -457,10 +457,10 @@ export default function TrackerPage() {
 
       {error && (
         <div style={{
-          fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)",
+          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)",
           padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px",
         }}>
-          Backend not reachable — run: uvicorn app.api.routes:app --port 8000
+          Backend not reachable — run: <code style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>uvicorn app.api.routes:app --port 8000</code>
         </div>
       )}
 
@@ -486,14 +486,14 @@ export default function TrackerPage() {
       {/* Table */}
       {bets === null && !error && (
         <div style={{
-          fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)",
+          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)",
           padding: "40px 0", textAlign: "center",
         }}>Loading…</div>
       )}
 
       {bets !== null && visible.length === 0 && (
         <div style={{
-          fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)",
+          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)",
           padding: "40px 0", textAlign: "center",
         }}>
           No bets tracked yet. Hit ⚡ Auto-track to log today&apos;s picks automatically.

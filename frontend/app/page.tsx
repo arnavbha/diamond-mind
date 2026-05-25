@@ -88,6 +88,8 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
     : analysis?.ml_tier === "LEAN" ? "game-card-tier-l"
     : "game-card-tier-pass";
 
+  const isPass = !hasTier;
+
   return (
     <Link href={`/game/${game.game_id}?date=${game.game_date}`} style={{ textDecoration: "none" }}>
       <div
@@ -103,6 +105,8 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
           gridTemplateColumns: "1fr 160px 1fr",
           gap: "16px",
           alignItems: "center",
+          opacity: isPass ? 0.5 : 1,
+          transition: "opacity 0.12s, background 0.12s, border-color 0.12s",
         } as React.CSSProperties}
       >
         {/* Matchup */}
@@ -115,7 +119,7 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
             <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.home_team_abbr}</span>
           </div>
           {game.venue && (
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "3px" }}>{game.venue}</div>
+            <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginTop: "3px" }}>{game.venue}</div>
           )}
         </div>
 
@@ -198,9 +202,9 @@ function SlatePageInner() {
         <DateNav date={date} onChange={changeDate} />
       </div>
 
-      {error && <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>Backend offline — uvicorn app.api.routes:app --port 8000</div>}
-      {!error && games === null && <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>}
-      {games?.length === 0 && <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games for {date}.</div>}
+      {error && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>Backend offline — <code style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>uvicorn app.api.routes:app --port 8000</code></div>}
+      {!error && games === null && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>}
+      {games?.length === 0 && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games for {date}.</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         {games?.map((g, i) => <GameCard key={g.game_id} game={g} index={i} />)}

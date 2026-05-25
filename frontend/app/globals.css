@@ -25,7 +25,7 @@
   --font-ui:      'JetBrains Mono', monospace;
   --font-mono:    'JetBrains Mono', monospace;
   --font-display: 'Syne', system-ui, sans-serif;
-  --font-body:    'JetBrains Mono', monospace;
+  --font-body:    'Inter', system-ui, sans-serif;
 
   /* ── Baseball field identity ─────────────────── */
   --grass:      #1A6B2A;   /* deep field green */
