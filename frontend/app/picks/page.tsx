@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, todayET, type GameAnalysis } from "@/lib/api";
+import { api, todayET, getAdminToken, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
@@ -229,7 +229,7 @@ function TotalBadge({
 
 // ── Pick of the Day ───────────────────────────────────────────────────────────
 
-function PickOfTheDay({ picks, date }: { picks: GameAnalysis[]; date: string }) {
+function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: string; unlocked: boolean }) {
   const [copied, setCopied] = useState(false);
 
   // Best STRONG LEAN ML by Kelly, fall back to best STRONG LEAN total
@@ -316,26 +316,28 @@ function PickOfTheDay({ picks, date }: { picks: GameAnalysis[]; date: string }) 
             letterSpacing: "0.04em",
           }}>Highest Kelly · Strong Lean</span>
         </div>
-        <button
-          onClick={handleCopy}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "9px",
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            padding: "4px 10px",
-            borderRadius: "3px",
-            border: "1px solid",
-            cursor: "pointer",
-            background: "transparent",
-            color: copied ? "var(--green)" : "var(--text-3)",
-            borderColor: copied ? "var(--green)" : "var(--border-2)",
-            transition: "color 0.15s, border-color 0.15s",
-          }}
-        >
-          {copied ? "Copied ✓" : "Copy Tweet"}
-        </button>
+        {unlocked && (
+          <button
+            onClick={handleCopy}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "9px",
+              fontWeight: 700,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              padding: "4px 10px",
+              borderRadius: "3px",
+              border: "1px solid",
+              cursor: "pointer",
+              background: "transparent",
+              color: copied ? "var(--green)" : "var(--text-3)",
+              borderColor: copied ? "var(--green)" : "var(--border-2)",
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy Tweet"}
+          </button>
+        )}
       </div>
 
       {/* Card body */}
@@ -471,10 +473,10 @@ function PickCard({
                       {mlTracked ? "Tracked ✓" : "＋ Track"}
                     </button>
                   </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)", marginTop: "5px" }}>
-                    {pick.ml_american_odds > 0 ? "+" : ""}{pick.ml_american_odds} ·{" "}
-                    Shin-devigged · shrunk to{" "}
-                    <span className="scoreboard-num" style={{ fontSize: "13px", color: "var(--text)" }}>
+                  <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-2)", marginTop: "5px" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{pick.ml_american_odds > 0 ? "+" : ""}{pick.ml_american_odds}</span>
+                    {" · Shin-devigged · shrunk to "}
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--text)", fontWeight: 600 }}>
                       {(pick.q_p_shrunk * 100).toFixed(1)}%
                     </span>
                   </div>
@@ -503,35 +505,46 @@ function PickCard({
             onTrack={(ctx) => onTrack(ctx)}
           />
 
-          {/* Bottom: growth HUD */}
-          <div style={{ marginTop: "14px" }}>
-            <div
-              className="section-label"
-              style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}
-            >
-              Bankroll math
+          {/* ── Quant panel — recessed, reads second ── */}
+          <div style={{
+            marginTop: "16px",
+            marginLeft: "-20px",
+            marginRight: "-20px",
+            marginBottom: "-18px",
+            padding: "12px 20px 16px",
+            borderTop: "1px solid var(--border)",
+            background: "rgba(0,0,0,0.18)",
+          }}>
+            {/* Panel header */}
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "10px",
+            }}>
+              <span className="section-label" style={{ margin: 0 }}>Bankroll math</span>
               <ExplainTooltip term="uncertainty-kelly" />
             </div>
+
             <GrowthReadout a={pick} />
+
+            {isMlAction && (
+              <div style={{ marginTop: "12px" }}>
+                <MethodCompare a={pick} />
+              </div>
+            )}
+
+            {pick.key_factors.length > 0 && (
+              <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                {pick.key_factors.slice(0, 2).map((f, i) => (
+                  <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginBottom: "3px", paddingLeft: "8px", borderLeft: "1px solid var(--border-2)", lineHeight: 1.4 }}>{f}</div>
+                ))}
+                {pick.cautions.slice(0, 1).map((c, i) => (
+                  <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)", marginTop: "4px", paddingLeft: "8px", borderLeft: "1px solid rgba(210,153,34,0.4)", lineHeight: 1.4 }}>{c}</div>
+                ))}
+              </div>
+            )}
           </div>
-
-          {isMlAction && (
-            <div style={{ marginTop: "14px" }}>
-              <MethodCompare a={pick} />
-            </div>
-          )}
-
-          {/* Factors */}
-          {pick.key_factors.length > 0 && (
-            <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
-              {pick.key_factors.slice(0, 2).map((f, i) => (
-                <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginBottom: "3px", paddingLeft: "8px", borderLeft: "1px solid var(--border-2)", lineHeight: 1.4 }}>{f}</div>
-              ))}
-              {pick.cautions.slice(0, 1).map((c, i) => (
-                <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)", marginTop: "4px", paddingLeft: "8px", borderLeft: "1px solid rgba(210,153,34,0.4)", lineHeight: 1.4 }}>{c}</div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </Link>
@@ -545,6 +558,7 @@ export default function PicksPage() {
   const [error, setError] = useState(false);
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [trackModal, setTrackModal] = useState<TrackCtx | null>(null);
+  const [unlocked, setUnlocked] = useState(() => Boolean(getAdminToken()));
 
   useEffect(() => {
     let alive = true;
@@ -633,7 +647,7 @@ export default function PicksPage() {
       )}
 
       {picks && picks.length > 0 && (
-        <PickOfTheDay picks={picks} date={date} />
+        <PickOfTheDay picks={picks} date={date} unlocked={unlocked} />
       )}
 
       {actionable.length > 0 && (
