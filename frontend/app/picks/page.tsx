@@ -623,20 +623,18 @@ export default function PicksPage() {
         position: "relative",
         overflow: "hidden",
         borderRadius: 8,
-        marginBottom: "24px",
+        marginBottom: "0",
         borderBottom: "1px solid var(--border)",
       }}>
-        {/* Dither lives behind header text */}
         <DitherHeader height={120} color={[0.2, 0.85, 0.35]} speed={0.05} colorNum={4} pixelSize={2} />
-        {/* Header content overlaid on canvas */}
+        {/* Title anchored to bottom-left — editorial banner style */}
         <div style={{
           position: "absolute",
           inset: 0,
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 4px 16px",
-          background: "linear-gradient(to right, rgba(8,12,16,0.6) 0%, rgba(8,12,16,0.25) 50%, rgba(8,12,16,0.6) 100%)",
+          alignItems: "flex-end",
+          padding: "0 20px 16px",
+          background: "linear-gradient(to right, rgba(8,12,16,0.65) 0%, rgba(8,12,16,0.2) 60%, rgba(8,12,16,0.55) 100%)",
         }}>
           <div>
             <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
@@ -649,8 +647,19 @@ export default function PicksPage() {
                 : `Shin + Bayesian quant model · ${date}`}
             </div>
           </div>
-          <DateNav date={date} onChange={changeDate} />
         </div>
+      </div>
+
+      {/* Date nav row — separate from decorative header */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        padding: "10px 0",
+        marginBottom: "20px",
+        borderBottom: "1px solid var(--border)",
+      }}>
+        <DateNav date={date} onChange={changeDate} />
       </div>
 
       {error && (
