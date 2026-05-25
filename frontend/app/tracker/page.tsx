@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
 import { LiquidChromeBg } from "@/components/liquid-chrome-bg";
+import DecryptedText from "@/components/decrypted-text";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,15 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
         color: netColor,
         lineHeight: 1,
       }}>
-        {g.units_net >= 0 ? "+" : ""}{g.units_net.toFixed(2)}u
+        <DecryptedText
+          text={`${g.units_net >= 0 ? "+" : ""}${g.units_net.toFixed(2)}u`}
+          animateOn="view"
+          sequential
+          revealDirection="start"
+          speed={30}
+          characters="0123456789+-.u"
+          useOriginalCharsOnly={false}
+        />
       </div>
       <div style={{ marginTop: "8px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
         {[
@@ -139,10 +148,10 @@ function BetRow({
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 600 }}>
           {bet.away_team_abbr} @ {bet.home_team_abbr}
         </div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "1px" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text)", marginTop: "1px", opacity: 0.75 }}>
           {bet.selection}
           {bet.market === "total" && bet.total_line != null && (
-            <span style={{ color: "var(--text-3)" }}> · o/u {bet.total_line}</span>
+            <span style={{ color: "var(--text-2)" }}> · o/u {bet.total_line}</span>
           )}
         </div>
       </div>

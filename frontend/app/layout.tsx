@@ -3,6 +3,7 @@ import Image from "next/image";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
+import DecryptedText from "@/components/decrypted-text";
 import "./globals.css";
 
 const FONTS_URL = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap";
@@ -43,7 +44,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               letterSpacing: "0.02em",
               textTransform: "uppercase",
             }}>
-              Diamond Mind
+              <DecryptedText
+                text="Diamond Mind"
+                animateOn="view"
+                sequential
+                revealDirection="start"
+                speed={40}
+                characters="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%"
+              />
             </span>
           </div>
           <div style={{ width: "1px", height: "16px", background: "var(--border-2)" }} />
