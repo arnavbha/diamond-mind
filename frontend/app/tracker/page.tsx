@@ -127,7 +127,7 @@ function BetRow({
       gap: "10px",
       padding: "8px 12px",
       borderBottom: "1px solid var(--border)",
-      background: "var(--surface)",
+      background: "rgba(13,17,23,0.6)",
     }}>
       {/* date */}
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
@@ -231,7 +231,7 @@ function TableHeader() {
       gap: "10px",
       padding: "6px 12px 6px",
       borderBottom: "1px solid var(--border-2)",
-      background: "var(--surface-2)",
+      background: "rgba(22,27,34,0.7)",
     }}>
       <span style={cell}>Date</span>
       <span style={cell}>Game / Pick</span>
@@ -486,14 +486,21 @@ export default function TrackerPage() {
       )}
 
       {visible.length > 0 && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: "6px", overflow: "hidden", marginTop: "12px" }}>
+        <LiquidChromeBg
+          baseColor={[0.03, 0.05, 0.09]}
+          speed={0.1}
+          amplitude={0.2}
+          borderRadius={6}
+          padding="0"
+        >
+        <div style={{ borderRadius: "6px", overflow: "hidden" }}>
           <TableHeader />
 
           {pending.length > 0 && (
             <>
               <div style={{
                 padding: "5px 12px",
-                background: "var(--surface-2)",
+                background: "rgba(22,27,34,0.65)",
                 fontFamily: "var(--font-mono)",
                 fontSize: "9px",
                 fontWeight: 700,
@@ -514,7 +521,7 @@ export default function TrackerPage() {
             <>
               <div style={{
                 padding: "5px 12px",
-                background: "var(--surface-2)",
+                background: "rgba(22,27,34,0.65)",
                 fontFamily: "var(--font-mono)",
                 fontSize: "9px",
                 fontWeight: 700,
@@ -532,6 +539,7 @@ export default function TrackerPage() {
             </>
           )}
         </div>
+        </LiquidChromeBg>
       )}
     </div>
   );

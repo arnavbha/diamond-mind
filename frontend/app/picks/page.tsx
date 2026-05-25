@@ -1,18 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { api, todayET, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
-
-// Three.js can't run server-side — dynamic import with ssr:false
-const DitherHeader = dynamic(
-  () => import("@/components/dither-header").then((m) => m.DitherHeader),
-  { ssr: false, loading: () => <div style={{ height: 220, marginBottom: 32 }} /> },
-);
+import { DitherHeader } from "@/components/dither-header";
 
 // ── Track button + unit modal ─────────────────────────────────────────────────
 

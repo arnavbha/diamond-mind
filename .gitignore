@@ -50,3 +50,18 @@ obsidian_vault/**/*.md
 .DS_Store
 *.swp
 .collab_cursor_*
+
+# Node
+node_modules/
+package-lock.json
+package.json
+
+# Claude / gstack worktrees
+.claude/
+
+# Obsidian settings
+.obsidian/
+obsidian_vault/.obsidian/
+
+# Misc
+AGENTS.md
