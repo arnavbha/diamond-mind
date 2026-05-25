@@ -116,6 +116,12 @@ function BetRow({
   const tc = tierColor(bet.tier);
   const isPending = bet.result === null;
 
+  const resultClass =
+    bet.result === "WIN"  ? "bet-result-win"  :
+    bet.result === "LOSS" ? "bet-result-loss" :
+    bet.result === "PUSH" ? "bet-result-push" :
+    "bet-result-pending";
+
   const btnBase: React.CSSProperties = {
     fontFamily: "var(--font-mono)",
     fontSize: "10px",
@@ -129,14 +135,13 @@ function BetRow({
   };
 
   return (
-    <div style={{
+    <div className={resultClass} style={{
       display: "grid",
       gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 80px",
       alignItems: "center",
       gap: "10px",
       padding: "8px 12px",
       borderBottom: "1px solid var(--border)",
-      background: "rgba(13,17,23,0.6)",
     }}>
       {/* date */}
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
@@ -178,9 +183,10 @@ function BetRow({
 
       {/* units net */}
       <span style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "12px",
-        fontWeight: 700,
+        fontFamily: "var(--font-display)",
+        fontSize: "15px",
+        fontWeight: 800,
+        letterSpacing: "-0.01em",
         color: bet.units_returned === null
           ? "var(--text-3)"
           : bet.units_returned >= 0 ? "var(--green)" : "var(--red)",
@@ -190,29 +196,29 @@ function BetRow({
 
       {/* actions — only shown when admin is unlocked */}
       <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-        {unlocked && (
+        {unlocked && isPending && (
           <>
             <button
               onClick={() => onSettle(bet.id, "WIN")}
-              style={{ ...btnBase, color: "var(--green)", borderColor: isPending ? "var(--green)" : "var(--border-2)", background: "transparent", opacity: isPending ? 1 : 0.45 }}
-              title={isPending ? "Mark WIN" : "Correct to WIN"}
+              style={{ ...btnBase, color: "var(--green)", borderColor: "var(--green)", background: "transparent" }}
+              title="Mark WIN"
             >W</button>
             <button
               onClick={() => onSettle(bet.id, "LOSS")}
-              style={{ ...btnBase, color: "var(--red)", borderColor: isPending ? "var(--red)" : "var(--border-2)", background: "transparent", opacity: isPending ? 1 : 0.45 }}
-              title={isPending ? "Mark LOSS" : "Correct to LOSS"}
+              style={{ ...btnBase, color: "var(--red)", borderColor: "var(--red)", background: "transparent" }}
+              title="Mark LOSS"
             >L</button>
             <button
               onClick={() => onSettle(bet.id, "PUSH")}
-              style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", opacity: isPending ? 1 : 0.45 }}
-              title={isPending ? "Mark PUSH" : "Correct to PUSH"}
+              style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent" }}
+              title="Mark PUSH"
             >P</button>
           </>
         )}
         {unlocked && (
           <button
             onClick={() => onDelete(bet.id)}
-            style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", marginLeft: "2px" }}
+            style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", marginLeft: isPending ? "2px" : "0" }}
             title="Delete"
           >×</button>
         )}
@@ -526,27 +532,56 @@ export default function TrackerPage() {
             </>
           )}
 
-          {settled.length > 0 && (
-            <>
-              <div style={{
-                padding: "5px 12px",
-                background: "rgba(22,27,34,0.65)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "9px",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--text-3)",
-                borderBottom: "1px solid var(--border)",
-                borderTop: pending.length > 0 ? "1px solid var(--border)" : undefined,
-              }}>
-                ▸ Settled — {settled.length}
-              </div>
-              {settled.map((b) => (
-                <BetRow key={b.id} bet={b} onSettle={handleSettle} onDelete={handleDelete} unlocked={unlocked} />
-              ))}
-            </>
-          )}
+          {settled.length > 0 && (() => {
+            // Group settled bets by date descending
+            const byDate: Record<string, BetRecord[]> = {};
+            settled.forEach((b) => {
+              if (!byDate[b.game_date]) byDate[b.game_date] = [];
+              byDate[b.game_date].push(b);
+            });
+            const dateGroups = Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
+
+            return (
+              <>
+                <div style={{
+                  padding: "5px 12px",
+                  background: "rgba(22,27,34,0.65)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--text-3)",
+                  borderBottom: "1px solid var(--border)",
+                  borderTop: pending.length > 0 ? "1px solid var(--border)" : undefined,
+                }}>
+                  ▸ Settled — {settled.length}
+                </div>
+                {dateGroups.map(([date, dateBets]) => {
+                  const dayNet = dateBets.reduce((sum, b) => sum + (b.units_returned ?? 0), 0);
+                  const wins = dateBets.filter((b) => b.result === "WIN").length;
+                  const losses = dateBets.filter((b) => b.result === "LOSS").length;
+                  const pnlColor = dayNet > 0 ? "var(--green)" : dayNet < 0 ? "var(--red)" : "var(--text-3)";
+                  return (
+                    <div key={date}>
+                      <div className="date-group-header">
+                        <span>{date}</span>
+                        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                          <span style={{ color: "var(--text-3)" }}>{wins}W–{losses}L</span>
+                          <span className="dgh-pnl" style={{ color: pnlColor }}>
+                            {dayNet >= 0 ? "+" : ""}{dayNet.toFixed(2)}u
+                          </span>
+                        </div>
+                      </div>
+                      {dateBets.map((b) => (
+                        <BetRow key={b.id} bet={b} onSettle={handleSettle} onDelete={handleDelete} unlocked={unlocked} />
+                      ))}
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
         </div>
         </LiquidChromeBg>
       )}

@@ -84,10 +84,14 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
   const leanAbbr = analysis?.ml_lean === "HOME" ? game.home_team_abbr
     : analysis?.ml_lean === "AWAY" ? game.away_team_abbr : null;
 
+  const tierClass = analysis?.ml_tier === "STRONG LEAN" ? "game-card-tier-sl"
+    : analysis?.ml_tier === "LEAN" ? "game-card-tier-l"
+    : "game-card-tier-pass";
+
   return (
     <Link href={`/game/${game.game_id}?date=${game.game_date}`} style={{ textDecoration: "none" }}>
       <div
-        className="game-card fade-up infield-divider"
+        className={`game-card fade-up infield-divider ${tierClass}`}
         style={{
           "--delay": `${index * 35}ms`,
           "--clay": hasTier ? tc : "var(--border-2)",
@@ -96,7 +100,7 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
           borderRadius: "6px",
           padding: "14px 18px",
           display: "grid",
-          gridTemplateColumns: "1fr 130px 1fr",
+          gridTemplateColumns: "1fr 160px 1fr",
           gap: "16px",
           alignItems: "center",
         } as React.CSSProperties}

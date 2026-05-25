@@ -548,6 +548,59 @@ body::before {
   line-height: 1.55;
 }
 
+/* ── Bet row result states ────────────────────── */
+/* Left border accent + faint background tint */
+.bet-result-win {
+  border-left: 2px solid var(--green) !important;
+  background: linear-gradient(90deg, rgba(63,185,80,0.05) 0%, rgba(13,17,23,0.6) 60%) !important;
+}
+.bet-result-loss {
+  border-left: 2px solid var(--red) !important;
+  background: linear-gradient(90deg, rgba(248,81,73,0.05) 0%, rgba(13,17,23,0.6) 60%) !important;
+}
+.bet-result-push {
+  border-left: 2px solid var(--text-3) !important;
+  background: rgba(13,17,23,0.6) !important;
+}
+.bet-result-pending {
+  border-left: 2px solid var(--amber) !important;
+  background: linear-gradient(90deg, rgba(210,153,34,0.04) 0%, rgba(13,17,23,0.6) 60%) !important;
+}
+
+/* ── Date group header in tracker ─────────────── */
+.date-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  background: rgba(22,27,34,0.7);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.date-group-header .dgh-pnl {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+
+/* ── Tier left-accent on slate cards ──────────── */
+.game-card-tier-sl {
+  border-left: 3px solid var(--green) !important;
+}
+.game-card-tier-l {
+  border-left: 3px solid var(--blue) !important;
+}
+.game-card-tier-pass {
+  border-left: 3px solid var(--border) !important;
+}
+
 /* ── Utility ──────────────────────────────────── */
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-3); }
