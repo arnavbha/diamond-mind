@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { api, todayET, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
+
+// Three.js can't run server-side — dynamic import with ssr:false
+const DitherHeader = dynamic(
+  () => import("@/components/dither-header").then((m) => m.DitherHeader),
+  { ssr: false, loading: () => <div style={{ height: 220, marginBottom: 32 }} /> },
+);
 
 // ── Track button + unit modal ─────────────────────────────────────────────────
 
@@ -415,6 +422,9 @@ export default function PicksPage() {
 
   return (
     <div>
+      {/* Dither wave header — fades into page bg */}
+      <DitherHeader height={200} color={[0.04, 0.32, 0.14]} speed={0.04} colorNum={5} pixelSize={3} />
+
       {trackModal && (
         <TrackModal
           ctx={trackModal}

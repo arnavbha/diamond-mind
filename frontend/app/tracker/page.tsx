@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
+import { LiquidChromeBg } from "@/components/liquid-chrome-bg";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -447,12 +448,21 @@ export default function TrackerPage() {
         </div>
       )}
 
-      {/* Summary stats */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
-        <SummaryGroup label="Combined" g={s.combined} />
-        <SummaryGroup label="Moneyline" g={s.ml} />
-        <SummaryGroup label="Over / Under" g={s.total} />
-      </div>
+      {/* Summary stats — liquid chrome accent behind the P&L cards */}
+      <LiquidChromeBg
+        baseColor={[0.03, 0.05, 0.09]}
+        speed={0.12}
+        amplitude={0.22}
+        borderRadius={8}
+        padding="12px"
+      >
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: 0 }}>
+          <SummaryGroup label="Combined" g={s.combined} />
+          <SummaryGroup label="Moneyline" g={s.ml} />
+          <SummaryGroup label="Over / Under" g={s.total} />
+        </div>
+      </LiquidChromeBg>
+      <div style={{ marginBottom: 20 }} />
 
       {/* Tabs */}
       <Tabs active={tab} onChange={setTab} />
