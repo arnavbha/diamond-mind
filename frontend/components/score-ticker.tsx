@@ -70,10 +70,17 @@ async function loadGames(date: string): Promise<TickerGame[]> {
       const abstractState = statusObj.abstractGameState ?? "";
       const detailedState = statusObj.detailedState ?? "";
 
+      // MLB returns abstractGameState="Live" for warmup/pre-game states
+      // before first pitch. Guard on detailedState to avoid false "T1".
+      const PRE_GAME_STATES = ["warmup", "pre-game", "delayed start", "preview", "scheduled"];
+      const detailedLower = detailedState.toLowerCase();
+      const isActuallyLive = abstractState === "Live" &&
+        !PRE_GAME_STATES.some(s => detailedLower.includes(s));
+
       let state: TickerGame["state"] = "preview";
       if (abstractState === "Final") state = "final";
-      else if (abstractState === "Live") state = "live";
-      else if (detailedState.toLowerCase().includes("postponed")) state = "postponed";
+      else if (isActuallyLive) state = "live";
+      else if (detailedLower.includes("postponed")) state = "postponed";
 
       const ls = (g.linescore ?? {}) as Record<string, unknown>;
       const teams = (g.teams ?? {}) as Record<string, Record<string, unknown>>;

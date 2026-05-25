@@ -84,12 +84,17 @@ async function fetchScores(date: string): Promise<GameScore[]> {
     const codedState = statusObj.codedGameState ?? "";
     const detailedState = statusObj.detailedState ?? "";
 
-    // Classify
+    // Classify — guard against warmup/pre-game states that MLB marks "Live"
+    const PRE_GAME_STATES = ["warmup", "pre-game", "delayed start", "preview", "scheduled"];
+    const detailedLower = detailedState.toLowerCase();
+    const isActuallyLive = abstractState === "Live" &&
+      !PRE_GAME_STATES.some(s => detailedLower.includes(s));
+
     let status: GameScore["status"] = "preview";
     if (abstractState === "Final") status = "final";
-    else if (abstractState === "Live") status = "live";
-    else if (detailedState.toLowerCase().includes("postponed")) status = "postponed";
-    else if (detailedState.toLowerCase().includes("suspended")) status = "suspended";
+    else if (isActuallyLive) status = "live";
+    else if (detailedLower.includes("postponed")) status = "postponed";
+    else if (detailedLower.includes("suspended")) status = "suspended";
 
     // Inning label for live games
     let inningLabel: string | null = null;
