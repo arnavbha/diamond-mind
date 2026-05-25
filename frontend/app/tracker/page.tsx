@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
 import CountUp from "@/components/count-up";
+import { DitherHeader } from "@/components/dither-header";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -384,63 +385,78 @@ export default function TrackerPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-        marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid var(--border)",
-      }}>
-        <div>
-          <h1 style={{
-            fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px",
-            letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase",
-          }}>Picks Tracker</h1>
-          <div style={{
-            fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)",
-            marginTop: "4px",
-          }}>
-            Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
+      {/* Dither banner */}
+      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden" }}>
+        <DitherHeader
+          color={[0.95, 0.55, 0.1]}
+          colorNum={8}
+          amplitude={0.3}
+          frequency={3}
+          speed={0.03}
+          height={110}
+        />
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "flex-end",
+          padding: "0 20px 14px",
+          background: "linear-gradient(to right, rgba(8,12,16,0.65) 0%, rgba(8,12,16,0.2) 60%, rgba(8,12,16,0.55) 100%)",
+        }}>
+          <div>
+            <h1 style={{
+              fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px",
+              letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
+            }}>Picks Tracker</h1>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "2px" }}>
+              Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
+            </div>
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
-          <AdminGate onUnlocked={() => setUnlocked(true)} />
-          <button
-            onClick={handleAutoTrack}
-            disabled={autoTracking || !unlocked}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              fontWeight: 700,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              padding: "8px 14px",
-              borderRadius: "4px",
-              border: "1px solid var(--blue)",
-              background: (autoTracking || !unlocked) ? "var(--surface)" : "var(--blue)",
-              color: (autoTracking || !unlocked) ? "var(--blue)" : "#000",
-              cursor: (autoTracking || !unlocked) ? "not-allowed" : "pointer",
-              opacity: (autoTracking || !unlocked) ? 0.5 : 1,
-              transition: "opacity 0.12s",
-            }}
-          >
-            {autoTracking ? "Tracking…" : `⚡ Auto-track ${today}`}
-          </button>
-          {autoResult && (
-            <div style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "12px",
-              color: autoResult.created > 0 ? "var(--green)" : "var(--text-3)",
-            }}>
-              {autoResult.created > 0
-                ? `+${autoResult.created} logged · ${autoResult.skipped} already tracked`
-                : `All picks already tracked (${autoResult.skipped} skipped)`}
-            </div>
-          )}
-          {autoError && (
-            <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)" }}>
-              {autoError}
-            </div>
-          )}
-        </div>
+      </div>
+
+      {/* Controls row */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "flex-end",
+        gap: "8px", padding: "10px 0", marginBottom: "20px",
+        borderBottom: "1px solid var(--border)",
+      }}>
+        <AdminGate onUnlocked={() => setUnlocked(true)} />
+        <button
+          onClick={handleAutoTrack}
+          disabled={autoTracking || !unlocked}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            padding: "8px 14px",
+            borderRadius: "4px",
+            border: "1px solid var(--blue)",
+            background: (autoTracking || !unlocked) ? "var(--surface)" : "var(--blue)",
+            color: (autoTracking || !unlocked) ? "var(--blue)" : "#000",
+            cursor: (autoTracking || !unlocked) ? "not-allowed" : "pointer",
+            opacity: (autoTracking || !unlocked) ? 0.5 : 1,
+            transition: "opacity 0.12s",
+          }}
+        >
+          {autoTracking ? "Tracking…" : `⚡ Auto-track ${today}`}
+        </button>
+        {autoResult && (
+          <div style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "12px",
+            color: autoResult.created > 0 ? "var(--green)" : "var(--text-3)",
+          }}>
+            {autoResult.created > 0
+              ? `+${autoResult.created} logged · ${autoResult.skipped} already tracked`
+              : `All picks already tracked (${autoResult.skipped} skipped)`}
+          </div>
+        )}
+        {autoError && (
+          <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)" }}>
+            {autoError}
+          </div>
+        )}
       </div>
 
       {settleError && (

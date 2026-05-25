@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
+import { DitherHeader } from "@/components/dither-header";
 
 function TeamLogo({ abbr, size = 28 }: { abbr: string; size?: number }) {
   return (
@@ -194,11 +195,40 @@ function SlatePageInner() {
           <line x1="16" y1="100" x2="184" y2="100" stroke="var(--text)" strokeWidth={1} />
         </svg>
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", paddingBottom: "14px", borderBottom: "1px solid var(--border)" }}>
-        <div>
-          <h1 style={{ fontWeight: 700, fontSize: "20px", letterSpacing: "-0.03em", margin: 0 }}>Daily Slate</h1>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "3px" }}>{date}</div>
+      {/* Dither banner */}
+      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden", marginBottom: "0" }}>
+        <DitherHeader
+          color={[0.2, 0.5, 0.95]}
+          colorNum={8}
+          amplitude={0.3}
+          frequency={3}
+          speed={0.03}
+          height={110}
+        />
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "flex-end",
+          padding: "0 20px 14px",
+          background: "linear-gradient(to right, rgba(8,12,16,0.65) 0%, rgba(8,12,16,0.2) 60%, rgba(8,12,16,0.55) 100%)",
+        }}>
+          <div>
+            <h1 style={{
+              fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px",
+              letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
+            }}>Daily Slate</h1>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "2px" }}>
+              {date}
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Date nav row */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "flex-end",
+        padding: "10px 0", marginBottom: "20px",
+        borderBottom: "1px solid var(--border)",
+      }}>
         <DateNav date={date} onChange={changeDate} />
       </div>
 
