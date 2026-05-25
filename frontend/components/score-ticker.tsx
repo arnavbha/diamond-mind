@@ -290,14 +290,15 @@ export function ScoreTicker() {
       width: "100%",
       height: 28,
       background: "var(--surface-2)",
-      borderBottom: `1px solid ${hasLive ? "rgba(63,185,80,0.25)" : "var(--border)"}`,
       overflow: "hidden",
       position: "sticky",
-      top: 52,   // height of the nav bar
+      top: 52,
       zIndex: 99,
       display: "flex",
       alignItems: "center",
     }}>
+      {/* Animated bottom line */}
+      <div className={hasLive ? "ticker-live-line" : "ticker-idle-line"} />
       {/* Scrolling track — contents duplicated for seamless loop */}
       <div style={{
         display: "inline-flex",

@@ -45,8 +45,16 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
+@keyframes gridDrift {
+  0%   { background-position: 0px 0px; }
+  100% { background-position: 28px 28px; }
+}
+
 body {
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, rgba(205,217,229,0.055) 1px, transparent 1px);
+  background-size: 28px 28px;
+  animation: gridDrift 28s linear infinite;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 13px;
@@ -84,6 +92,39 @@ body::before {
 @keyframes scoreTicker {
   from { transform: translateX(0); }
   to   { transform: translateX(-50%); }
+}
+
+@keyframes tickerLineSlide {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.ticker-live-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--green),
+    var(--blue),
+    var(--purple),
+    var(--amber),
+    var(--green)
+  );
+  background-size: 200% 100%;
+  animation: tickerLineSlide 5s linear infinite;
+  opacity: 0.75;
+}
+
+.ticker-idle-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
 }
 
 /* ── Canonical live pulse (replaces tickerPulse + pulse) ── */
