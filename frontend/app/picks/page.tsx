@@ -284,7 +284,7 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
   }
 
   return (
-    <div style={{
+    <div className="potd-card glare-card" style={{
       marginBottom: "28px",
       border: "1px solid rgba(63,185,80,0.35)",
       borderRadius: "8px",
@@ -446,7 +446,7 @@ function PickCard({
       >
         <div
           ref={slabRef}
-          className={`verdict-slab${isActionable ? " spotlight-card" : ""}`}
+          className={`verdict-slab glare-card${isActionable ? " spotlight-card" : ""}`}
           style={{
             "--slab-color": slab,
             ...(spotlightColor ? { "--spotlight-color": spotlightColor } : {}),

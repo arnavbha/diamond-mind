@@ -93,7 +93,7 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
   return (
     <Link href={`/game/${game.game_id}?date=${game.game_date}`} style={{ textDecoration: "none" }}>
       <div
-        className={`game-card fade-up infield-divider ${tierClass}`}
+        className={`game-card fade-up infield-divider glare-card ${tierClass}`}
         style={{
           "--delay": `${index * 35}ms`,
           "--clay": hasTier ? tc : "var(--border-2)",

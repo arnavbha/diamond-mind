@@ -4,6 +4,7 @@ import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
 import DecryptedText from "@/components/decrypted-text";
+import NoiseOverlay from "@/components/noise-overlay";
 import "./globals.css";
 
 const FONTS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap";
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavLinks />
           <GlossaryButton />
         </nav>
+        <NoiseOverlay patternAlpha={12} patternRefreshInterval={3} />
         <ScoreTicker />
         <main style={{ maxWidth: "1120px", margin: "0 auto", padding: "28px 24px" }}>
           {children}

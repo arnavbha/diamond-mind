@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
+import CountUp from "@/components/count-up";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
     ? ((g.wins / (g.wins + g.losses)) * 100).toFixed(0) + "%"
     : "—";
   return (
-    <div style={{
+    <div className="glare-card" style={{
       flex: 1, minWidth: 0,
       background: "var(--surface-2)",
       border: "1px solid var(--border)",
@@ -66,7 +67,15 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
         color: netColor,
         lineHeight: 1,
       }}>
-        {g.units_net >= 0 ? "+" : ""}{g.units_net.toFixed(2)}u
+        {g.units_net >= 0 ? "+" : ""}
+        <CountUp
+          to={g.units_net}
+          from={0}
+          direction="up"
+          duration={1.2}
+          delay={0.1}
+        />
+        u
       </div>
       <div style={{ marginTop: "8px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
         {[
