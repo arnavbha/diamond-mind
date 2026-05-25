@@ -387,6 +387,22 @@ def _auto_settle_bets(session, settle_date: date) -> None:
         log.warning("Auto-settle skipped (backend not running?): %s", exc)
 
 
+def _clear_analysis_cache() -> None:
+    """Bust the in-memory analysis cache so auto-track sees fresh odds."""
+    import httpx as _httpx
+    import os as _os
+    port = _os.environ.get("PORT", "8000")
+    try:
+        resp = _httpx.post(f"http://localhost:{port}/cache/clear", timeout=10)
+        if resp.is_success:
+            evicted = resp.json().get("evicted", 0)
+            log.info("Analysis cache cleared: %d entries evicted.", evicted)
+        else:
+            log.warning("Cache clear returned %s: %s", resp.status_code, resp.text[:200])
+    except Exception as exc:
+        log.warning("Cache clear skipped: %s", exc)
+
+
 def _auto_track_picks(session, as_of: date) -> None:
     """Log all non-PASS picks for the date with Kelly-derived units (idempotent)."""
     import httpx as _httpx
@@ -514,6 +530,13 @@ def run(as_of: date, dry_run: bool = False, history_days: int = DEFAULT_HISTORY_
 
                 # 8. Auto-settle yesterday's bets now that box scores are in.
                 _auto_settle_bets(session, yesterday)
+
+                # 8b. Invalidate the analysis cache so auto-track sees fresh
+                # odds/lines. Without this, an earlier /games/picks call may
+                # have cached a stale all-PASS analysis (from when odds
+                # ingestion failed), and auto-track would see no actionable
+                # picks despite real odds now in the DB.
+                _clear_analysis_cache()
 
                 # 9. Auto-track all non-PASS picks for today.
                 _auto_track_picks(session, as_of)
