@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href={FONTS_URL} rel="stylesheet" />
       </head>
       <body>
+        <div className="dot-grid" aria-hidden="true" />
         <nav style={{
           borderBottom: "1px solid var(--border)",
           padding: "0 24px",
@@ -61,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </nav>
         <NoiseOverlay patternAlpha={12} patternRefreshInterval={3} />
         <ScoreTicker />
-        <main style={{ maxWidth: "1120px", margin: "0 auto", padding: "28px 24px" }}>
+        <main style={{ maxWidth: "1120px", margin: "0 auto", padding: "28px 24px", position: "relative", zIndex: 1 }}>
           {children}
         </main>
       </body>

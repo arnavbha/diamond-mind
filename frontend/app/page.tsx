@@ -216,7 +216,7 @@ function SlatePageInner() {
               fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px",
               letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
             }}>Daily Slate</h1>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "2px" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "rgba(255,255,255,0.7)", marginTop: "4px", textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>
               {date}
             </div>
           </div>

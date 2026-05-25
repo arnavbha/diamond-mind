@@ -51,15 +51,22 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 
 body {
-  background-color: var(--bg);
-  background-image: radial-gradient(circle, rgba(205,217,229,0.055) 1px, transparent 1px);
-  background-size: 28px 28px;
-  animation: gridDrift 28s linear infinite;
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
   letter-spacing: 0;
+}
+
+.dot-grid {
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(205,217,229,0.11) 1px, transparent 1px);
+  background-size: 28px 28px;
+  animation: gridDrift 12s linear infinite;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ── Scanline texture ──────────────────────────── */
