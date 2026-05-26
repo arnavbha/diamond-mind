@@ -1308,6 +1308,9 @@ def slate(
             away_bp = _bp(meta["away_team_id"], meta["away_probable_starter_id"])
         return {**meta, "home_bullpen": home_bp, "away_bullpen": away_bp, "analysis": analysis}
 
+    if not game_meta:
+        return []
+
     output_map: dict[int, dict] = {}
     with ThreadPoolExecutor(max_workers=min(len(game_meta), 8)) as pool:
         futures = {pool.submit(_compute_game, m): m["game_id"] for m in game_meta}

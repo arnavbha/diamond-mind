@@ -664,7 +664,7 @@ export default function PicksPage() {
 
       {error && (
         <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>
-          Backend not reachable — run: <code style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>uvicorn app.api.routes:app --port 8000</code>
+          Unable to load picks data. The backend may be starting up — try refreshing in a moment.
         </div>
       )}
       {!error && picks === null && (

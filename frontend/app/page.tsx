@@ -264,7 +264,7 @@ function SlatePageInner() {
         <DateNav date={date} onChange={changeDate} />
       </div>
 
-      {error && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>Backend offline — <code style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>uvicorn app.api.routes:app --port 8000</code></div>}
+      {error && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px" }}>Unable to load slate data. The backend may be starting up — try refreshing in a moment.</div>}
       {!error && games === null && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>}
       {games?.length === 0 && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games for {date}.</div>}
 
