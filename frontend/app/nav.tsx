@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Slate" },
   { href: "/picks", label: "Picks" },
   { href: "/tracker", label: "Tracker" },
+  { href: "/chat", label: "ARIA" },
   { href: "/report", label: "Report" },
   { href: "/verify", label: "Verifier" },
   { href: "/track-record", label: "Track Record" },

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     obsidian_vault_path: Path = Field(default=PROJECT_ROOT / "obsidian_vault")
 
     anthropic_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
 
     log_level: str = Field(default="INFO")
 
@@ -56,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def has_anthropic(self) -> bool:
         return bool(self.anthropic_api_key)
+
+    @property
+    def has_groq(self) -> bool:
+        return bool(self.groq_api_key)
 
 
 def get_settings() -> Settings:

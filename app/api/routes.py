@@ -2042,3 +2042,61 @@ def list_ingestion_jobs():
         }
         for jid, job in _INGESTION_JOBS.items()
     ]
+
+
+# ---------------------------------------------------------------------------
+# Chat endpoint
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as PydanticModel
+
+class ChatRequest(PydanticModel):
+    message: str
+    date: Optional[str] = None  # ISO date string, defaults to today ET
+
+
+class ChatResponse(PydanticModel):
+    answer: str
+    intent: str
+    sources_count: int
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest, db: Session = Depends(get_db)):
+    from app.chat.classifier import classify
+    from app.chat.retrieval import get_context_for_intent
+    from app.chat.synthesizer import synthesize
+
+    settings = get_settings()
+    if not settings.has_groq:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY not configured")
+
+    today = date.today()
+    if req.date:
+        try:
+            today = date.fromisoformat(req.date)
+        except ValueError:
+            pass
+
+    classified = classify(req.message, today)
+    docs = get_context_for_intent(
+        db=db,
+        intent=classified.intent,
+        team_abbr=classified.entities.team_abbr,
+        query_date=classified.entities.query_date,
+        today=today,
+    )
+
+    answer = synthesize(
+        intent=classified.intent,
+        question=req.message,
+        context_docs=docs,
+        today=today,
+        groq_api_key=settings.groq_api_key,
+    )
+
+    return ChatResponse(
+        answer=answer,
+        intent=classified.intent,
+        sources_count=len(docs),
+    )

@@ -388,6 +388,11 @@ export const api = {
     >(`/admin/ingestion-jobs`),
   backtest: (start: string, end: string) =>
     get<BacktestResult>(`/backtest?start=${start}&end=${end}`),
+  chat: (message: string, date?: string) =>
+    post<{ answer: string; intent: string; sources_count: number }>(
+      "/chat",
+      { message, date },
+    ),
 };
 
 export type QuantVerify = {
