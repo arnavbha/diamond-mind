@@ -78,7 +78,7 @@ def _warmup_today() -> None:
     today = date.today()
     try:
         with SessionLocal() as db:
-            from app.models.entities import Game as GameModel
+            from app.models.games import Game as GameModel
             rows = db.execute(
                 select(GameModel.id).where(GameModel.game_date == today)
             ).scalars().all()
@@ -2085,6 +2085,14 @@ def chat(req: ChatRequest, db: Session = Depends(_get_db)):
             pass
 
     classified = classify(req.message, today)
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "CHAT intent=%s team=%s player=%s date=%s",
+        classified.intent,
+        classified.entities.team_abbr,
+        classified.entities.player_name,
+        classified.entities.query_date,
+    )
     docs = get_context_for_intent(
         db=db,
         intent=classified.intent,
@@ -2093,6 +2101,7 @@ def chat(req: ChatRequest, db: Session = Depends(_get_db)):
         today=today,
         player_name=classified.entities.player_name,
     )
+    logger.info("CHAT sources=%d", len(docs))
 
     answer = synthesize(
         intent=classified.intent,
