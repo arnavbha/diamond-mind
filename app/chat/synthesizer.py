@@ -67,6 +67,30 @@ def _format_context(intent: str, docs: list[dict]) -> str:
             elif block["type"] == "pending":
                 lines.append(f"Pending (unsettled): {block['count']} bets")
 
+    elif intent == "team_stat":
+        lines.append("TEAM STATS:")
+        for d in docs:
+            lines.append(f"\n  {d.get('team','?')} ({d.get('abbr','?')})")
+            for w in d.get("windows", []):
+                label = w.get("window", "?").replace("_", " ").title()
+                warn = " ⚠ small sample" if w.get("insufficient_sample") else ""
+                wins = w.get("record_wins", 0) or 0
+                losses = w.get("record_losses", 0) or 0
+                rpg = w.get("runs_per_game")
+                rapg = w.get("runs_allowed_per_game")
+                ops = w.get("team_ops")
+                woba = w.get("team_woba")
+                lineup_q = w.get("lineup_quality_score")
+                lines.append(
+                    f"    [{label}] G={w.get('games',0)} | W-L={wins}-{losses} | "
+                    f"R/G={rpg if rpg is not None else 'N/A'} | "
+                    f"RA/G={rapg if rapg is not None else 'N/A'} | "
+                    f"OPS={ops if ops is not None else 'N/A'} | "
+                    f"wOBA={woba if woba is not None else 'N/A'} | "
+                    f"lineup_q={lineup_q if lineup_q is not None else 'N/A'} | "
+                    f"trend={w.get('trend_label','?')}{warn}"
+                )
+
     elif intent == "bullpen_today":
         lines.append("BULLPEN VULNERABILITY (highest → lowest):")
         for d in docs[:10]:
@@ -142,8 +166,9 @@ OUT_OF_SCOPE_RESPONSE = """I don't have data to answer that.
 Here's what I can help with:
 • **Today's picks** — "What are today's leans?"
 • **Past picks** — "What were the picks on 2026-05-20?"
-• **Team history** — "Show me recent Yankees picks"
-• **Player stats** — "What is Zack Wheeler's ERA?" or "How has Harper been hitting?"
+• **Team picks** — "Show me recent Yankees picks"
+• **Team stats** — "How are the Dodgers doing?" or "Compare Yankees and Red Sox"
+• **Player stats** — "What is Zack Wheeler's ERA?" or "Compare Ohtani and Judge"
 • **Bullpen vulnerability** — "Which bullpens are most vulnerable today?"
 • **Model reasoning** — "Why did the model like the Phillies?"
 • **Track record** — "What's our record this month?" """

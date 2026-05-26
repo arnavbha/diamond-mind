@@ -169,6 +169,70 @@ def get_picks_for_team(
     return _rows(db, sql, params)
 
 
+def get_team_stats(
+    db: Session,
+    team_abbrs: list[str] | str,
+    as_of: Optional[date] = None,
+) -> list[dict]:
+    """Pull pre-computed team-level form windows: runs/game, OPS, W-L, trend.
+
+    Source: team_form_windows (populated by Track A's recent_form engine).
+    Returns one block per team with all available windows.
+    """
+    if as_of is None:
+        as_of = date.today()
+    if isinstance(team_abbrs, str):
+        team_abbrs = [team_abbrs]
+    team_abbrs = [t for t in team_abbrs if t]
+    if not team_abbrs:
+        return []
+
+    results: list[dict] = []
+    for abbr in team_abbrs:
+        team = _rows(db, "SELECT id, name, abbr FROM teams WHERE abbr = :abbr", {"abbr": abbr})
+        if not team:
+            continue
+        tid = team[0]["id"]
+        windows = _rows(db, """
+            SELECT
+                "window",
+                as_of_date,
+                games,
+                runs_per_game,
+                runs_allowed_per_game,
+                team_ops,
+                team_woba,
+                stolen_bases,
+                stolen_base_success_rate,
+                lineup_quality_score,
+                record_wins,
+                record_losses,
+                trend_label,
+                insufficient_sample
+            FROM team_form_windows
+            WHERE team_id = :tid
+              AND as_of_date = (
+                  SELECT MAX(as_of_date) FROM team_form_windows
+                  WHERE team_id = :tid AND as_of_date <= :as_of
+              )
+            ORDER BY
+                CASE "window"
+                    WHEN 'season'  THEN 1
+                    WHEN 'last_30' THEN 2
+                    WHEN 'last_15' THEN 3
+                    WHEN 'last_7'  THEN 4
+                    ELSE 5
+                END
+        """, {"tid": tid, "as_of": str(as_of)})
+        if windows:
+            results.append({
+                "team": team[0]["name"],
+                "abbr": team[0]["abbr"],
+                "windows": windows,
+            })
+    return results
+
+
 def get_tracker_record(
     db: Session,
     days_back: int = 30,
@@ -579,6 +643,11 @@ def get_context_for_intent(
         if not teams:
             return []
         return get_picks_for_team(db, teams, today=today)
+
+    if intent == "team_stat":
+        if not teams:
+            return []
+        return get_team_stats(db, teams, as_of=query_date or today)
 
     if intent == "tracker_record":
         return get_tracker_record(db, today=today)

@@ -255,8 +255,15 @@ def _extract_player_names(text: str) -> list[str]:
             if accepted:
                 break
 
-    # Single-word fallback: surnames near stat triggers
-    if re.search(r"\b(era|whip|stats?|splits?|avg|obp|slg|ops|hit|pitch|perform|recent|line|k\b|bb\b|inn|start|relief|batter|average)\b", text, re.I):
+    # Single-word fallback: surnames near stat or comparison triggers
+    # (so "Compare Ohtani and Judge" or "Skubal vs Sanchez" catches both)
+    has_stat_or_compare = re.search(
+        r"\b(era|whip|stats?|splits?|avg|obp|slg|ops|hit|pitch|perform|recent|line|"
+        r"k\b|bb\b|inn|start|relief|batter|average|compare|comparison|vs|versus|"
+        r"better|worse|or\b|and\b)\b",
+        text, re.I,
+    )
+    if has_stat_or_compare:
         for w in re.findall(rf"\b({TITLE})\b", text):
             clean = _strip_possessive(w)
             if not _is_name_word(clean) or len(clean) <= 3:
@@ -315,27 +322,38 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
     ):
         return ClassifiedQuery(intent="player_stat", entities=entities, original=text)
 
-    # Two+ teams with a comparison cue → pick_team (covers "Yankees vs Red Sox")
+    # Two+ teams with a comparison cue:
+    #   - if "pick/bet/wager/lean" present → pick_team (about our picks)
+    #   - else → team_stat (about teams themselves: record, OPS, runs)
     if (
         not has_explain_cue
         and len(teams) >= 2
         and re.search(r"\b(vs|versus|compare|comparison|better|worse|or)\b", lower)
     ):
-        return ClassifiedQuery(intent="pick_team", entities=entities, original=text)
+        if re.search(r"\b(pick|picks|bet|bets|wager|lean|signal|our)\b", lower):
+            return ClassifiedQuery(intent="pick_team", entities=entities, original=text)
+        return ClassifiedQuery(intent="team_stat", entities=entities, original=text)
 
     # If a player name was found + any stat/performance word → player_stat
     if player and re.search(r"\b(era|whip|fip|stats?|splits?|avg|average|averages|obp|slg|ops|woba|babip|hit|hits|hitting|pitch|pitching|perform|how|recent|last|line|k\b|bb\b|inn|start|relief|batter|hitter|batting)\b", lower):
         return ClassifiedQuery(intent="player_stat", entities=entities, original=text)
 
-    # If there's a team mentioned and words like "pick/lean/record/doing/form/season/etc"
-    # treat as pick_team regardless of other matches
+    # Team-related question routing:
+    #   - "picks / bets / our record" → pick_team (about our picks)
+    #   - general team performance ("doing / form / record / season") → team_stat
     if team and re.search(
-        r"\b(pick|lean|signal|bet|wager|play|record|how.{0,15}done|recent(?:ly)?|"
-        r"show|last|history|involve|doing|performing|perform|form|season|year|"
-        r"trend|streak|hot|cold|hitting|pitching)\b",
+        r"\b(pick|picks|bet|bets|wager|lean|signal|our)\b",
         lower,
     ):
         return ClassifiedQuery(intent="pick_team", entities=entities, original=text)
+
+    if team and re.search(
+        r"\b(record|how.{0,15}done|recent(?:ly)?|show|last|history|involve|"
+        r"doing|performing|perform|form|season|year|trend|streak|hot|cold|"
+        r"hitting|pitching|ops|runs|win|wins|loss|losses|standing|standings)\b",
+        lower,
+    ):
+        return ClassifiedQuery(intent="team_stat", entities=entities, original=text)
 
     for pattern, intent in _PATTERNS:
         if re.search(pattern, lower):

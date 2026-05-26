@@ -17,9 +17,10 @@ type Message = {
 const SUGGESTIONS = [
   "What are today's picks?",
   "Which bullpens are most vulnerable today?",
-  "What's our record this month?",
+  "Compare Yankees and Red Sox",
+  "Compare Ohtani and Judge",
+  "How are the Dodgers doing recently?",
   "Why did the model lean on a team today?",
-  "Show me recent Yankees picks",
 ];
 
 function renderText(text: string) {
