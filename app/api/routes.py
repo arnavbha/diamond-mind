@@ -2124,6 +2124,68 @@ def normalize_units(
     return {"updated": updated, "unchanged": unchanged, "total": len(bets)}
 
 
+@app.post("/tracker/apply-gap-taper", tags=["tracker"])
+def apply_gap_taper(
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Apply projection-vs-line gap taper to existing total bets.
+
+    For each total bet with a stored projected_total and total_line:
+      gap < 0.25  → delete (would not have been tracked)
+      gap < 0.50  → halve units (re-snap to nearest 0.5u, floor 0.5u)
+      gap >= 0.50 → unchanged
+
+    Moneyline bets are never touched.
+    Returns deleted/updated/unchanged counts.
+    """
+    bets = db.execute(
+        select(BetRecord).where(BetRecord.market == "total")
+    ).scalars().all()
+
+    deleted   = 0
+    updated   = 0
+    unchanged = 0
+    deleted_ids: list[int] = []
+
+    for bet in bets:
+        proj = bet.projected_total
+        line = bet.total_line
+        if proj is None or line is None:
+            unchanged += 1
+            continue
+
+        gap = abs(proj - line)
+
+        if gap < 0.25:
+            deleted_ids.append(bet.id)
+            db.delete(bet)
+            deleted += 1
+
+        elif gap < 0.5:
+            new_units = max(0.5, round(bet.units * 0.5 * 2) / 2)
+            if abs(new_units - bet.units) > 0.001:
+                bet.units = new_units
+                if bet.result is not None:
+                    bet.units_returned = compute_units_returned(
+                        bet.result, bet.units, bet.american_odds
+                    )
+                updated += 1
+            else:
+                unchanged += 1
+        else:
+            unchanged += 1
+
+    db.commit()
+    return {
+        "deleted": deleted,
+        "updated": updated,
+        "unchanged": unchanged,
+        "total": len(bets),
+        "deleted_ids": deleted_ids,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Admin — server-side ingestion
 # Runs run_pregame_update.py as a subprocess so it executes on the Render VM,

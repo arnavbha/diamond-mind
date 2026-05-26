@@ -943,6 +943,18 @@ def analyze_game(
             # A run-total model can never be 99%+ certain — the projection
             # itself has ~3-run SD that the quant posterior doesn't see.
             total_conf = min(0.87, qt.prob_positive)
+
+            # Gap taper: when projected total is very close to the line, the
+            # model has little directional conviction. Backtest shows gap<0.5
+            # loses at -11.9% ROI — taper kelly to reduce exposure.
+            _proj_line_gap = abs(projected_total - compare_line)
+            if _proj_line_gap < 0.25:
+                total_kelly = 0.0        # too close — skip
+                total_tier  = "PASS"
+                total_lean  = "PASS"
+                total_conf  = 0.5
+            elif _proj_line_gap < 0.5:
+                total_kelly *= 0.5       # half size
         else:
             total_lean = "PASS"
             total_kelly = 0.0
