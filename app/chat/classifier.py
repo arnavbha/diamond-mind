@@ -327,9 +327,14 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
     if player and re.search(r"\b(era|whip|fip|stats?|splits?|avg|average|averages|obp|slg|ops|woba|babip|hit|hits|hitting|pitch|pitching|perform|how|recent|last|line|k\b|bb\b|inn|start|relief|batter|hitter|batting)\b", lower):
         return ClassifiedQuery(intent="player_stat", entities=entities, original=text)
 
-    # If there's a team mentioned and words like "pick/lean/signal/record/recent/show/last"
+    # If there's a team mentioned and words like "pick/lean/record/doing/form/season/etc"
     # treat as pick_team regardless of other matches
-    if team and re.search(r"\b(pick|lean|signal|bet|wager|play|record|how.{0,15}done|recent|show|last|history|involve)\b", lower):
+    if team and re.search(
+        r"\b(pick|lean|signal|bet|wager|play|record|how.{0,15}done|recent(?:ly)?|"
+        r"show|last|history|involve|doing|performing|perform|form|season|year|"
+        r"trend|streak|hot|cold|hitting|pitching)\b",
+        lower,
+    ):
         return ClassifiedQuery(intent="pick_team", entities=entities, original=text)
 
     for pattern, intent in _PATTERNS:

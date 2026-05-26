@@ -122,12 +122,14 @@ def get_picks_for_date(db: Session, query_date: date) -> list[dict]:
 def get_picks_for_team(
     db: Session,
     team_abbrs: list[str] | str,
-    days_back: int = 14,
+    days_back: int = 180,
     today: Optional[date] = None,
 ) -> list[dict]:
     """Recent picks where one of the given teams was home or away.
 
     Accepts a list (multi-team comparison) or a string (back-compat).
+    Default window covers the bulk of a regular season; LIMIT caps the
+    returned rows so "recent" questions still surface the latest picks.
     """
     if today is None:
         today = date.today()
@@ -162,7 +164,7 @@ def get_picks_for_team(
         WHERE (ht.abbr IN ({placeholders}) OR at_.abbr IN ({placeholders}))
           AND br.game_date >= :start
         ORDER BY br.game_date DESC
-        LIMIT 40
+        LIMIT 60
     """
     return _rows(db, sql, params)
 
