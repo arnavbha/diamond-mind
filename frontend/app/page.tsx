@@ -84,6 +84,10 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
   const tc = hasTier ? tierColor(analysis!.ml_tier) : "var(--border-2)";
   const leanAbbr = analysis?.ml_lean === "HOME" ? game.home_team_abbr
     : analysis?.ml_lean === "AWAY" ? game.away_team_abbr : null;
+  const hasTotalTier = analysis && analysis.total_tier !== "PASS" && analysis.total_lean !== "PASS";
+  const ttc = hasTotalTier ? tierColor(analysis!.total_tier) : "var(--border-2)";
+  const totalLabel = analysis?.total_lean === "OVER" ? `O ${analysis.total_line ?? ""}`.trim()
+    : analysis?.total_lean === "UNDER" ? `U ${analysis.total_line ?? ""}`.trim() : null;
 
   const tierClass = analysis?.ml_tier === "STRONG LEAN" ? "game-card-tier-sl"
     : analysis?.ml_tier === "LEAN" ? "game-card-tier-l"
@@ -137,32 +141,57 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
           </div>
 
           {/* Model signal */}
-          <div style={{ textAlign: "center" }}>
-            {analysis ? (
-              hasTier ? (
-                <>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: tc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                    {analysis.ml_tier}
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
-                    {leanAbbr} to win
-                  </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
-                    <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
-                      {Math.round(analysis.ml_confidence * 100)}%
-                    </span>{" "}
-                    ·{" "}
-                    <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
-                      {(analysis.ml_kelly_fraction * 100).toFixed(1)}%
-                    </span>{" "}
-                    K
-                  </div>
-                </>
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: "8px" }}>
+            {/* ML signal */}
+            <div>
+              {analysis ? (
+                hasTier ? (
+                  <>
+                    <div style={{ fontSize: "11px", fontWeight: 600, color: tc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                      {analysis.ml_tier}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
+                      {leanAbbr} to win
+                    </div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
+                      <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                        {Math.round(analysis.ml_confidence * 100)}%
+                      </span>{" "}
+                      ·{" "}
+                      <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                        {(analysis.ml_kelly_fraction * 100).toFixed(1)}%
+                      </span>{" "}
+                      K
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>Pass</div>
+                )
               ) : (
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>Pass</div>
-              )
-            ) : (
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>
+              )}
+            </div>
+
+            {/* Total signal */}
+            {hasTotalTier && totalLabel && (
+              <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: "6px" }}>
+                <div style={{ fontSize: "11px", fontWeight: 600, color: ttc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                  {analysis!.total_tier}
+                </div>
+                <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
+                  {totalLabel}
+                </div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
+                  <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                    {Math.round(analysis!.total_confidence * 100)}%
+                  </span>{" "}
+                  ·{" "}
+                  <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                    {(analysis!.total_kelly_fraction * 100).toFixed(1)}%
+                  </span>{" "}
+                  K
+                </div>
+              </div>
             )}
           </div>
 
