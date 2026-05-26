@@ -2117,6 +2117,45 @@ def live_tick(
         db.rollback()
         summary["schedule_error"] = str(exc)[:200]
 
+    # 1b. Self-heal odds: if today's slate has NO odds snapshots, ingest now.
+    # Normally the 9am pregame cron handles this — but if it hasn't fired yet
+    # or failed, the tick fills the gap so picks aren't stuck at PASS.
+    try:
+        odds_count = db.execute(text("""
+            SELECT COUNT(*) FROM odds_snapshots os
+            JOIN games g ON os.game_id = g.id
+            WHERE g.game_date = :dt
+        """), {"dt": today.isoformat()}).scalar() or 0
+        games_today = db.execute(
+            select(Game).where(Game.game_date == today)
+        ).scalars().all()
+        if odds_count == 0 and games_today:
+            from scripts.run_pregame_update import (
+                _ingest_odds_and_weather,
+                _map_odds_event_ids,
+                _pick_odds_provider,
+            )
+            provider = _pick_odds_provider()
+            _map_odds_event_ids(db, today, provider=provider)
+            _ingest_odds_and_weather(db, games_today, today, provider=provider)
+            db.commit()
+            new_odds_count = db.execute(text("""
+                SELECT COUNT(*) FROM odds_snapshots os
+                JOIN games g ON os.game_id = g.id
+                WHERE g.game_date = :dt
+            """), {"dt": today.isoformat()}).scalar() or 0
+            summary["odds_self_heal"] = {
+                "provider": getattr(provider, "__name__", str(provider)),
+                "snapshots_after": new_odds_count,
+            }
+            # Invalidate analysis cache so picks endpoint sees new odds
+            _cache_invalidate_all()
+        else:
+            summary["odds_snapshots"] = odds_count
+    except Exception as exc:
+        db.rollback()
+        summary["odds_error"] = str(exc)[:200]
+
     # 2. Settle today's bets that just reached terminal
     try:
         settle_result = _auto_settle_impl(db, today)
