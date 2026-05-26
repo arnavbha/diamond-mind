@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
-SYSTEM_PROMPT = """You are ARIA, the Diamond Mind baseball intelligence assistant.
+SYSTEM_PROMPT = """You are ACE (Analytics & Confidence Engine), the Diamond Mind baseball intelligence assistant.
 
 Diamond Mind is a quant MLB betting model. You answer questions using ONLY the structured data retrieved from the Diamond Mind database — never from general baseball knowledge.
 

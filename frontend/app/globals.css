@@ -184,7 +184,7 @@ body::before {
 }
 
 /* ── ARIA typing indicator ── */
-@keyframes ariaPulse {
+@keyframes acePulse {
   0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
   40%           { opacity: 1;   transform: scale(1.1); }
 }
