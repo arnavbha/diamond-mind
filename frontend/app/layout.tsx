@@ -5,6 +5,7 @@ import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
 import DecryptedText from "@/components/decrypted-text";
 import NoiseOverlay from "@/components/noise-overlay";
+import DotGrid from "@/components/dot-grid";
 import "./globals.css";
 
 const FONTS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap";
@@ -23,7 +24,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href={FONTS_URL} rel="stylesheet" />
       </head>
       <body>
-        <div className="dot-grid" aria-hidden="true" />
+        <DotGrid
+          dotSize={2}
+          gap={22}
+          baseColor="#2D3748"
+          activeColor="#58A6FF"
+          proximity={120}
+          shockStrength={10}
+        />
         <nav style={{
           borderBottom: "1px solid var(--border)",
           padding: "0 24px",
