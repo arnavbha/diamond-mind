@@ -46,8 +46,8 @@
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 @keyframes gridDrift {
-  0%   { background-position: 0px 0px; }
-  100% { background-position: 28px 28px; }
+  0%   { transform: translate(0px, 0px); }
+  100% { transform: translate(28px, 28px); }
 }
 
 body {
@@ -61,7 +61,7 @@ body {
 
 .dot-grid {
   position: fixed;
-  inset: 0;
+  inset: -28px;
   background-image: radial-gradient(circle, rgba(205,217,229,0.11) 1px, transparent 1px);
   background-size: 28px 28px;
   animation: gridDrift 12s linear infinite;
