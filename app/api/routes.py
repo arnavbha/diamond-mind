@@ -2085,13 +2085,10 @@ def chat(req: ChatRequest, db: Session = Depends(_get_db)):
             pass
 
     classified = classify(req.message, today)
-    logger = logging.getLogger(__name__)
-    logger.info(
-        "CHAT intent=%s team=%s player=%s date=%s",
-        classified.intent,
-        classified.entities.team_abbr,
-        classified.entities.player_name,
-        classified.entities.query_date,
+    print(
+        f"[CHAT] intent={classified.intent} team={classified.entities.team_abbr}"
+        f" player={classified.entities.player_name!r} date={classified.entities.query_date}",
+        flush=True,
     )
     docs = get_context_for_intent(
         db=db,
@@ -2101,7 +2098,7 @@ def chat(req: ChatRequest, db: Session = Depends(_get_db)):
         today=today,
         player_name=classified.entities.player_name,
     )
-    logger.info("CHAT sources=%d", len(docs))
+    print(f"[CHAT] sources={len(docs)}", flush=True)
 
     answer = synthesize(
         intent=classified.intent,
