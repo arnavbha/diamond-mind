@@ -84,7 +84,10 @@ body::before {
 /* ── Game sidebar ─────────────────────────────── */
 .game-sidebar-backdrop {
   position: fixed;
-  inset: 0;
+  top: 88px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0);
   z-index: 150;
   pointer-events: none;
@@ -96,10 +99,10 @@ body::before {
 }
 .game-sidebar {
   position: fixed;
-  top: 0;
+  top: 88px; /* nav 52px + ticker 36px */
   right: 0;
   width: min(620px, 96vw);
-  height: 100dvh;
+  height: calc(100dvh - 88px);
   background: var(--surface);
   border-left: 1px solid var(--border);
   z-index: 151;

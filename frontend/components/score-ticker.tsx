@@ -288,7 +288,7 @@ export function ScoreTicker() {
   return (
     <div style={{
       width: "100%",
-      height: 28,
+      height: 36,
       background: "var(--surface-2)",
       overflow: "hidden",
       position: "sticky",
@@ -307,7 +307,7 @@ export function ScoreTicker() {
         animation: `scoreTicker ${durationSec}s linear infinite`,
         willChange: "transform",
         fontFamily: "var(--font-mono)",
-        fontSize: "11px",
+        fontSize: "12.5px",
         letterSpacing: "0.02em",
       }}>
         {/* First copy */}
