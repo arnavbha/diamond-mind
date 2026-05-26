@@ -256,12 +256,136 @@ def get_model_explanation(
         return _rows(db, sql, {"dt": str(game_date)})
 
 
+def get_player_stats(
+    db: Session,
+    player_name: str,
+    as_of: Optional[date] = None,
+) -> list[dict]:
+    """Search players by name and return pre-computed form-window stats.
+
+    Pulls from pitcher_form_windows / player_form_windows (computed by the
+    Phase 5 engine) rather than re-deriving stats from raw game logs.
+    Returns all available windows (season, last_10_starts, last_5_starts)
+    for the most recent as_of_date <= today.
+    """
+    if as_of is None:
+        as_of = date.today()
+
+    # Fuzzy name search — split into words and match all parts
+    name_parts = player_name.strip().split()
+    like_clauses = " AND ".join(f"full_name LIKE :p{i}" for i in range(len(name_parts)))
+    params: dict = {f"p{i}": f"%{part}%" for i, part in enumerate(name_parts)}
+
+    player_rows = _rows(db, f"""
+        SELECT id, full_name, primary_position, bats, throws, current_team_id
+        FROM players
+        WHERE {like_clauses}
+        LIMIT 3
+    """, params)
+
+    if not player_rows:
+        return []
+
+    results = []
+    for player in player_rows:
+        pid = player["id"]
+        pos = player.get("primary_position", "")
+
+        # --- Pitcher form windows ---
+        if pos in ("P", "SP", "RP") or not pos:
+            pitcher_rows = _rows(db, """
+                SELECT
+                    window,
+                    as_of_date,
+                    starts,
+                    innings_pitched,
+                    era,
+                    fip,
+                    xfip,
+                    babip,
+                    whip,
+                    k_per_9,
+                    bb_per_9,
+                    hr_per_9,
+                    avg_pitches_per_start,
+                    avg_innings_per_start,
+                    trend_label,
+                    insufficient_sample
+                FROM pitcher_form_windows
+                WHERE pitcher_id = :pid
+                  AND as_of_date = (
+                      SELECT MAX(as_of_date) FROM pitcher_form_windows
+                      WHERE pitcher_id = :pid AND as_of_date <= :as_of
+                  )
+                ORDER BY
+                    CASE window
+                        WHEN 'season'         THEN 1
+                        WHEN 'last_10_starts' THEN 2
+                        WHEN 'last_5_starts'  THEN 3
+                        ELSE 4
+                    END
+            """, {"pid": pid, "as_of": str(as_of)})
+
+            if pitcher_rows:
+                results.append({
+                    "player": player["full_name"],
+                    "position": pos or "P",
+                    "type": "pitcher",
+                    "windows": pitcher_rows,
+                })
+
+        # --- Batter form windows ---
+        if pos not in ("P", "SP", "RP"):
+            batter_rows = _rows(db, """
+                SELECT
+                    window,
+                    as_of_date,
+                    games,
+                    plate_appearances,
+                    batting_avg,
+                    on_base_pct,
+                    slugging_pct,
+                    ops,
+                    woba,
+                    home_runs,
+                    strikeouts,
+                    walks,
+                    trend_label,
+                    insufficient_sample
+                FROM player_form_windows
+                WHERE player_id = :pid
+                  AND as_of_date = (
+                      SELECT MAX(as_of_date) FROM player_form_windows
+                      WHERE player_id = :pid AND as_of_date <= :as_of
+                  )
+                ORDER BY
+                    CASE window
+                        WHEN 'season' THEN 1
+                        WHEN 'last_30' THEN 2
+                        WHEN 'last_15' THEN 3
+                        WHEN 'last_7'  THEN 4
+                        ELSE 5
+                    END
+            """, {"pid": pid, "as_of": str(as_of)})
+
+            if batter_rows:
+                results.append({
+                    "player": player["full_name"],
+                    "position": pos or "?",
+                    "type": "batter",
+                    "windows": batter_rows,
+                })
+
+    return results
+
+
 def get_context_for_intent(
     db: Session,
     intent: str,
     team_abbr: Optional[str],
     query_date: Optional[date],
     today: date,
+    player_name: Optional[str] = None,
 ) -> list[dict]:
     """Router: dispatch to the right retrieval function."""
     if intent == "pick_today":
@@ -283,5 +407,10 @@ def get_context_for_intent(
 
     if intent == "model_explain":
         return get_model_explanation(db, query_date or today, team_abbr)
+
+    if intent == "player_stat":
+        if not player_name:
+            return []
+        return get_player_stats(db, player_name, as_of=query_date or today)
 
     return []

@@ -79,6 +79,36 @@ def _format_context(intent: str, docs: list[dict]) -> str:
                 f"as_of={d.get('as_of_date','?')}"
             )
 
+    elif intent == "player_stat":
+        lines.append("PLAYER STATS:")
+        for d in docs:
+            lines.append(f"\n  {d['player']} ({d.get('position','?')})")
+            if d["type"] == "pitcher":
+                for w in d.get("windows", []):
+                    label = w.get("window", "?").replace("_", " ").title()
+                    warn = " ⚠ small sample" if w.get("insufficient_sample") else ""
+                    lines.append(
+                        f"    [{label}] GS={w.get('starts',0)} | IP={w.get('innings_pitched',0)} | "
+                        f"ERA={w.get('era') if w.get('era') is not None else 'N/A'} | "
+                        f"FIP={w.get('fip') if w.get('fip') is not None else 'N/A'} | "
+                        f"WHIP={w.get('whip') if w.get('whip') is not None else 'N/A'} | "
+                        f"K/9={w.get('k_per_9') if w.get('k_per_9') is not None else 'N/A'} | "
+                        f"BB/9={w.get('bb_per_9') if w.get('bb_per_9') is not None else 'N/A'} | "
+                        f"trend={w.get('trend_label','?')}{warn}"
+                    )
+            elif d["type"] == "batter":
+                for w in d.get("windows", []):
+                    label = w.get("window", "?").replace("_", " ").title()
+                    warn = " ⚠ small sample" if w.get("insufficient_sample") else ""
+                    lines.append(
+                        f"    [{label}] G={w.get('games',0)} | PA={w.get('plate_appearances',0)} | "
+                        f"AVG={w.get('batting_avg') or 'N/A'} | OBP={w.get('on_base_pct') or 'N/A'} | "
+                        f"SLG={w.get('slugging_pct') or 'N/A'} | OPS={w.get('ops') or 'N/A'} | "
+                        f"wOBA={w.get('woba') or 'N/A'} | "
+                        f"HR={w.get('home_runs',0)} BB={w.get('walks',0)} K={w.get('strikeouts',0)} | "
+                        f"trend={w.get('trend_label','?')}{warn}"
+                    )
+
     elif intent == "model_explain":
         lines.append("MODEL EVALUATION DATA:")
         for d in docs:
@@ -107,12 +137,13 @@ def _format_context(intent: str, docs: list[dict]) -> str:
     return "\n".join(lines) if lines else "No data found."
 
 
-OUT_OF_SCOPE_RESPONSE = """Diamond Mind covers moneyline and totals only — I don't have data to answer that.
+OUT_OF_SCOPE_RESPONSE = """I don't have data to answer that.
 
 Here's what I can help with:
 • **Today's picks** — "What are today's leans?"
 • **Past picks** — "What were the picks on 2026-05-20?"
 • **Team history** — "Show me recent Yankees picks"
+• **Player stats** — "What is Zack Wheeler's ERA?" or "How has Harper been hitting?"
 • **Bullpen vulnerability** — "Which bullpens are most vulnerable today?"
 • **Model reasoning** — "Why did the model like the Phillies?"
 • **Track record** — "What's our record this month?" """
