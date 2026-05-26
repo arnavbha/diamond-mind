@@ -295,7 +295,7 @@ def get_player_stats(
         if pos in ("P", "SP", "RP") or not pos:
             pitcher_rows = _rows(db, """
                 SELECT
-                    window,
+                    "window",
                     as_of_date,
                     starts,
                     innings_pitched,
@@ -318,7 +318,7 @@ def get_player_stats(
                       WHERE pitcher_id = :pid AND as_of_date <= :as_of
                   )
                 ORDER BY
-                    CASE window
+                    CASE "window"
                         WHEN 'season'         THEN 1
                         WHEN 'last_10_starts' THEN 2
                         WHEN 'last_5_starts'  THEN 3
@@ -389,7 +389,7 @@ def get_player_stats(
         if pos not in ("P", "SP", "RP"):
             batter_rows = _rows(db, """
                 SELECT
-                    window,
+                    "window",
                     as_of_date,
                     games,
                     plate_appearances,
@@ -410,7 +410,7 @@ def get_player_stats(
                       WHERE player_id = :pid AND as_of_date <= :as_of
                   )
                 ORDER BY
-                    CASE window
+                    CASE "window"
                         WHEN 'season' THEN 1
                         WHEN 'last_30' THEN 2
                         WHEN 'last_15' THEN 3
