@@ -536,7 +536,7 @@ export default function TrackerPage() {
               if (!byDate[b.game_date]) byDate[b.game_date] = [];
               byDate[b.game_date].push(b);
             });
-            const dateGroups = Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b));
+            const dateGroups = Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
 
             return (
               <>
