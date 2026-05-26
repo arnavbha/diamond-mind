@@ -2319,7 +2319,7 @@ _TERMINAL_STATUSES = ("Final", "Game Over", "Completed Early")
 def _snapshot_probable_pitchers(db: Session, game_date: date) -> dict[int, tuple]:
     """Return {game_id: (home_pitcher_id, away_pitcher_id)} for a given date."""
     rows = db.execute(text("""
-        SELECT id, home_probable_pitcher_id, away_probable_pitcher_id
+        SELECT id, home_probable_starter_id, away_probable_starter_id
         FROM games WHERE game_date = :dt
     """), {"dt": game_date.isoformat()}).fetchall()
     return {r[0]: (r[1], r[2]) for r in rows}
@@ -2368,7 +2368,11 @@ def live_tick(
     summary: dict = {"date": today.isoformat()}
 
     # 1. Snapshot probable pitchers BEFORE refresh so we can detect scratches.
-    pitchers_before = _snapshot_probable_pitchers(db, today)
+    try:
+        pitchers_before = _snapshot_probable_pitchers(db, today)
+    except Exception as exc:
+        pitchers_before = {}
+        summary["pitcher_snapshot_error"] = str(exc)[:200]
 
     # 2. Refresh today's schedule (cheap MLB API call)
     try:
@@ -2381,7 +2385,11 @@ def live_tick(
         summary["schedule_error"] = str(exc)[:200]
 
     # 3. Detect probable-pitcher changes (scratches, swap-ins)
-    pitchers_after = _snapshot_probable_pitchers(db, today)
+    try:
+        pitchers_after = _snapshot_probable_pitchers(db, today)
+    except Exception as exc:
+        pitchers_after = {}
+        summary["pitcher_snapshot_error_after"] = str(exc)[:200]
     pitcher_changes: list[dict] = []
     for gid, (h_after, a_after) in pitchers_after.items():
         h_before, a_before = pitchers_before.get(gid, (None, None))
