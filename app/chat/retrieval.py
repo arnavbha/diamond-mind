@@ -333,6 +333,57 @@ def get_player_stats(
                     "type": "pitcher",
                     "windows": pitcher_rows,
                 })
+            else:
+                # Fallback: compute from raw game logs when form windows aren't populated
+                start = as_of - timedelta(days=60)
+                raw = _rows(db, """
+                    SELECT
+                        COUNT(*)  AS appearances,
+                        SUM(CASE WHEN started=1 THEN 1 ELSE 0 END) AS starts,
+                        ROUND(SUM(innings_pitched), 1) AS innings_pitched,
+                        ROUND(
+                            CASE WHEN SUM(innings_pitched) > 0
+                            THEN SUM(earned_runs) * 9.0 / SUM(innings_pitched)
+                            ELSE NULL END, 2) AS era,
+                        ROUND(
+                            CASE WHEN SUM(innings_pitched) > 0
+                            THEN (SUM(walks) + SUM(hits_allowed)) * 1.0 / SUM(innings_pitched)
+                            ELSE NULL END, 3) AS whip,
+                        SUM(strikeouts) AS k,
+                        SUM(walks) AS bb,
+                        MAX(game_date) AS last_game
+                    FROM pitcher_game_logs
+                    WHERE pitcher_id = :pid
+                      AND game_date >= :start AND game_date <= :as_of
+                """, {"pid": pid, "start": str(start), "as_of": str(as_of)})
+                if raw and raw[0].get("appearances", 0):
+                    r = raw[0]
+                    ip = r.get("innings_pitched") or 0
+                    k_per_9 = round(r["k"] * 9.0 / ip, 1) if ip else None
+                    bb_per_9 = round(r["bb"] * 9.0 / ip, 1) if ip else None
+                    results.append({
+                        "player": player["full_name"],
+                        "position": pos or "P",
+                        "type": "pitcher",
+                        "windows": [{
+                            "window": "last_60_days",
+                            "as_of_date": str(as_of),
+                            "starts": r.get("starts", 0),
+                            "innings_pitched": ip,
+                            "era": r.get("era"),
+                            "fip": None,
+                            "xfip": None,
+                            "babip": None,
+                            "whip": r.get("whip"),
+                            "k_per_9": k_per_9,
+                            "bb_per_9": bb_per_9,
+                            "hr_per_9": None,
+                            "avg_pitches_per_start": None,
+                            "avg_innings_per_start": None,
+                            "trend_label": "raw_log_fallback",
+                            "insufficient_sample": (r.get("starts", 0) or 0) < 3,
+                        }],
+                    })
 
         # --- Batter form windows ---
         if pos not in ("P", "SP", "RP"):
@@ -375,6 +426,53 @@ def get_player_stats(
                     "type": "batter",
                     "windows": batter_rows,
                 })
+            else:
+                # Fallback: compute from raw game logs
+                start = as_of - timedelta(days=60)
+                raw = _rows(db, """
+                    SELECT
+                        COUNT(*) AS games,
+                        SUM(at_bats) AS ab,
+                        SUM(hits) AS h,
+                        SUM(home_runs) AS home_runs,
+                        SUM(walks) AS walks,
+                        SUM(strikeouts) AS strikeouts,
+                        ROUND(
+                            CASE WHEN SUM(at_bats) > 0
+                            THEN SUM(hits) * 1.0 / SUM(at_bats)
+                            ELSE NULL END, 3) AS batting_avg,
+                        ROUND(
+                            CASE WHEN SUM(at_bats + walks + hit_by_pitch + sac_flies) > 0
+                            THEN (SUM(hits) + SUM(walks) + SUM(hit_by_pitch)) * 1.0
+                                 / SUM(at_bats + walks + hit_by_pitch + sac_flies)
+                            ELSE NULL END, 3) AS on_base_pct
+                    FROM player_game_logs
+                    WHERE player_id = :pid
+                      AND game_date >= :start AND game_date <= :as_of
+                """, {"pid": pid, "start": str(start), "as_of": str(as_of)})
+                if raw and raw[0].get("games", 0):
+                    r = raw[0]
+                    results.append({
+                        "player": player["full_name"],
+                        "position": pos or "?",
+                        "type": "batter",
+                        "windows": [{
+                            "window": "last_60_days",
+                            "as_of_date": str(as_of),
+                            "games": r.get("games", 0),
+                            "plate_appearances": (r.get("ab") or 0) + (r.get("walks") or 0),
+                            "batting_avg": r.get("batting_avg"),
+                            "on_base_pct": r.get("on_base_pct"),
+                            "slugging_pct": None,
+                            "ops": None,
+                            "woba": None,
+                            "home_runs": r.get("home_runs", 0),
+                            "strikeouts": r.get("strikeouts", 0),
+                            "walks": r.get("walks", 0),
+                            "trend_label": "raw_log_fallback",
+                            "insufficient_sample": (r.get("games", 0) or 0) < 5,
+                        }],
+                    })
 
     return results
 

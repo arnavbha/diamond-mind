@@ -1234,6 +1234,9 @@ def daily_picks(
             d["venue"] = game.venue
             return d
 
+    if not rows:
+        return []
+
     results = []
     with ThreadPoolExecutor(max_workers=min(len(rows), 8)) as pool:
         futures = {pool.submit(_analyze_game, g, h, a): g.id for g, h, a in rows}
@@ -2088,6 +2091,7 @@ def chat(req: ChatRequest, db: Session = Depends(_get_db)):
         team_abbr=classified.entities.team_abbr,
         query_date=classified.entities.query_date,
         today=today,
+        player_name=classified.entities.player_name,
     )
 
     answer = synthesize(
