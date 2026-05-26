@@ -1440,9 +1440,13 @@ def _latest_odds_by_game(
             abbr = _resolve_to_abbr(selection)
             if abbr and team_abbr_by_game and gid in team_abbr_by_game:
                 home_abbr, away_abbr = team_abbr_by_game[gid]
-                if abbr == home_abbr:
+                # Normalize both sides (e.g. AZ→ARI, ATH→OAK) before comparing
+                norm_abbr = ABBR_NORM.get(abbr, abbr)
+                norm_home = ABBR_NORM.get(home_abbr, home_abbr)
+                norm_away = ABBR_NORM.get(away_abbr, away_abbr)
+                if norm_abbr == norm_home:
                     entry["moneyline"]["home"] = odds
-                elif abbr == away_abbr:
+                elif norm_abbr == norm_away:
                     entry["moneyline"]["away"] = odds
                 else:
                     # Selection didn't match either team — store raw for debugging
