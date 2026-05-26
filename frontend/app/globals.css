@@ -81,6 +81,66 @@ body::before {
   --motion-slow:     500ms;
 }
 
+/* ── Game sidebar ─────────────────────────────── */
+.game-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 150;
+  pointer-events: none;
+  transition: background 0.25s var(--ease-out);
+}
+.game-sidebar-backdrop.open {
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+.game-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(620px, 96vw);
+  height: 100dvh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 151;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 0.28s var(--ease-out);
+  display: flex;
+  flex-direction: column;
+}
+.game-sidebar.open {
+  transform: translateX(0);
+}
+.game-sidebar-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.game-sidebar-close {
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 0.12s, color 0.12s;
+}
+.game-sidebar-close:hover {
+  border-color: var(--text-2);
+  color: var(--text);
+}
+
 /* ── Score ticker ─────────────────────────────── */
 @keyframes scoreTicker {
   from { transform: translateX(0); }

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { DitherHeader } from "@/components/dither-header";
+import { GameDetailPanel } from "@/components/game-detail-panel";
 
 function TeamLogo({ abbr, size = 28 }: { abbr: string; size?: number }) {
   return (
@@ -78,7 +78,7 @@ function VulnBar({ abbr, bp }: { abbr: string; bp: BullpenData }) {
   );
 }
 
-function GameCard({ game, index }: { game: SlateGame; index: number }) {
+function GameCard({ game, index, onClick }: { game: SlateGame; index: number; onClick: () => void }) {
   const analysis: GameAnalysis | null = game.analysis;
   const hasTier = analysis && analysis.ml_tier !== "PASS" && analysis.ml_lean !== "PASS";
   const tc = hasTier ? tierColor(analysis!.ml_tier) : "var(--border-2)";
@@ -92,7 +92,10 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
   const isPass = !hasTier;
 
   return (
-    <Link href={`/game/${game.game_id}?date=${game.game_date}`} style={{ textDecoration: "none" }}>
+    <div
+      onClick={onClick}
+      style={{ textDecoration: "none", cursor: "pointer" }}
+    >
       <div
         className={`game-card fade-up infield-divider glare-card ${tierClass}`}
         style={{
@@ -162,7 +165,7 @@ function GameCard({ game, index }: { game: SlateGame; index: number }) {
           {!game.home_bullpen && !game.away_bullpen && <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>}
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -172,6 +175,8 @@ function SlatePageInner() {
   const [date, setDate] = useState(() => searchParams.get("date") ?? today);
   const [games, setGames] = useState<SlateGame[] | null>(null);
   const [error, setError] = useState(false);
+  const [sidebar, setSidebar] = useState<{ gameId: number; date: string } | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -182,6 +187,33 @@ function SlatePageInner() {
     });
     return () => { alive = false; };
   }, [date]);
+
+  useEffect(() => {
+    if (!sidebar) return;
+    // Small delay so CSS transition fires after mount
+    const t = setTimeout(() => setSidebarOpen(true), 10);
+    return () => clearTimeout(t);
+  }, [sidebar]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeSidebar();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function openSidebar(gameId: number, gameDate: string) {
+    setSidebar({ gameId, date: gameDate });
+    setSidebarOpen(false);
+    window.history.pushState(null, "", `/game/${gameId}?date=${gameDate}`);
+  }
+
+  function closeSidebar() {
+    setSidebarOpen(false);
+    window.history.pushState(null, "", `/?date=${date}`);
+    setTimeout(() => setSidebar(null), 280);
+  }
 
   function changeDate(d: string) { setGames(null); setError(false); setDate(d); }
 
@@ -237,7 +269,35 @@ function SlatePageInner() {
       {games?.length === 0 && <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>No games for {date}.</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        {games?.map((g, i) => <GameCard key={g.game_id} game={g} index={i} />)}
+        {games?.map((g, i) => (
+          <GameCard
+            key={g.game_id}
+            game={g}
+            index={i}
+            onClick={() => openSidebar(g.game_id, g.game_date)}
+          />
+        ))}
+      </div>
+
+      {/* Game detail sidebar */}
+      <div
+        className={`game-sidebar-backdrop${sidebarOpen ? " open" : ""}`}
+        onClick={closeSidebar}
+      />
+      <div className={`game-sidebar${sidebarOpen ? " open" : ""}`}>
+        {sidebar && (
+          <>
+            <div className="game-sidebar-header">
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", letterSpacing: "0.04em" }}>
+                GAME DETAIL · {sidebar.date}
+              </span>
+              <button className="game-sidebar-close" onClick={closeSidebar}>✕ Close</button>
+            </div>
+            <div style={{ padding: "20px", flex: 1 }}>
+              <GameDetailPanel gameId={sidebar.gameId} date={sidebar.date} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
