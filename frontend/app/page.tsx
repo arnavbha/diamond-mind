@@ -119,7 +119,15 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <TeamLogo abbr={game.away_team_abbr} size={22} />
               <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.away_team_abbr}</span>
-              <span style={{ color: "var(--text-3)", fontSize: "13px" }}>@</span>
+              {gameStarted(game.status) ? (
+                <>
+                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "16px", color: "var(--text)", minWidth: "18px", textAlign: "right" }}>{game.away_score ?? "—"}</span>
+                  <span style={{ color: "var(--text-3)", fontSize: "12px" }}>–</span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "16px", color: "var(--text)", minWidth: "18px" }}>{game.home_score ?? "—"}</span>
+                </>
+              ) : (
+                <span style={{ color: "var(--text-3)", fontSize: "13px" }}>@</span>
+              )}
               <TeamLogo abbr={game.home_team_abbr} size={22} />
               <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.home_team_abbr}</span>
             </div>
@@ -191,6 +199,14 @@ function relTime(iso: string | null): string {
   return `${diffHr}h ago`;
 }
 
+const STARTED_STATUSES = new Set(["In Progress", "Final", "Game Over", "Completed Early"]);
+const LIVE_STATUSES = new Set(["In Progress"]);
+const FINAL_STATUSES = new Set(["Final", "Game Over", "Completed Early"]);
+
+function gameStarted(status: string) { return STARTED_STATUSES.has(status); }
+function gameIsLive(status: string)  { return LIVE_STATUSES.has(status); }
+function gameIsFinal(status: string) { return FINAL_STATUSES.has(status); }
+
 function oddsColor(n: number | null | undefined): string {
   if (n == null) return "var(--text-2)";
   return n > 0 ? "var(--amber)" : "var(--blue)";
@@ -217,7 +233,15 @@ function LiveOddsRow({ game }: { game: SlateGame }) {
       fontSize: "11px",
       color: "var(--text-2)",
     }}>
-      <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--green)", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--green)", borderRadius: "3px", padding: "1px 5px" }}>Live</span>
+      {gameIsLive(game.status) && (
+        <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--green)", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--green)", borderRadius: "3px", padding: "1px 5px" }}>Live</span>
+      )}
+      {gameIsFinal(game.status) && (
+        <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--border-2)", borderRadius: "3px", padding: "1px 5px" }}>Final</span>
+      )}
+      {!gameStarted(game.status) && (
+        <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", padding: "1px 5px" }}>Odds</span>
+      )}
       {(awayML != null || homeML != null) && (
         <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
           <span style={{ color: "var(--text-3)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>ML</span>

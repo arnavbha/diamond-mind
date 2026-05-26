@@ -272,6 +272,8 @@ export type SlateGame = {
   away_team_abbr: string;
   home_probable_starter_id: number | null;
   away_probable_starter_id: number | null;
+  home_score: number | null;
+  away_score: number | null;
   home_bullpen: BullpenData | null;
   away_bullpen: BullpenData | null;
   analysis: GameAnalysis | null;
