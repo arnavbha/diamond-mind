@@ -67,6 +67,47 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+
+def _warmup_today() -> None:
+    """Pre-warm the analysis cache for today's slate in the background.
+
+    Runs once at startup in a daemon thread so the first real request is served
+    from cache instead of computing everything cold. Uses the same parallelism
+    as the slate endpoint (ThreadPoolExecutor, one session per thread).
+    """
+    today = date.today()
+    try:
+        with SessionLocal() as db:
+            from app.models.entities import Game as GameModel
+            rows = db.execute(
+                select(GameModel.id).where(GameModel.game_date == today)
+            ).scalars().all()
+
+        if not rows:
+            return
+
+        logging.getLogger(__name__).info(
+            "Startup warmup: pre-computing analysis for %d games on %s", len(rows), today
+        )
+
+        def _warm_one(game_id: int) -> None:
+            with SessionLocal() as thread_db:
+                _build_analysis_cached(game_id, today, thread_db)
+
+        with ThreadPoolExecutor(max_workers=min(len(rows), 8)) as pool:
+            list(pool.map(_warm_one, rows))
+
+        logging.getLogger(__name__).info("Startup warmup complete for %s", today)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Startup warmup failed: %s", exc)
+
+
+@app.on_event("startup")
+async def startup_warmup() -> None:
+    """Kick off cache warmup in a daemon thread — doesn't block server start."""
+    t = threading.Thread(target=_warmup_today, daemon=True, name="cache-warmup")
+    t.start()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
