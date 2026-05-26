@@ -228,7 +228,7 @@ function SlatePageInner() {
         </svg>
       </div>
       {/* Dither banner */}
-      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden", marginBottom: "0" }}>
+      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden", marginBottom: "0", border: "1px solid #58A6FF66" }}>
         <DitherHeader
           color={[0.2, 0.5, 0.95]}
           colorNum={8}

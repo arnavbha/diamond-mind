@@ -386,7 +386,7 @@ export default function TrackerPage() {
   return (
     <div>
       {/* Dither banner */}
-      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden" }}>
+      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden", border: "1px solid #D2992266" }}>
         <DitherHeader
           color={[0.95, 0.55, 0.1]}
           colorNum={8}

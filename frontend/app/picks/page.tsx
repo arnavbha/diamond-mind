@@ -624,7 +624,7 @@ export default function PicksPage() {
         overflow: "hidden",
         borderRadius: 8,
         marginBottom: "0",
-        borderBottom: "1px solid var(--border)",
+        border: "1px solid #3FB95066",
       }}>
         <DitherHeader height={120} color={[0.2, 0.85, 0.35]} speed={0.05} colorNum={4} pixelSize={2} />
         {/* Title anchored to bottom-left — editorial banner style */}
