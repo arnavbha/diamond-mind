@@ -94,7 +94,7 @@ _PATTERNS: list[tuple[str, str]] = [
     # Bullpen
     (r"\b(bullpen|vuln|fatig|relief|closer|pen\b)", "bullpen_today"),
     # Player stats (pitcher or batter) — before model_explain to avoid false match
-    (r"\b(era|whip|fip|k/?9|bb/?9|innings?\s+pitched|strikeouts?|batting\s+avg|avg|obp|slg|ops|wrc|babip|splits?|vs\s+(lhp|rhp|leftie?s?|rightie?s?)|pitcher|starter|reliever|batter|hitter|how.{0,40}(hit|pitch|perform)|stat|season\s+line)\b", "player_stat"),
+    (r"\b(era|whip|fip|k/?9|bb/?9|innings?\s+pitched|strikeouts?|batting\s+(avg|average)|averages?|avg|obp|slg|ops|wrc|babip|splits?|vs\s+(lhp|rhp|leftie?s?|rightie?s?)|pitcher|starter|reliever|batter|hitter|how.{0,40}(hit|pitch|perform)|stats?|season\s+line)\b", "player_stat"),
     # Model explanation
     (r"\b(why|explain|reason|because|factor|support|confi(dent|dence)|edge|what.*model|model.*think)\b", "model_explain"),
     # Pick for a specific date (must come before pick_today)
@@ -238,7 +238,7 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
         return ClassifiedQuery(intent="out_of_scope", entities=entities, original=text)
 
     # If a player name was found + any stat/performance word → player_stat
-    if player and re.search(r"\b(era|whip|stat|split|avg|obp|slg|ops|hit|pitch|perform|how|recent|last|line|k\b|bb\b|inn|start|relief|batter)\b", lower):
+    if player and re.search(r"\b(era|whip|fip|stats?|splits?|avg|average|averages|obp|slg|ops|woba|babip|hit|hits|hitting|pitch|pitching|perform|how|recent|last|line|k\b|bb\b|inn|start|relief|batter|hitter|batting)\b", lower):
         return ClassifiedQuery(intent="player_stat", entities=entities, original=text)
 
     # If there's a team mentioned and words like "pick/lean/signal/record/recent/show/last"
