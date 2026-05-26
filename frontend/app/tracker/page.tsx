@@ -361,16 +361,12 @@ export default function TrackerPage() {
     }
   }
 
-  // Filter + sort: pending first, then settled descending by date
+  // Filter + sort: chronological ascending by date, then id
   const visible = (bets ?? [])
     .filter((b) => tab === "all" ? true : b.market === (tab === "moneyline" ? "moneyline" : "total"))
     .sort((a, b) => {
-      // pending first
-      if (a.result === null && b.result !== null) return -1;
-      if (a.result !== null && b.result === null) return 1;
-      // then by date desc, then id desc
-      if (a.game_date !== b.game_date) return a.game_date < b.game_date ? 1 : -1;
-      return b.id - a.id;
+      if (a.game_date !== b.game_date) return a.game_date < b.game_date ? -1 : 1;
+      return a.id - b.id;
     });
 
   const pending = visible.filter((b) => b.result === null);
@@ -540,7 +536,7 @@ export default function TrackerPage() {
               if (!byDate[b.game_date]) byDate[b.game_date] = [];
               byDate[b.game_date].push(b);
             });
-            const dateGroups = Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
+            const dateGroups = Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b));
 
             return (
               <>

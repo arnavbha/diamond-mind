@@ -105,67 +105,71 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
           border: "1px solid var(--border)",
           borderRadius: "6px",
           padding: "14px 18px",
-          display: "grid",
-          gridTemplateColumns: "1fr 160px 1fr",
-          gap: "16px",
-          alignItems: "center",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0",
           opacity: isPass ? 0.5 : 1,
           transition: "opacity 0.12s, background 0.12s, border-color 0.12s",
         } as React.CSSProperties}
       >
-        {/* Matchup */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <TeamLogo abbr={game.away_team_abbr} size={22} />
-            <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.away_team_abbr}</span>
-            <span style={{ color: "var(--text-3)", fontSize: "13px" }}>@</span>
-            <TeamLogo abbr={game.home_team_abbr} size={22} />
-            <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.home_team_abbr}</span>
+        {/* Main row: matchup · signal · bullpen */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr", gap: "16px", alignItems: "center" }}>
+          {/* Matchup */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <TeamLogo abbr={game.away_team_abbr} size={22} />
+              <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.away_team_abbr}</span>
+              <span style={{ color: "var(--text-3)", fontSize: "13px" }}>@</span>
+              <TeamLogo abbr={game.home_team_abbr} size={22} />
+              <span style={{ fontWeight: 600, fontSize: "15px", color: "var(--text)", letterSpacing: "-0.02em" }}>{game.home_team_abbr}</span>
+            </div>
+            {game.venue && (
+              <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginTop: "3px" }}>{game.venue}</div>
+            )}
           </div>
-          {game.venue && (
-            <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginTop: "3px" }}>{game.venue}</div>
-          )}
-        </div>
 
-        {/* Model signal */}
-        <div style={{ textAlign: "center" }}>
-          {analysis ? (
-            hasTier ? (
-              <>
-                <div style={{ fontSize: "11px", fontWeight: 600, color: tc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                  {analysis.ml_tier}
-                </div>
-                <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
-                  {leanAbbr} to win
-                </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
-                  <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
-                    {Math.round(analysis.ml_confidence * 100)}%
-                  </span>{" "}
-                  ·{" "}
-                  <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
-                    {(analysis.ml_kelly_fraction * 100).toFixed(1)}%
-                  </span>{" "}
-                  K
-                </div>
-              </>
+          {/* Model signal */}
+          <div style={{ textAlign: "center" }}>
+            {analysis ? (
+              hasTier ? (
+                <>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: tc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                    {analysis.ml_tier}
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
+                    {leanAbbr} to win
+                  </div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
+                    <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                      {Math.round(analysis.ml_confidence * 100)}%
+                    </span>{" "}
+                    ·{" "}
+                    <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                      {(analysis.ml_kelly_fraction * 100).toFixed(1)}%
+                    </span>{" "}
+                    K
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>Pass</div>
+              )
             ) : (
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>Pass</div>
-            )
-          ) : (
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>
-          )}
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>
+            )}
+          </div>
+
+          {/* Bullpen */}
+          <div>
+            <div style={{ fontSize: "10px", fontWeight: 500, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px" }}>Bullpen vuln</div>
+            {game.away_bullpen && <VulnBar abbr={game.away_team_abbr} bp={game.away_bullpen} />}
+            {game.home_bullpen && <VulnBar abbr={game.home_team_abbr} bp={game.home_bullpen} />}
+            {!game.home_bullpen && !game.away_bullpen && <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>}
+          </div>
         </div>
 
-        {/* Bullpen */}
-        <div>
-          <div style={{ fontSize: "10px", fontWeight: 500, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px" }}>Bullpen vuln</div>
-          {game.away_bullpen && <VulnBar abbr={game.away_team_abbr} bp={game.away_bullpen} />}
-          {game.home_bullpen && <VulnBar abbr={game.home_team_abbr} bp={game.home_bullpen} />}
-          {!game.home_bullpen && !game.away_bullpen && <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>}
-        </div>
+        {/* Live odds — inside the card */}
+        <LiveOddsRow game={game} />
       </div>
-      <LiveOddsRow game={game} />
     </div>
   );
 }
@@ -187,6 +191,11 @@ function relTime(iso: string | null): string {
   return `${diffHr}h ago`;
 }
 
+function oddsColor(n: number | null | undefined): string {
+  if (n == null) return "var(--text-2)";
+  return n > 0 ? "var(--amber)" : "var(--blue)";
+}
+
 function LiveOddsRow({ game }: { game: SlateGame }) {
   const odds = game.live_odds;
   if (!odds) return null;
@@ -198,28 +207,35 @@ function LiveOddsRow({ game }: { game: SlateGame }) {
   return (
     <div style={{
       marginTop: "10px",
-      paddingTop: "10px",
+      paddingTop: "8px",
       borderTop: "1px solid var(--border-2)",
       display: "flex",
       flexWrap: "wrap",
-      gap: "16px",
+      gap: "20px",
       alignItems: "center",
       fontFamily: "var(--font-mono)",
       fontSize: "11px",
       color: "var(--text-2)",
     }}>
-      <span style={{ fontSize: "10px", fontWeight: 500, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Live</span>
+      <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--green)", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--green)", borderRadius: "3px", padding: "1px 5px" }}>Live</span>
       {(awayML != null || homeML != null) && (
-        <span>
-          ML <span style={{ color: "var(--text)" }}>{game.away_team_abbr}</span> {fmtOdds(awayML)}
-          {" / "}
-          <span style={{ color: "var(--text)" }}>{game.home_team_abbr}</span> {fmtOdds(homeML)}
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ color: "var(--text-3)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>ML</span>
+          <span style={{ color: "var(--text)", fontWeight: 600 }}>{game.away_team_abbr}</span>
+          <span style={{ color: oddsColor(awayML), fontWeight: 700, fontSize: "12px" }}>{fmtOdds(awayML)}</span>
+          <span style={{ color: "var(--border-2)" }}>/</span>
+          <span style={{ color: "var(--text)", fontWeight: 600 }}>{game.home_team_abbr}</span>
+          <span style={{ color: oddsColor(homeML), fontWeight: 700, fontSize: "12px" }}>{fmtOdds(homeML)}</span>
         </span>
       )}
       {tot && tot.line != null && (
-        <span>
-          O/U <span style={{ color: "var(--text)" }}>{tot.line}</span>
-          {" "}(O {fmtOdds(tot.over)} U {fmtOdds(tot.under)})
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ color: "var(--text-3)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>O/U</span>
+          <span style={{ color: "var(--text)", fontWeight: 600 }}>{tot.line}</span>
+          <span style={{ color: "var(--text-3)" }}>(</span>
+          <span>O <span style={{ color: oddsColor(tot.over), fontWeight: 600 }}>{fmtOdds(tot.over)}</span></span>
+          <span>U <span style={{ color: oddsColor(tot.under), fontWeight: 600 }}>{fmtOdds(tot.under)}</span></span>
+          <span style={{ color: "var(--text-3)" }}>)</span>
         </span>
       )}
       {odds.captured_at && (
