@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -1182,14 +1183,23 @@ def daily_picks(
         .order_by(Game.id)
     ).all()
 
-    results = []
-    for game, _home, _away in rows:
-        d = _build_analysis_cached(game.id, game_date, db)
-        if d is not None:
+    def _analyze_game(game, _home, _away):
+        with SessionLocal() as thread_db:
+            d = _build_analysis_cached(game.id, game_date, thread_db)
+            if d is None:
+                return None
             d = dict(d)
             d["game_date"] = game.game_date.isoformat()
             d["venue"] = game.venue
-            results.append(d)
+            return d
+
+    results = []
+    with ThreadPoolExecutor(max_workers=min(len(rows), 8)) as pool:
+        futures = {pool.submit(_analyze_game, g, h, a): g.id for g, h, a in rows}
+        for fut in as_completed(futures):
+            d = fut.result()
+            if d is not None:
+                results.append(d)
 
     tier_order = {"STRONG LEAN": 0, "LEAN": 1, "PASS": 2, "AVOID": 3}
     results.sort(key=lambda r: (tier_order.get(r.get("ml_tier", "PASS"), 2), -r.get("ml_confidence", 0)))
@@ -1228,10 +1238,9 @@ def slate(
             return None
         return _dc(score_bullpen(state))
 
-    output = []
-    for game, home_t, away_t in rows:
-        analysis = _build_analysis_cached(game.id, game_date, db)
-        output.append({
+    # Capture immutable metadata before threading (ORM objects not thread-safe)
+    game_meta = [
+        {
             "game_id": game.id,
             "game_date": game.game_date.isoformat(),
             "status": game.status,
@@ -1242,12 +1251,31 @@ def slate(
             "away_team_abbr": away_t.abbr,
             "home_probable_starter_id": game.home_probable_starter_id,
             "away_probable_starter_id": game.away_probable_starter_id,
-            "home_bullpen": _bullpen_dict(game.home_team_id, game.home_probable_starter_id),
-            "away_bullpen": _bullpen_dict(game.away_team_id, game.away_probable_starter_id),
-            "analysis": analysis,
-        })
+        }
+        for game, home_t, away_t in rows
+    ]
 
-    return output
+    def _compute_game(meta: dict) -> dict:
+        with SessionLocal() as thread_db:
+            def _bp(team_id: int, starter_id: Optional[int] = None):
+                exclude = [starter_id] if starter_id else None
+                state = build_bullpen_state(thread_db, team_id=team_id, as_of_date=game_date, exclude_pitcher_ids=exclude)
+                return _dc(score_bullpen(state)) if state is not None else None
+
+            analysis = _build_analysis_cached(meta["game_id"], game_date, thread_db)
+            home_bp = _bp(meta["home_team_id"], meta["home_probable_starter_id"])
+            away_bp = _bp(meta["away_team_id"], meta["away_probable_starter_id"])
+        return {**meta, "home_bullpen": home_bp, "away_bullpen": away_bp, "analysis": analysis}
+
+    output_map: dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(len(game_meta), 8)) as pool:
+        futures = {pool.submit(_compute_game, m): m["game_id"] for m in game_meta}
+        for fut in as_completed(futures):
+            result = fut.result()
+            output_map[result["game_id"]] = result
+
+    # Preserve original game order
+    return [output_map[m["game_id"]] for m in game_meta if m["game_id"] in output_map]
 
 
 # ---------------------------------------------------------------------------
