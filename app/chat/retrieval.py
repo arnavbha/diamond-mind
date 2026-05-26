@@ -248,7 +248,7 @@ def get_tracker_record(
         SELECT
             result,
             COUNT(*)              AS count,
-            ROUND(SUM(COALESCE(units_returned, 0)), 2) AS total_units
+            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS total_units
         FROM bet_records
         WHERE result IS NOT NULL
           AND game_date >= :start
@@ -262,7 +262,7 @@ def get_tracker_record(
             tier,
             result,
             COUNT(*) AS count,
-            ROUND(SUM(COALESCE(units_returned, 0)), 2) AS total_units
+            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS total_units
         FROM bet_records
         WHERE result IS NOT NULL
           AND game_date >= :start
@@ -478,15 +478,15 @@ def get_player_stats(
                     SELECT
                         COUNT(*)  AS appearances,
                         SUM(CASE WHEN started=1 THEN 1 ELSE 0 END) AS starts,
-                        ROUND(SUM(innings_pitched), 1) AS innings_pitched,
-                        ROUND(
+                        ROUND(CAST(SUM(innings_pitched) AS numeric), 1) AS innings_pitched,
+                        ROUND(CAST(
                             CASE WHEN SUM(innings_pitched) > 0
                             THEN SUM(earned_runs) * 9.0 / SUM(innings_pitched)
-                            ELSE NULL END, 2) AS era,
-                        ROUND(
+                            ELSE NULL END AS numeric), 2) AS era,
+                        ROUND(CAST(
                             CASE WHEN SUM(innings_pitched) > 0
                             THEN (SUM(walks) + SUM(hits_allowed)) * 1.0 / SUM(innings_pitched)
-                            ELSE NULL END, 3) AS whip,
+                            ELSE NULL END AS numeric), 3) AS whip,
                         SUM(strikeouts) AS k,
                         SUM(walks) AS bb,
                         MAX(game_date) AS last_game
@@ -575,15 +575,15 @@ def get_player_stats(
                         SUM(home_runs) AS home_runs,
                         SUM(walks) AS walks,
                         SUM(strikeouts) AS strikeouts,
-                        ROUND(
+                        ROUND(CAST(
                             CASE WHEN SUM(at_bats) > 0
                             THEN SUM(hits) * 1.0 / SUM(at_bats)
-                            ELSE NULL END, 3) AS batting_avg,
-                        ROUND(
+                            ELSE NULL END AS numeric), 3) AS batting_avg,
+                        ROUND(CAST(
                             CASE WHEN SUM(at_bats + walks + hit_by_pitch + sac_flies) > 0
                             THEN (SUM(hits) + SUM(walks) + SUM(hit_by_pitch)) * 1.0
                                  / SUM(at_bats + walks + hit_by_pitch + sac_flies)
-                            ELSE NULL END, 3) AS on_base_pct
+                            ELSE NULL END AS numeric), 3) AS on_base_pct
                     FROM player_game_logs
                     WHERE player_id = :pid
                       AND game_date >= :start AND game_date <= :as_of
