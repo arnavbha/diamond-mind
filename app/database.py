@@ -32,6 +32,11 @@ def _build_engine() -> Engine:
     kwargs: dict = {"future": True, "connect_args": connect_args}
     if url.startswith("postgresql"):
         kwargs["pool_pre_ping"] = True  # drops stale connections after Render sleeps
+        # /games/picks fans out 8 worker threads; tick + chat + main request
+        # need headroom. Render free Postgres allows ~97 connections.
+        kwargs["pool_size"] = 20
+        kwargs["max_overflow"] = 20
+        kwargs["pool_recycle"] = 1800  # recycle every 30 min to avoid stale TCP
     return create_engine(url, **kwargs)
 
 
