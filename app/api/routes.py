@@ -2062,7 +2062,7 @@ class ChatResponse(PydanticModel):
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, db: Session = Depends(get_db)):
+def chat(req: ChatRequest, db: Session = Depends(_get_db)):
     from app.chat.classifier import classify
     from app.chat.retrieval import get_context_for_intent
     from app.chat.synthesizer import synthesize
