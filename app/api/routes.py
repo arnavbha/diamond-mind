@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -1790,14 +1791,20 @@ def tracker_summary(
 
 
 _ACTIONABLE_TIERS = {"STRONG LEAN", "LEAN"}
-_MIN_UNITS = 0.5
-_MAX_UNITS = 5.0
 
 
 def _kelly_units(kelly_sized: float) -> float:
-    """Convert a Kelly fraction to units (bankroll = 100u), clamped [0.5, 5.0]."""
-    raw = round(kelly_sized * 100, 1)
-    return max(_MIN_UNITS, min(_MAX_UNITS, raw))
+    """Convert Kelly fraction to units using half-unit rounding, hard cap 3u.
+
+    Normalization (1u = 0.5% of bankroll):
+      < 0.25u  → 0.0  (model says no edge; skip)
+      0.25u+   → round to nearest 0.5u, max 3.0u
+    """
+    raw = kelly_sized * 100
+    if raw < 0.25:
+        return 0.0
+    rounded = math.floor(raw * 2 + 0.5) / 2
+    return min(3.0, rounded)
 
 
 @app.post("/tracker/auto-track", tags=["tracker"])
@@ -2070,6 +2077,49 @@ def auto_settle(
     Admin-gated wrapper around _auto_settle_impl. Idempotent.
     """
     return _auto_settle_impl(db, game_date)
+
+
+@app.post("/tracker/normalize-units", tags=["tracker"])
+def normalize_units(
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Re-apply the current _kelly_units formula to all existing bet records.
+
+    Treats each bet's stored units value as the raw kelly_sized * 100 input,
+    re-normalizes using the half-unit rounding / 3u cap formula, and recomputes
+    units_returned for settled bets. Idempotent — safe to run multiple times.
+
+    Returns counts of updated and unchanged records.
+    """
+    bets = db.execute(select(BetRecord)).scalars().all()
+    updated = 0
+    unchanged = 0
+
+    for bet in bets:
+        # Treat stored units as the raw kelly output (kelly_sized * 100)
+        new_units = _kelly_units(bet.units / 100.0)
+
+        # If the raw value was already below the 0.25u skip threshold we still
+        # keep the record (it was a real tracked bet) — floor to 0.5u so it
+        # remains visible, but apply the new cap logic otherwise.
+        if new_units == 0.0:
+            new_units = 0.5  # preserve historical bets; skip only applies going forward
+
+        units_changed = abs(new_units - bet.units) > 0.001
+
+        if units_changed:
+            bet.units = new_units
+            if bet.result is not None:
+                bet.units_returned = compute_units_returned(
+                    bet.result, bet.units, bet.american_odds
+                )
+            updated += 1
+        else:
+            unchanged += 1
+
+    db.commit()
+    return {"updated": updated, "unchanged": unchanged, "total": len(bets)}
 
 
 # ---------------------------------------------------------------------------
