@@ -197,6 +197,8 @@ def _extract_player_name(text: str) -> Optional[str]:
         # Try longest sub-sequence first, then shorter
         for end in range(len(words), 1, -1):
             sub = words[:end]
+            # Strip possessive from last word before checking ("Bradish's" → "Bradish")
+            sub[-1] = _strip_possessive(sub[-1])
             if all(_is_name_word(w) for w in sub):
                 return " ".join(sub)
 
