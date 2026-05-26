@@ -1404,7 +1404,7 @@ def _latest_odds_by_game(
     """), params).fetchall()
 
     # Reuse classifier's team-name → abbr lookup
-    from app.chat.classifier import TEAM_NAMES, ALL_ABBRS
+    from app.chat.classifier import TEAM_NAMES, ALL_ABBRS, ABBR_NORM
 
     def _resolve_to_abbr(selection: str) -> Optional[str]:
         if not selection:
