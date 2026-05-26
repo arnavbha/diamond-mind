@@ -1793,18 +1793,23 @@ def tracker_summary(
 _ACTIONABLE_TIERS = {"STRONG LEAN", "LEAN"}
 
 
-def _kelly_units(kelly_sized: float) -> float:
-    """Convert Kelly fraction to units using half-unit rounding, hard cap 3u.
+_UNIT_SCALE = 0.5  # global scale factor — keeps 1u = ~0.5% bankroll at sane exposure
 
-    Normalization (1u = 0.5% of bankroll):
-      < 0.25u  → 0.0  (model says no edge; skip)
-      0.25u+   → round to nearest 0.5u, max 3.0u
+
+def _kelly_units(kelly_sized: float) -> float:
+    """Convert Kelly fraction to units using half-unit rounding, hard cap 1.5u.
+
+    Normalization (1u = 1% of bankroll, scale 0.5x applied):
+      < 0.25u raw  → 0.0  (model says no edge; skip)
+      0.25u+       → round to nearest 0.5u, cap 3u, then scale by _UNIT_SCALE
+      Final range: 0.5u – 1.5u
     """
     raw = kelly_sized * 100
     if raw < 0.25:
         return 0.0
     rounded = math.floor(raw * 2 + 0.5) / 2
-    return min(3.0, rounded)
+    scaled = min(3.0, rounded) * _UNIT_SCALE
+    return max(0.5, round(scaled * 2) / 2)  # re-snap to nearest 0.5u, floor 0.5
 
 
 @app.post("/tracker/auto-track", tags=["tracker"])
@@ -2097,14 +2102,11 @@ def normalize_units(
     unchanged = 0
 
     for bet in bets:
-        # Treat stored units as the raw kelly output (kelly_sized * 100)
-        new_units = _kelly_units(bet.units / 100.0)
-
-        # If the raw value was already below the 0.25u skip threshold we still
-        # keep the record (it was a real tracked bet) — floor to 0.5u so it
-        # remains visible, but apply the new cap logic otherwise.
-        if new_units == 0.0:
-            new_units = 0.5  # preserve historical bets; skip only applies going forward
+        # Scale stored units by _UNIT_SCALE, re-snap to nearest 0.5u, floor 0.5u.
+        # We scale the stored value directly (not via kelly_sized) because historical
+        # bets went through the pre-scale formula and need a proportional reduction.
+        scaled = bet.units * _UNIT_SCALE
+        new_units = max(0.5, round(scaled * 2) / 2)
 
         units_changed = abs(new_units - bet.units) > 0.001
 
