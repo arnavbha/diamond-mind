@@ -165,6 +165,68 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
           {!game.home_bullpen && !game.away_bullpen && <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>—</div>}
         </div>
       </div>
+      <LiveOddsRow game={game} />
+    </div>
+  );
+}
+
+function fmtOdds(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  return n >= 0 ? `+${n}` : `${n}`;
+}
+
+function relTime(iso: string | null): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const diffSec = Math.floor((Date.now() - t) / 1000);
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  return `${diffHr}h ago`;
+}
+
+function LiveOddsRow({ game }: { game: SlateGame }) {
+  const odds = game.live_odds;
+  if (!odds) return null;
+  const awayML = odds.moneyline?.away;
+  const homeML = odds.moneyline?.home;
+  const tot = odds.total;
+  const hasAnything = awayML != null || homeML != null || tot;
+  if (!hasAnything) return null;
+  return (
+    <div style={{
+      marginTop: "10px",
+      paddingTop: "10px",
+      borderTop: "1px solid var(--border-2)",
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "16px",
+      alignItems: "center",
+      fontFamily: "var(--font-mono)",
+      fontSize: "11px",
+      color: "var(--text-2)",
+    }}>
+      <span style={{ fontSize: "10px", fontWeight: 500, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Live</span>
+      {(awayML != null || homeML != null) && (
+        <span>
+          ML <span style={{ color: "var(--text)" }}>{game.away_team_abbr}</span> {fmtOdds(awayML)}
+          {" / "}
+          <span style={{ color: "var(--text)" }}>{game.home_team_abbr}</span> {fmtOdds(homeML)}
+        </span>
+      )}
+      {tot && tot.line != null && (
+        <span>
+          O/U <span style={{ color: "var(--text)" }}>{tot.line}</span>
+          {" "}(O {fmtOdds(tot.over)} U {fmtOdds(tot.under)})
+        </span>
+      )}
+      {odds.captured_at && (
+        <span style={{ marginLeft: "auto", color: "var(--text-3)", fontSize: "10px" }}>
+          updated {relTime(odds.captured_at)}
+        </span>
+      )}
     </div>
   );
 }
@@ -180,12 +242,17 @@ function SlatePageInner() {
 
   useEffect(() => {
     let alive = true;
-    api.slate(date).then((g) => {
-      if (!alive) return;
-      if (g === null) setError(true);
-      else setGames(g);
-    });
-    return () => { alive = false; };
+    function load() {
+      api.slate(date).then((g) => {
+        if (!alive) return;
+        if (g === null) setError(true);
+        else setGames(g);
+      });
+    }
+    load();
+    // Refresh every 60s so live_odds + game status stay fresh.
+    const iv = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(iv); };
   }, [date]);
 
   useEffect(() => {

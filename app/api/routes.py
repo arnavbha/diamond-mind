@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session
 
@@ -1245,6 +1245,42 @@ def daily_picks(
             if d is not None:
                 results.append(d)
 
+    # Lock tracked picks: if a bet_record exists for (game, market), the tier
+    # and odds shown should be FROZEN at the values we tracked at — not the
+    # live-recomputed analysis which may have shifted since lines moved.
+    if results:
+        tracked = db.execute(text("""
+            SELECT game_id, market, selection, american_odds, units, tier, total_line
+            FROM bet_records
+            WHERE game_date = :dt
+        """), {"dt": game_date.isoformat()}).fetchall()
+        by_gm: dict[tuple, dict] = {}
+        for r in tracked:
+            gid, market, selection, odds, units, tier, total_line = r
+            by_gm[(gid, market)] = {
+                "selection": selection,
+                "american_odds": odds,
+                "units": units,
+                "tier": tier,
+                "total_line": total_line,
+            }
+        for d in results:
+            gid = d.get("game_id")
+            ml = by_gm.get((gid, "moneyline"))
+            if ml:
+                d["ml_tier"] = ml["tier"]
+                d["ml_lean"] = ml["selection"]
+                d["ml_american_odds"] = ml["american_odds"]
+                d["ml_locked"] = True
+                d["ml_locked_units"] = float(ml["units"]) if ml["units"] is not None else None
+            tot = by_gm.get((gid, "total"))
+            if tot:
+                d["total_tier"] = tot["tier"]
+                d["total_lean"] = tot["selection"]
+                d["total_line"] = tot["total_line"]
+                d["total_locked"] = True
+                d["total_locked_units"] = float(tot["units"]) if tot["units"] is not None else None
+
     tier_order = {"STRONG LEAN": 0, "LEAN": 1, "PASS": 2, "AVOID": 3}
     results.sort(key=lambda r: (tier_order.get(r.get("ml_tier", "PASS"), 2), -r.get("ml_confidence", 0)))
     return results
@@ -1321,8 +1357,105 @@ def slate(
             result = fut.result()
             output_map[result["game_id"]] = result
 
+    # Live odds: latest moneyline + total snapshot per game.
+    game_ids = [m["game_id"] for m in game_meta]
+    team_map = {m["game_id"]: (m["home_team_abbr"], m["away_team_abbr"]) for m in game_meta}
+    live_odds_map = _latest_odds_by_game(db, game_ids, team_abbr_by_game=team_map)
+    for gid, payload in output_map.items():
+        payload["live_odds"] = live_odds_map.get(gid)
+
     # Preserve original game order
     return [output_map[m["game_id"]] for m in game_meta if m["game_id"] in output_map]
+
+
+def _latest_odds_by_game(
+    db: Session,
+    game_ids: list[int],
+    team_abbr_by_game: Optional[dict[int, tuple[str, str]]] = None,
+) -> dict[int, dict]:
+    """Latest moneyline + total snapshot per game (cross-DB compatible).
+
+    team_abbr_by_game: {game_id: (home_abbr, away_abbr)} so we can normalize the
+    moneyline selection string (which may be a nickname, full name, or city +
+    team name from the various providers) to home/away.
+
+    Returns {game_id: {moneyline: {home, away}, total: {line, over, under}, captured_at}}.
+    """
+    if not game_ids:
+        return {}
+    placeholders = ",".join(f":g{i}" for i in range(len(game_ids)))
+    params: dict = {f"g{i}": gid for i, gid in enumerate(game_ids)}
+    rows = db.execute(text(f"""
+        SELECT game_id, market, selection, line, american_odds, bookmaker, captured_at
+        FROM (
+            SELECT
+                game_id, market, selection, line, american_odds, bookmaker, captured_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY game_id, market, selection
+                    ORDER BY captured_at DESC
+                ) AS rn
+            FROM odds_snapshots
+            WHERE game_id IN ({placeholders})
+        ) sub
+        WHERE rn = 1
+    """), params).fetchall()
+
+    # Reuse classifier's team-name → abbr lookup
+    from app.chat.classifier import TEAM_NAMES, ALL_ABBRS
+
+    def _resolve_to_abbr(selection: str) -> Optional[str]:
+        if not selection:
+            return None
+        s = selection.strip()
+        up = s.upper()
+        if up in ALL_ABBRS:
+            return up
+        # Try TEAM_NAMES (mets, yankees, new york mets, etc.)
+        low = s.lower()
+        if low in TEAM_NAMES:
+            return TEAM_NAMES[low]
+        # Try substring match against TEAM_NAMES keys (handles "Mets" vs "mets")
+        for name, abbr in TEAM_NAMES.items():
+            if name in low or low in name:
+                return abbr
+        return None
+
+    out: dict[int, dict] = {}
+    for r in rows:
+        gid, market, selection, line, odds, bookmaker, captured_at = r
+        entry = out.setdefault(gid, {"moneyline": {"home": None, "away": None}, "total": None, "captured_at": None})
+        if captured_at is None:
+            captured_iso = None
+        elif isinstance(captured_at, str):
+            captured_iso = captured_at  # SQLite returns ISO strings already
+        else:
+            captured_iso = captured_at.isoformat()  # Postgres returns datetime
+        if entry["captured_at"] is None or (captured_iso and captured_iso > entry["captured_at"]):
+            entry["captured_at"] = captured_iso
+
+        if market == "moneyline":
+            abbr = _resolve_to_abbr(selection)
+            if abbr and team_abbr_by_game and gid in team_abbr_by_game:
+                home_abbr, away_abbr = team_abbr_by_game[gid]
+                if abbr == home_abbr:
+                    entry["moneyline"]["home"] = odds
+                elif abbr == away_abbr:
+                    entry["moneyline"]["away"] = odds
+                else:
+                    # Selection didn't match either team — store raw for debugging
+                    entry["moneyline"].setdefault("_unmatched", []).append({"selection": selection, "odds": odds})
+            else:
+                # No team mapping provided — fall back to raw selection key
+                entry["moneyline"][selection] = odds
+        elif market == "total":
+            if entry["total"] is None:
+                entry["total"] = {"line": line, "over": None, "under": None, "bookmaker": bookmaker}
+            sel_lower = (selection or "").lower()
+            if sel_lower == "over":
+                entry["total"]["over"] = odds
+            elif sel_lower == "under":
+                entry["total"]["under"] = odds
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2062,9 +2195,20 @@ def list_ingestion_jobs():
 # ---------------------------------------------------------------------------
 
 _POST_FINAL_DONE: dict[str, str] = {}   # iso_date → job_id (already kicked off)
+_LAST_ESPN_REFRESH: dict[str, datetime] = {}  # iso_date → last ESPN refresh time
+_ESPN_REFRESH_INTERVAL_MIN = 20  # how often to refresh odds via ESPN (free, unlimited)
 _TICK_LOCK = threading.Lock()
 
 _TERMINAL_STATUSES = ("Final", "Game Over", "Completed Early")
+
+
+def _snapshot_probable_pitchers(db: Session, game_date: date) -> dict[int, tuple]:
+    """Return {game_id: (home_pitcher_id, away_pitcher_id)} for a given date."""
+    rows = db.execute(text("""
+        SELECT id, home_probable_pitcher_id, away_probable_pitcher_id
+        FROM games WHERE game_date = :dt
+    """), {"dt": game_date.isoformat()}).fetchall()
+    return {r[0]: (r[1], r[2]) for r in rows}
 
 
 def _today_et() -> date:
@@ -2104,10 +2248,15 @@ def live_tick(
     """
     from app.ingestion.mlb_stats_api import MLBStatsClient, ingest_schedule
 
+    from app.ingestion import espn_odds as _free_odds
+
     today = _today_et()
     summary: dict = {"date": today.isoformat()}
 
-    # 1. Refresh today's schedule (cheap MLB API call)
+    # 1. Snapshot probable pitchers BEFORE refresh so we can detect scratches.
+    pitchers_before = _snapshot_probable_pitchers(db, today)
+
+    # 2. Refresh today's schedule (cheap MLB API call)
     try:
         with MLBStatsClient() as client:
             game_ids = ingest_schedule(db, client, today, game_type="R")
@@ -2117,9 +2266,20 @@ def live_tick(
         db.rollback()
         summary["schedule_error"] = str(exc)[:200]
 
-    # 1b. Self-heal odds: if today's slate has NO odds snapshots, ingest now.
-    # Normally the 9am pregame cron handles this — but if it hasn't fired yet
-    # or failed, the tick fills the gap so picks aren't stuck at PASS.
+    # 3. Detect probable-pitcher changes (scratches, swap-ins)
+    pitchers_after = _snapshot_probable_pitchers(db, today)
+    pitcher_changes: list[dict] = []
+    for gid, (h_after, a_after) in pitchers_after.items():
+        h_before, a_before = pitchers_before.get(gid, (None, None))
+        if h_after != h_before or a_after != a_before:
+            pitcher_changes.append({"game_id": gid, "home": [h_before, h_after], "away": [a_before, a_after]})
+    if pitcher_changes:
+        summary["pitcher_changes"] = pitcher_changes
+
+    # 4. Odds management — tiered strategy to preserve paid quota:
+    #    a) No odds at all → full paid ingest (cold-start self-heal)
+    #    b) Pitcher scratched → paid re-ingest, just affected games
+    #    c) Periodic refresh every 20 min via ESPN (free, unlimited)
     try:
         odds_count = db.execute(text("""
             SELECT COUNT(*) FROM odds_snapshots os
@@ -2129,29 +2289,55 @@ def live_tick(
         games_today = db.execute(
             select(Game).where(Game.game_date == today)
         ).scalars().all()
+
+        from scripts.run_pregame_update import (
+            _ingest_odds_and_weather,
+            _map_odds_event_ids,
+            _pick_odds_provider,
+        )
+
+        triggered_refresh = False
+        # 4a. Cold start: no odds at all → full paid ingest
         if odds_count == 0 and games_today:
-            from scripts.run_pregame_update import (
-                _ingest_odds_and_weather,
-                _map_odds_event_ids,
-                _pick_odds_provider,
-            )
             provider = _pick_odds_provider()
             _map_odds_event_ids(db, today, provider=provider)
             _ingest_odds_and_weather(db, games_today, today, provider=provider)
             db.commit()
-            new_odds_count = db.execute(text("""
-                SELECT COUNT(*) FROM odds_snapshots os
-                JOIN games g ON os.game_id = g.id
-                WHERE g.game_date = :dt
-            """), {"dt": today.isoformat()}).scalar() or 0
-            summary["odds_self_heal"] = {
-                "provider": getattr(provider, "__name__", str(provider)),
-                "snapshots_after": new_odds_count,
-            }
-            # Invalidate analysis cache so picks endpoint sees new odds
+            triggered_refresh = True
+            summary["odds_action"] = "cold_start_paid"
+        # 4b. Pitcher scratch → paid re-ingest for affected games only
+        elif pitcher_changes and games_today:
+            changed_ids = {c["game_id"] for c in pitcher_changes}
+            affected = [g for g in games_today if g.id in changed_ids]
+            if affected:
+                provider = _pick_odds_provider()
+                _map_odds_event_ids(db, today, provider=provider)
+                _ingest_odds_and_weather(db, affected, today, provider=provider)
+                db.commit()
+                triggered_refresh = True
+                summary["odds_action"] = f"pitcher_change_paid:{len(affected)}_games"
+        # 4c. Periodic ESPN refresh — keeps lines fresh, free
+        elif games_today:
+            last_refresh = _LAST_ESPN_REFRESH.get(today.isoformat())
+            now = datetime.now(timezone.utc)
+            if last_refresh is None or (now - last_refresh).total_seconds() / 60 >= _ESPN_REFRESH_INTERVAL_MIN:
+                _map_odds_event_ids(db, today, provider=_free_odds)
+                _ingest_odds_and_weather(db, games_today, today, provider=_free_odds)
+                db.commit()
+                _LAST_ESPN_REFRESH[today.isoformat()] = now
+                triggered_refresh = True
+                summary["odds_action"] = "periodic_espn_refresh"
+            else:
+                summary["odds_action"] = "skip"
+
+        summary["odds_snapshots"] = db.execute(text("""
+            SELECT COUNT(*) FROM odds_snapshots os
+            JOIN games g ON os.game_id = g.id
+            WHERE g.game_date = :dt
+        """), {"dt": today.isoformat()}).scalar() or 0
+
+        if triggered_refresh:
             _cache_invalidate_all()
-        else:
-            summary["odds_snapshots"] = odds_count
     except Exception as exc:
         db.rollback()
         summary["odds_error"] = str(exc)[:200]

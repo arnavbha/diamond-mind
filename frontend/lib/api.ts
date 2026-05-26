@@ -253,6 +253,13 @@ export type GameContext = {
   analysis: GameAnalysis | null;
 };
 
+/** Latest market odds per game — refreshed by /admin/tick. */
+export type LiveOdds = {
+  moneyline: { home: number | null; away: number | null };
+  total: { line: number; over: number | null; under: number | null; bookmaker: string } | null;
+  captured_at: string | null;
+};
+
 /** Returned by /games/slate — one entry per game, everything bundled. */
 export type SlateGame = {
   game_id: number;
@@ -268,6 +275,7 @@ export type SlateGame = {
   home_bullpen: BullpenData | null;
   away_bullpen: BullpenData | null;
   analysis: GameAnalysis | null;
+  live_odds: LiveOdds | null;
 };
 
 export type CalibrationBucket = {
