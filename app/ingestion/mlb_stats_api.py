@@ -491,11 +491,10 @@ def upsert_game(session: Session, g: _ScheduledGame) -> Game:
         existing.away_probable_starter_id = g.away_probable_pitcher_id
         if g.game_time_utc is not None:
             existing.game_time_utc = g.game_time_utc
-        if any(t in g.status for t in _TERMINAL):
-            if g.home_score is not None:
-                existing.home_score = g.home_score
-            if g.away_score is not None:
-                existing.away_score = g.away_score
+        if g.home_score is not None:
+            existing.home_score = g.home_score
+        if g.away_score is not None:
+            existing.away_score = g.away_score
         return existing
     obj = Game(
         id=g.game_pk,

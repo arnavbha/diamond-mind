@@ -105,16 +105,21 @@ def fetch_odds(game_id: int, event_id: str, home_team_name: str = "", away_team_
     home_ml = home_odds.get("moneyLine")
     away_ml = away_odds.get("moneyLine")
 
-    if home_ml is not None and home_team_name:
+    # Prefer ESPN's own abbreviation (e.g. "ARI") over team.name ("D-backs")
+    # so _resolve_to_abbr always gets a clean token.
+    home_sel = (home_odds.get("team") or {}).get("abbreviation") or home_team_name
+    away_sel = (away_odds.get("team") or {}).get("abbreviation") or away_team_name
+
+    if home_ml is not None and home_sel:
         snapshots.append(OddsSnapshot(
             game_id=game_id, bookmaker=bookmaker, market="moneyline",
-            selection=home_team_name.lower(),
+            selection=home_sel.lower(),
             american_odds=int(home_ml), line=None, captured_at=captured_at,
         ))
-    if away_ml is not None and away_team_name:
+    if away_ml is not None and away_sel:
         snapshots.append(OddsSnapshot(
             game_id=game_id, bookmaker=bookmaker, market="moneyline",
-            selection=away_team_name.lower(),
+            selection=away_sel.lower(),
             american_odds=int(away_ml), line=None, captured_at=captured_at,
         ))
 
