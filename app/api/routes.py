@@ -2086,17 +2086,19 @@ def chat(req: ChatRequest, db: Session = Depends(_get_db)):
 
     classified = classify(req.message, today)
     print(
-        f"[CHAT] intent={classified.intent} team={classified.entities.team_abbr}"
-        f" player={classified.entities.player_name!r} date={classified.entities.query_date}",
+        f"[CHAT] intent={classified.intent} teams={classified.entities.team_abbrs}"
+        f" players={classified.entities.player_names} date={classified.entities.query_date}",
         flush=True,
     )
     docs = get_context_for_intent(
         db=db,
         intent=classified.intent,
         team_abbr=classified.entities.team_abbr,
+        team_abbrs=classified.entities.team_abbrs,
         query_date=classified.entities.query_date,
         today=today,
         player_name=classified.entities.player_name,
+        player_names=classified.entities.player_names,
     )
     print(f"[CHAT] sources={len(docs)}", flush=True)
 

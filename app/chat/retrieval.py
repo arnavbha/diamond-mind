@@ -7,6 +7,7 @@ Never generates SQL dynamically — all queries are parameterized templates.
 
 from __future__ import annotations
 
+import time
 from datetime import date, timedelta
 from typing import Any, Optional
 
@@ -22,6 +23,62 @@ def _rows(db: Session, sql: str, params: dict) -> list[dict]:
     result = db.execute(text(sql), params)
     cols = list(result.keys())
     return [dict(zip(cols, row)) for row in result.fetchall()]
+
+
+# Cached player name list for fuzzy matching. Refreshes after TTL.
+_NAME_CACHE: dict[str, Any] = {"ts": 0.0, "names": [], "by_name": {}}
+_NAME_CACHE_TTL = 3600  # 1 hour
+
+
+def _load_player_names(db: Session) -> tuple[list[str], dict[str, dict]]:
+    """Cached load of all player full names + metadata for fuzzy matching."""
+    now = time.time()
+    if now - _NAME_CACHE["ts"] < _NAME_CACHE_TTL and _NAME_CACHE["names"]:
+        return _NAME_CACHE["names"], _NAME_CACHE["by_name"]
+    rows = _rows(db, """
+        SELECT id, full_name, primary_position, bats, throws, current_team_id
+        FROM players
+    """, {})
+    by_name: dict[str, dict] = {r["full_name"]: r for r in rows if r.get("full_name")}
+    names = list(by_name.keys())
+    _NAME_CACHE.update({"ts": now, "names": names, "by_name": by_name})
+    return names, by_name
+
+
+def _resolve_player_fuzzy(
+    db: Session,
+    candidate: str,
+    cutoff: int = 75,
+) -> list[dict]:
+    """Find player rows by name. LIKE first; rapidfuzz fallback on miss.
+
+    Returns up to 3 player rows. Empty list if no plausible match.
+    """
+    # Exact / substring (LIKE) first — cheap and precise
+    name_parts = candidate.strip().split()
+    if not name_parts:
+        return []
+    like_clauses = " AND ".join(f"full_name LIKE :p{i}" for i in range(len(name_parts)))
+    params: dict = {f"p{i}": f"%{part}%" for i, part in enumerate(name_parts)}
+    hits = _rows(db, f"""
+        SELECT id, full_name, primary_position, bats, throws, current_team_id
+        FROM players
+        WHERE {like_clauses}
+        LIMIT 3
+    """, params)
+    if hits:
+        return hits
+
+    # Fuzzy fallback
+    try:
+        from rapidfuzz import process, fuzz
+    except ImportError:
+        return []
+    names, by_name = _load_player_names(db)
+    if not names:
+        return []
+    matches = process.extract(candidate, names, scorer=fuzz.WRatio, limit=3, score_cutoff=cutoff)
+    return [by_name[m[0]] for m in matches if m[0] in by_name]
 
 
 # ---------------------------------------------------------------------------
@@ -64,15 +121,30 @@ def get_picks_for_date(db: Session, query_date: date) -> list[dict]:
 
 def get_picks_for_team(
     db: Session,
-    team_abbr: str,
+    team_abbrs: list[str] | str,
     days_back: int = 14,
     today: Optional[date] = None,
 ) -> list[dict]:
-    """Recent picks where team was home or away."""
+    """Recent picks where one of the given teams was home or away.
+
+    Accepts a list (multi-team comparison) or a string (back-compat).
+    """
     if today is None:
         today = date.today()
     start = today - timedelta(days=days_back)
-    sql = """
+
+    if isinstance(team_abbrs, str):
+        team_abbrs = [team_abbrs]
+    team_abbrs = [t for t in team_abbrs if t]
+    if not team_abbrs:
+        return []
+
+    # Build IN clause with bind params
+    placeholders = ",".join(f":t{i}" for i in range(len(team_abbrs)))
+    params: dict = {f"t{i}": t for i, t in enumerate(team_abbrs)}
+    params["start"] = str(start)
+
+    sql = f"""
         SELECT
             br.game_date,
             br.market,
@@ -87,12 +159,12 @@ def get_picks_for_team(
         JOIN games       g   ON br.game_id    = g.id
         JOIN teams       ht  ON g.home_team_id = ht.id
         JOIN teams       at_ ON g.away_team_id = at_.id
-        WHERE (ht.abbr = :abbr OR at_.abbr = :abbr)
+        WHERE (ht.abbr IN ({placeholders}) OR at_.abbr IN ({placeholders}))
           AND br.game_date >= :start
         ORDER BY br.game_date DESC
-        LIMIT 20
+        LIMIT 40
     """
-    return _rows(db, sql, {"abbr": team_abbr, "start": str(start)})
+    return _rows(db, sql, params)
 
 
 def get_tracker_record(
@@ -258,30 +330,30 @@ def get_model_explanation(
 
 def get_player_stats(
     db: Session,
-    player_name: str,
+    player_names: list[str] | str,
     as_of: Optional[date] = None,
 ) -> list[dict]:
-    """Search players by name and return pre-computed form-window stats.
+    """Resolve one or many player names (with fuzzy fallback) and return form-window stats.
 
-    Pulls from pitcher_form_windows / player_form_windows (computed by the
-    Phase 5 engine) rather than re-deriving stats from raw game logs.
-    Returns all available windows (season, last_10_starts, last_5_starts)
-    for the most recent as_of_date <= today.
+    Accepts a list (multi-player comparison) or a single string (back-compat).
+    Pulls from pitcher_form_windows / player_form_windows; falls back to raw
+    game logs when those tables are empty (e.g. on prod before pregame run).
     """
     if as_of is None:
         as_of = date.today()
 
-    # Fuzzy name search — split into words and match all parts
-    name_parts = player_name.strip().split()
-    like_clauses = " AND ".join(f"full_name LIKE :p{i}" for i in range(len(name_parts)))
-    params: dict = {f"p{i}": f"%{part}%" for i, part in enumerate(name_parts)}
+    # Accept str (legacy) or list[str]
+    if isinstance(player_names, str):
+        player_names = [player_names]
 
-    player_rows = _rows(db, f"""
-        SELECT id, full_name, primary_position, bats, throws, current_team_id
-        FROM players
-        WHERE {like_clauses}
-        LIMIT 3
-    """, params)
+    # Resolve each candidate name to player rows (with fuzzy fallback)
+    player_rows: list[dict] = []
+    seen_ids: set[int] = set()
+    for candidate in player_names:
+        for p in _resolve_player_fuzzy(db, candidate):
+            if p["id"] not in seen_ids:
+                seen_ids.add(p["id"])
+                player_rows.append(p)
 
     if not player_rows:
         return []
@@ -484,8 +556,17 @@ def get_context_for_intent(
     query_date: Optional[date],
     today: date,
     player_name: Optional[str] = None,
+    team_abbrs: Optional[list[str]] = None,
+    player_names: Optional[list[str]] = None,
 ) -> list[dict]:
-    """Router: dispatch to the right retrieval function."""
+    """Router: dispatch to the right retrieval function.
+
+    Lists (team_abbrs / player_names) take precedence; falls back to singular
+    fields for backward compatibility.
+    """
+    teams = team_abbrs or ([team_abbr] if team_abbr else [])
+    players = player_names or ([player_name] if player_name else [])
+
     if intent == "pick_today":
         return get_picks_for_date(db, today)
 
@@ -493,9 +574,9 @@ def get_context_for_intent(
         return get_picks_for_date(db, query_date or today)
 
     if intent == "pick_team":
-        if not team_abbr:
+        if not teams:
             return []
-        return get_picks_for_team(db, team_abbr, today=today)
+        return get_picks_for_team(db, teams, today=today)
 
     if intent == "tracker_record":
         return get_tracker_record(db, today=today)
@@ -504,11 +585,17 @@ def get_context_for_intent(
         return get_bullpen_vulnerability(db, query_date or today)
 
     if intent == "model_explain":
-        return get_model_explanation(db, query_date or today, team_abbr)
+        # Multi-team: aggregate explanations across each team
+        if len(teams) > 1:
+            out: list[dict] = []
+            for t in teams:
+                out.extend(get_model_explanation(db, query_date or today, t))
+            return out
+        return get_model_explanation(db, query_date or today, teams[0] if teams else None)
 
     if intent == "player_stat":
-        if not player_name:
+        if not players:
             return []
-        return get_player_stats(db, player_name, as_of=query_date or today)
+        return get_player_stats(db, players, as_of=query_date or today)
 
     return []

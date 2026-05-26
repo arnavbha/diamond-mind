@@ -72,10 +72,12 @@ TEAM_NAMES: dict[str, str] = {
 
 @dataclass
 class ChatEntities:
-    team_abbr: Optional[str] = None       # normalized (e.g. "NYY")
+    team_abbr: Optional[str] = None       # first team (backward compat)
+    team_abbrs: list[str] = field(default_factory=list)  # all teams found
     query_date: Optional[date] = None     # explicit date parsed from message
     raw_date_str: Optional[str] = None
-    player_name: Optional[str] = None     # raw player name fragment from message
+    player_name: Optional[str] = None     # first player (backward compat)
+    player_names: list[str] = field(default_factory=list)  # all players found
 
 
 @dataclass
@@ -110,19 +112,44 @@ _DAY_RE = re.compile(
 )
 
 
-def _extract_team(text: str) -> Optional[str]:
-    """Return normalized team abbreviation from message, or None."""
+def _extract_teams(text: str) -> list[str]:
+    """Return all normalized team abbreviations found in message (deduped, in order)."""
     upper = text.upper()
-    # Try full abbreviations first
+    lower = text.lower()
+    found: list[str] = []
+    seen: set[str] = set()
+
+    # Full abbreviations (NYY, BOS, etc.)
     for tok in re.findall(r"\b[A-Z]{2,3}\b", upper):
         if tok in ALL_ABBRS:
-            return ABBR_NORM.get(tok, tok)
-    # Try team names
-    lower = text.lower()
+            abbr = ABBR_NORM.get(tok, tok)
+            if abbr not in seen:
+                seen.add(abbr)
+                found.append(abbr)
+
+    # Team names — longest first so "new york yankees" beats "yankees"
+    # Track consumed character ranges so "yankees" isn't matched after
+    # "new york yankees" has already claimed the span.
+    consumed: list[tuple[int, int]] = []
     for name, abbr in sorted(TEAM_NAMES.items(), key=lambda x: -len(x[0])):
-        if name in lower:
-            return abbr
-    return None
+        idx = lower.find(name)
+        if idx < 0:
+            continue
+        end = idx + len(name)
+        if any(c_start <= idx < c_end or c_start < end <= c_end for c_start, c_end in consumed):
+            continue
+        consumed.append((idx, end))
+        if abbr not in seen:
+            seen.add(abbr)
+            found.append(abbr)
+
+    return found
+
+
+def _extract_team(text: str) -> Optional[str]:
+    """Backward-compat: first team found, or None."""
+    teams = _extract_teams(text)
+    return teams[0] if teams else None
 
 
 def _extract_date(text: str, today: date) -> Optional[date]:
@@ -176,42 +203,78 @@ def _strip_possessive(w: str) -> str:
     return w
 
 
-def _extract_player_name(text: str) -> Optional[str]:
-    """Extract a Title Case name from the message.
+def _strip_team_spans(text: str) -> str:
+    """Replace team-name occurrences with neutral whitespace so the player
+    extractor doesn't pick up 'Red Sox', 'Blue Jays', etc. as players."""
+    out = text
+    lower = out.lower()
+    for name in sorted(TEAM_NAMES.keys(), key=lambda x: -len(x)):
+        idx = lower.find(name)
+        while idx >= 0:
+            out = out[:idx] + (" " * len(name)) + out[idx + len(name):]
+            lower = out.lower()
+            idx = lower.find(name, idx + len(name))
+    return out
+
+
+def _extract_player_names(text: str) -> list[str]:
+    """Extract all Title Case names from the message (deduped, in order).
 
     Handles:
     - Two-word names: "Bryce Harper", "Zack Wheeler"
     - Mixed-case names: "Nolan McLean", "Tim O'Brien"
     - Single-word surnames when paired with stat keywords: "Harper's splits"
-    - Greedy 3-word match that ends in a stat token: backs off to 2 words
+    - Multiple players: "Skubal vs Sanchez", "Compare Harper and Judge"
+    - Junk words at start ("Compare Bryce Harper"): sliding-window search
+      finds the longest valid sub-sequence even if it's not anchored left.
     """
-    # Title Case word: starts with capital, rest can be letters/apostrophes/hyphens
-    # Allows McLean, O'Brien, etc.
+    # Knock out team-name spans first so 'Red Sox' / 'Blue Jays' aren't players
+    text = _strip_team_spans(text)
+
     TITLE = r"[A-Z][a-zA-Z''\-]{1,}"
+    found: list[str] = []
+    seen: set[str] = set()
 
-    # Try multi-word names (up to 3 words).  If the greedy match pulls in a trailing
-    # stat token (e.g. "Nolan McLean ERA"), back off word-by-word until valid.
-    candidates = re.findall(rf"\b({TITLE}(?:\s+{TITLE}){{1,2}})\b", text)
-    for candidate in candidates:
+    # Multi-word candidates: try all contiguous sub-sequences (longest first,
+    # sliding left-to-right) so 'Compare Bryce Harper' → 'Bryce Harper'.
+    for candidate in re.findall(rf"\b({TITLE}(?:\s+{TITLE}){{1,3}})\b", text):
         words = candidate.split()
-        # Try longest sub-sequence first, then shorter
-        for end in range(len(words), 1, -1):
-            sub = words[:end]
-            # Strip possessive from last word before checking ("Bradish's" → "Bradish")
-            sub[-1] = _strip_possessive(sub[-1])
-            if all(_is_name_word(w) for w in sub):
-                return " ".join(sub)
+        accepted = False
+        for length in range(len(words), 1, -1):
+            for start in range(0, len(words) - length + 1):
+                sub = words[start:start + length]
+                # Strip possessive from last word
+                sub = sub[:-1] + [_strip_possessive(sub[-1])]
+                if all(_is_name_word(w) for w in sub):
+                    name = " ".join(sub)
+                    if name not in seen:
+                        seen.add(name)
+                        found.append(name)
+                    accepted = True
+                    break
+            if accepted:
+                break
 
-    # Fallback: single Title Case word that looks like a surname
-    # Only if sentence contains a stat-related trigger
-    if re.search(r"\b(era|whip|stats?|splits?|avg|obp|slg|ops|hit|pitch|perform|recent|line|k\b|bb\b|inn|start|relief|batter)\b", text, re.I):
-        single = re.findall(rf"\b({TITLE})\b", text)
-        for w in single:
+    # Single-word fallback: surnames near stat triggers
+    if re.search(r"\b(era|whip|stats?|splits?|avg|obp|slg|ops|hit|pitch|perform|recent|line|k\b|bb\b|inn|start|relief|batter|average)\b", text, re.I):
+        for w in re.findall(rf"\b({TITLE})\b", text):
             clean = _strip_possessive(w)
-            if _is_name_word(clean) and len(clean) > 3:
-                return clean
+            if not _is_name_word(clean) or len(clean) <= 3:
+                continue
+            if any(clean in name.split() for name in found):
+                continue
+            if clean in seen:
+                continue
+            seen.add(clean)
+            found.append(clean)
 
-    return None
+    return found
+
+
+def _extract_player_name(text: str) -> Optional[str]:
+    """Backward-compat: first player found, or None."""
+    names = _extract_player_names(text)
+    return names[0] if names else None
 
 
 def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
@@ -222,20 +285,43 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
     text = message.strip()
     lower = text.lower()
 
-    team = _extract_team(text)
+    teams = _extract_teams(text)
+    team = teams[0] if teams else None
     dt = _extract_date(lower, today)
-    player = _extract_player_name(text)
+    players = _extract_player_names(text)
+    player = players[0] if players else None
 
     entities = ChatEntities(
         team_abbr=team,
+        team_abbrs=teams,
         query_date=dt,
         raw_date_str=str(dt) if dt else None,
         player_name=player,
+        player_names=players,
     )
 
     # Out-of-scope prop patterns — catch before team/pick routing
     if re.search(r"\b(home\s*run|homer|hr\b|prop|parlay|futures?|season\s+win|world\s+series|stolen\s+base|strikeout\s+prop)\b", lower):
         return ClassifiedQuery(intent="out_of_scope", entities=entities, original=text)
+
+    # Explanation cues defer comparison routing to model_explain below
+    has_explain_cue = bool(re.search(r"\b(why|explain|reason|because)\b", lower))
+
+    # Two+ players with a comparison cue → player_stat (covers "Skubal vs Sanchez")
+    if (
+        not has_explain_cue
+        and len(players) >= 2
+        and re.search(r"\b(vs|versus|compare|comparison|better|worse|or)\b", lower)
+    ):
+        return ClassifiedQuery(intent="player_stat", entities=entities, original=text)
+
+    # Two+ teams with a comparison cue → pick_team (covers "Yankees vs Red Sox")
+    if (
+        not has_explain_cue
+        and len(teams) >= 2
+        and re.search(r"\b(vs|versus|compare|comparison|better|worse|or)\b", lower)
+    ):
+        return ClassifiedQuery(intent="pick_team", entities=entities, original=text)
 
     # If a player name was found + any stat/performance word → player_stat
     if player and re.search(r"\b(era|whip|fip|stats?|splits?|avg|average|averages|obp|slg|ops|woba|babip|hit|hits|hitting|pitch|pitching|perform|how|recent|last|line|k\b|bb\b|inn|start|relief|batter|hitter|batting)\b", lower):
