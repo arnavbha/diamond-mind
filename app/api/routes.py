@@ -1332,6 +1332,8 @@ def slate(
             "away_team_abbr": away_t.abbr,
             "home_probable_starter_id": game.home_probable_starter_id,
             "away_probable_starter_id": game.away_probable_starter_id,
+            "home_score": game.home_score,
+            "away_score": game.away_score,
         }
         for game, home_t, away_t in rows
     ]
