@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -1838,19 +1838,11 @@ def auto_track(
     }
 
 
-@app.post("/tracker/auto-settle", tags=["tracker"])
-def auto_settle(
-    game_date: date = Query(..., description="YYYY-MM-DD — settle all Final games on this date"),
-    db: Session = Depends(_get_db),
-    _: None = Depends(_require_admin),
-):
-    """Settle all unsettled bets on a date using final scores from the games table.
+def _auto_settle_impl(db: Session, game_date: date) -> dict:
+    """Core settlement logic, callable internally (no admin auth).
 
-    Only settles bets whose game.status contains 'Final'. Skips in-progress games
-    and any game whose score is missing. Idempotent — already-settled bets are
-    left unchanged.
-
-    Returns a summary dict: settled / skipped_not_final / skipped_no_score / already_settled.
+    Reads unsettled bets for game_date, settles any whose game reached a terminal
+    MLB status with valid scores. Idempotent.
     """
     unsettled = db.execute(
         select(BetRecord)
@@ -1932,6 +1924,19 @@ def auto_settle(
         "skipped_no_score": skipped_no_score,
         "bets": results,
     }
+
+
+@app.post("/tracker/auto-settle", tags=["tracker"])
+def auto_settle(
+    game_date: date = Query(..., description="YYYY-MM-DD — settle all Final games on this date"),
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Settle all unsettled bets on a date using final scores from the games table.
+
+    Admin-gated wrapper around _auto_settle_impl. Idempotent.
+    """
+    return _auto_settle_impl(db, game_date)
 
 
 # ---------------------------------------------------------------------------
@@ -2048,6 +2053,109 @@ def list_ingestion_jobs():
         }
         for jid, job in _INGESTION_JOBS.items()
     ]
+
+
+# ---------------------------------------------------------------------------
+# Live tick — cron-job.org pings this every minute during game hours
+# Refreshes scores, settles bets, kicks off next-day ingestion when all
+# today's games are terminal.
+# ---------------------------------------------------------------------------
+
+_POST_FINAL_DONE: dict[str, str] = {}   # iso_date → job_id (already kicked off)
+_TICK_LOCK = threading.Lock()
+
+_TERMINAL_STATUSES = ("Final", "Game Over", "Completed Early")
+
+
+def _today_et() -> date:
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date()
+    except Exception:
+        return date.today()
+
+
+def _all_today_terminal(db: Session, game_date: date) -> tuple[bool, int, int]:
+    """Returns (all_terminal, terminal_count, total_count) for the given date."""
+    rows = db.execute(
+        select(Game.status).where(Game.game_date == game_date)
+    ).scalars().all()
+    if not rows:
+        return False, 0, 0
+    total = len(rows)
+    terminal = sum(1 for s in rows if s and any(t in s for t in _TERMINAL_STATUSES))
+    return terminal == total, terminal, total
+
+
+@app.post("/admin/tick")
+def live_tick(
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Lightweight periodic tick.
+
+    1. Refresh today's schedule (updates game.status + scores from MLB).
+    2. Settle any newly-terminal bets.
+    3. If all today's games terminal AND post-final pipeline not yet run today,
+       kick off ingestion for tomorrow in a background thread.
+
+    Designed to be called every 60s by cron-job.org during game hours.
+    Idempotent and cheap.
+    """
+    from app.ingestion.mlb_stats_api import MLBStatsClient, ingest_schedule
+
+    today = _today_et()
+    summary: dict = {"date": today.isoformat()}
+
+    # 1. Refresh today's schedule (cheap MLB API call)
+    try:
+        with MLBStatsClient() as client:
+            game_ids = ingest_schedule(db, client, today, game_type="R")
+        db.commit()
+        summary["schedule_refreshed"] = len(game_ids)
+    except Exception as exc:
+        db.rollback()
+        summary["schedule_error"] = str(exc)[:200]
+
+    # 2. Settle today's bets that just reached terminal
+    try:
+        settle_result = _auto_settle_impl(db, today)
+        summary["settled"] = settle_result.get("settled", 0)
+        summary["skipped_not_final"] = settle_result.get("skipped_not_final", 0)
+        summary["skipped_no_score"] = settle_result.get("skipped_no_score", 0)
+    except Exception as exc:
+        db.rollback()
+        summary["settle_error"] = str(exc)[:200]
+
+    # 3. Post-final trigger: all today's games done + not already kicked off
+    all_done, terminal_count, total_count = _all_today_terminal(db, today)
+    summary["terminal_games"] = f"{terminal_count}/{total_count}"
+
+    if all_done and total_count > 0:
+        with _TICK_LOCK:
+            if today.isoformat() not in _POST_FINAL_DONE:
+                # Kick off tomorrow's pregame ingestion in a thread
+                tomorrow = today + timedelta(days=1)
+                job_id = uuid.uuid4().hex[:12]
+                _INGESTION_JOBS[job_id] = {
+                    "status": "queued",
+                    "started_at": datetime.utcnow().isoformat() + "Z",
+                    "as_of": tomorrow.isoformat(),
+                    "log_lines": ["Auto-triggered by /admin/tick (post-final)"],
+                    "error": None,
+                }
+                _POST_FINAL_DONE[today.isoformat()] = job_id
+                t = threading.Thread(
+                    target=_run_ingestion_subprocess,
+                    args=(job_id, tomorrow),
+                    daemon=True,
+                )
+                t.start()
+                summary["post_final_kicked_off"] = {"job_id": job_id, "for_date": tomorrow.isoformat()}
+            else:
+                summary["post_final_kicked_off"] = "already_done_today"
+
+    return summary
 
 
 # ---------------------------------------------------------------------------
