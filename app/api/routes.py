@@ -46,7 +46,7 @@ from app.features.recent_form import (
 from app.features.bullpen_vulnerability import score_bullpen
 from app.models.entities import Player, Team
 from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
-from app.models.tracker import BetRecord, compute_units_returned
+from app.models.tracker import BetRecord, ExcludedPick, compute_units_returned
 
 # Import all models so Base.metadata knows about every table, then create
 # any that don't exist yet (safe on both SQLite and Postgres — additive only).
@@ -1758,13 +1758,57 @@ def delete_bet(
     db: Session = Depends(_get_db),
     _: None = Depends(_require_admin),
 ):
-    """Remove a tracked bet."""
+    """Remove a tracked bet.
+
+    Writes an ExcludedPick tombstone so auto-track won't re-create the bet
+    on its next run (the idempotency check covers both BetRecord and ExcludedPick).
+    """
     record = db.get(BetRecord, bet_id)
     if record is None:
         raise HTTPException(404, f"Bet {bet_id} not found")
+    # Write tombstone before deleting so the game_id/market are still accessible
+    tombstone = ExcludedPick(
+        game_id=record.game_id,
+        game_date=record.game_date,
+        market=record.market,
+        reason="manually_deleted",
+    )
+    db.add(tombstone)
     db.delete(record)
     db.commit()
     return None
+
+
+@app.post("/tracker/exclude", tags=["tracker"], status_code=201)
+def exclude_pick(
+    game_id: int = Query(...),
+    market: str = Query(..., description="moneyline or total"),
+    game_date: date = Query(...),
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Directly add an ExcludedPick tombstone (no bet needed).
+
+    Useful to prevent auto-track from creating picks for a game+market pair
+    even when no bet was ever tracked (e.g. after a manual daily curation).
+    Idempotent — silently skips if an exclusion already exists.
+    """
+    existing = db.execute(
+        select(ExcludedPick).where(
+            ExcludedPick.game_id == game_id,
+            ExcludedPick.market == market,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return {"status": "already_excluded", "game_id": game_id, "market": market}
+    db.add(ExcludedPick(
+        game_id=game_id,
+        game_date=game_date,
+        market=market,
+        reason="manual_curation",
+    ))
+    db.commit()
+    return {"status": "excluded", "game_id": game_id, "market": market}
 
 
 @app.get("/tracker/summary", tags=["tracker"])
@@ -2189,7 +2233,13 @@ def auto_track(
                     BetRecord.market == "moneyline",
                 )
             ).scalar_one_or_none()
-            if existing is None:
+            excluded = db.execute(
+                select(ExcludedPick).where(
+                    ExcludedPick.game_id == game.id,
+                    ExcludedPick.market == "moneyline",
+                )
+            ).scalar_one_or_none()
+            if existing is None and excluded is None:
                 # ml_lean is "HOME" or "AWAY" (not team abbr)
                 lean = analysis.get("ml_lean", "")
                 if lean == "HOME" or lean == home_abbr:
@@ -2246,7 +2296,13 @@ def auto_track(
                     BetRecord.market == "total",
                 )
             ).scalar_one_or_none()
-            if existing is None:
+            excluded = db.execute(
+                select(ExcludedPick).where(
+                    ExcludedPick.game_id == game.id,
+                    ExcludedPick.market == "total",
+                )
+            ).scalar_one_or_none()
+            if existing is None and excluded is None:
                 total_lean = analysis.get("total_lean", "OVER")
                 if total_lean not in ("OVER", "UNDER"):
                     proj = analysis.get("projected_total")

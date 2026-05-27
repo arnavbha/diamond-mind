@@ -51,6 +51,23 @@ class BetRecord(Base):
     snapshot_source: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
 
+class ExcludedPick(Base):
+    """Tombstone for manually-deleted auto-track picks.
+
+    When a bet is deleted via DELETE /tracker/bets/{id}, a row is written here
+    so that auto-track's idempotency check still finds a record and doesn't
+    re-create the bet on the next run.
+    """
+    __tablename__ = "excluded_picks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    game_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    market: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    excluded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 def decimal_odds(american_odds: int) -> float:
     """Convert American odds to decimal odds."""
     if american_odds >= 0:
