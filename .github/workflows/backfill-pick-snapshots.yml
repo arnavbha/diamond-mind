@@ -1,0 +1,64 @@
+name: Backfill Pick Snapshots
+
+# One-off / on-demand replay-backfill for BetRecord rows missing model state.
+# Calls /admin/backfill-pick-snapshots in batches until no more candidates.
+# Idempotent — successive runs are no-ops once all rows are tagged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max rows to process per batch (1-2000)"
+        required: false
+        default: "500"
+      dry_run:
+        description: "If true, compute snapshots but do not persist"
+        required: false
+        default: "false"
+
+env:
+  API_BASE: https://diamond-mind-api.onrender.com
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Wake API
+        run: |
+          set +e
+          for i in 1 2 3 4 5; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "${API_BASE}/health" 2>/dev/null)
+            [ "$status" = "200" ] && echo "API healthy." && exit 0
+            echo "  Attempt $i: HTTP ${status:-timeout} — waiting 15s…"
+            sleep 15
+          done
+          echo "API not responding after 75s — continuing anyway."
+          exit 0
+
+      - name: Run backfill (until exhausted or 5 batches)
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          LIMIT:   ${{ github.event.inputs.limit }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -e
+          for batch in 1 2 3 4 5; do
+            echo ""
+            echo "=== Batch ${batch} (limit=${LIMIT} dry_run=${DRY_RUN}) ==="
+            RESPONSE=$(curl -sS -X POST \
+              --max-time 240 \
+              -H "X-Admin-Token: ${ADMIN_TOKEN}" \
+              "${API_BASE}/admin/backfill-pick-snapshots?limit=${LIMIT}&dry_run=${DRY_RUN}")
+            echo "$RESPONSE" | python3 -m json.tool
+
+            UPDATED=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('updated',0))")
+            NO_ODDS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('no_odds',0))")
+            NO_ANALYSIS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('no_analysis',0))")
+            TOTAL_TOUCHED=$(( UPDATED + NO_ODDS + NO_ANALYSIS ))
+            if [ "${TOTAL_TOUCHED}" = "0" ]; then
+              echo "No candidates remaining — done."
+              break
+            fi
+          done
