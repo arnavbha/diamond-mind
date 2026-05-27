@@ -333,7 +333,7 @@ function SlatePageInner() {
         if (g === null) setError(true);
         else setGames(g);
       });
-      api.trackerBets({ game_date: date }).then((bets) => {
+      api.trackerBets({ date_from: date, date_to: date }).then((bets) => {
         if (!alive || !bets) return;
         setTrackedKeys(new Set(bets.map((b) => `${b.game_id}-${b.market}`)));
       });

@@ -1250,41 +1250,30 @@ def daily_picks(
             if d is not None:
                 results.append(d)
 
-    # Lock tracked picks: if a bet_record exists for (game, market), the tier
-    # and odds shown should be FROZEN at the values we tracked at — not the
-    # live-recomputed analysis which may have shifted since lines moved.
+    # Annotate tracked picks (no override). The page used to freeze the
+    # tier/lean/odds to BetRecord values when a bet existed, which made
+    # /games/picks disagree with /games/{id}/context once lines moved
+    # (the same game showed e.g. -115 on /picks and -126 on /game/[id]).
+    # Now we leave the live model output intact and only mark the row as
+    # tracked + carry the original stake; the tracker page remains the
+    # source of truth for "what odds did I actually bet at".
     if results:
         tracked = db.execute(text("""
-            SELECT game_id, market, selection, american_odds, units, tier, total_line
+            SELECT game_id, market, units
             FROM bet_records
             WHERE game_date = :dt
         """), {"dt": game_date.isoformat()}).fetchall()
-        by_gm: dict[tuple, dict] = {}
-        for r in tracked:
-            gid, market, selection, odds, units, tier, total_line = r
-            by_gm[(gid, market)] = {
-                "selection": selection,
-                "american_odds": odds,
-                "units": units,
-                "tier": tier,
-                "total_line": total_line,
-            }
+        by_gm: dict[tuple, float | None] = {}
+        for gid, market, units in tracked:
+            by_gm[(gid, market)] = float(units) if units is not None else None
         for d in results:
             gid = d.get("game_id")
-            ml = by_gm.get((gid, "moneyline"))
-            if ml:
-                d["ml_tier"] = ml["tier"]
-                d["ml_lean"] = ml["selection"]
-                d["ml_american_odds"] = ml["american_odds"]
+            if (gid, "moneyline") in by_gm:
                 d["ml_locked"] = True
-                d["ml_locked_units"] = float(ml["units"]) if ml["units"] is not None else None
-            tot = by_gm.get((gid, "total"))
-            if tot:
-                d["total_tier"] = tot["tier"]
-                d["total_lean"] = tot["selection"]
-                d["total_line"] = tot["total_line"]
+                d["ml_locked_units"] = by_gm[(gid, "moneyline")]
+            if (gid, "total") in by_gm:
                 d["total_locked"] = True
-                d["total_locked_units"] = float(tot["units"]) if tot["units"] is not None else None
+                d["total_locked_units"] = by_gm[(gid, "total")]
 
     tier_order = {"STRONG LEAN": 0, "LEAN": 1, "PASS": 2, "AVOID": 3}
     results.sort(key=lambda r: (tier_order.get(r.get("ml_tier", "PASS"), 2), -r.get("ml_confidence", 0)))
