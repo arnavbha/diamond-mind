@@ -191,10 +191,31 @@ def _format_context(intent: str, docs: list[dict]) -> str:
         for d in docs:
             away = d.get("away_abbr", "?")
             home = d.get("home_abbr", "?")
+            edge = d.get("edge")
+            edge_str = f"{float(edge):.1%}" if edge is not None else "N/A"
+            conf = d.get("confidence_score")
+            conf_str = f"{float(conf):.0%}" if conf is not None else "N/A"
+            est = d.get("estimated_probability")
+            imp = d.get("implied_probability")
+            est_str = f" | model_prob={float(est):.1%}" if est is not None else ""
+            imp_str = f" | market_prob={float(imp):.1%}" if imp is not None else ""
+            kelly = d.get("kelly_fraction_raw")
+            kelly_str = f" | kelly_raw={float(kelly):.4f}" if kelly is not None else ""
+            stake = d.get("units")
+            stake_str = f" | stake={float(stake):.2f}u" if stake is not None else ""
+            evq = d.get("evidence_quality")
+            evq_str = f" | evidence_quality={float(evq):.2f}" if evq is not None else ""
+            tl = d.get("total_line")
+            pt = d.get("projected_total")
+            tot_str = ""
+            if tl is not None:
+                tot_str += f" | total_line={tl}"
+            if pt is not None:
+                tot_str += f" | projected_total={pt}"
             lines.append(
                 f"  {away}@{home} | {d.get('market','?')} | Pick: {d.get('selection','?')} "
-                f"| Rec: {d.get('recommendation','?')} | Edge: {d.get('edge', 0):.1%} "
-                f"| Confidence: {d.get('confidence_score', 0):.0%}"
+                f"| Rec: {d.get('recommendation','?')} | Edge: {edge_str} | Confidence: {conf_str}"
+                f"{est_str}{imp_str}{kelly_str}{stake_str}{evq_str}{tot_str}"
             )
             if d.get("supporting_factors"):
                 try:
