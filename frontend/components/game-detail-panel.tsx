@@ -347,7 +347,7 @@ function AnalysisPanel({ a }: { a: GameAnalysis }) {
           {isActionable && <div style={{ marginTop: "16px" }}><MethodCompare a={a} /></div>}
         </div>
 
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0" }}>
+        <div className="mobile-stack" style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0" }}>
           <div style={{ padding: "0 14px 0 0", borderRight: "1px solid var(--border)" }}>
             <div className="data-label" style={{ marginBottom: "8px" }}>Win Probability</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -526,7 +526,7 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
       {/* Starters */}
       <div style={{ marginBottom: "24px" }}>
         <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "12px" }}>Starting Pitchers</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <StarterCard abbr={ctx.home_team_abbr} starter={ctx.home_starter} />
           <StarterCard abbr={ctx.away_team_abbr} starter={ctx.away_starter} />
         </div>
@@ -535,7 +535,7 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
       {/* Bullpens */}
       <div style={{ marginBottom: "24px" }}>
         <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "12px" }}>Bullpen Intelligence</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           {ctx.home_bullpen && <BullpenCard abbr={ctx.home_team_abbr} bp={ctx.home_bullpen} />}
           {ctx.away_bullpen && <BullpenCard abbr={ctx.away_team_abbr} bp={ctx.away_bullpen} />}
         </div>

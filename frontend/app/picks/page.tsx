@@ -8,6 +8,63 @@ import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } f
 import { ExplainTooltip } from "@/components/explain";
 import { DitherHeader } from "@/components/dither-header";
 
+// ── Per-side tier badge ───────────────────────────────────────────────────────
+// Shows tier + which side it applies to. Replaces a single ambiguous "STRONG
+// LEAN" pill in the card header.
+//
+// Three visual states surface what the model decided per side:
+//
+//   bright (filled color) — tier is actionable AND a side was picked
+//                           e.g. "STRONG LEAN · ML WSH"
+//
+//   outlined (dim color)  — tier is actionable BUT P(+EV) gated the bet
+//                           e.g. "STRONG LEAN · ML  (no lean)"
+//                           (data path: ml_tier=STRONG LEAN, ml_lean=PASS)
+//
+//   muted (gray)          — tier is PASS / AVOID
+//                           e.g. "ML PASS"
+function SideTierBadge({
+  tier,
+  sideLabel,
+  sidePick,
+}: {
+  tier: string;
+  sideLabel: string;      // "ML" or "O/U"
+  sidePick: string | null; // e.g. "WSH" or "O 7.5"; null = no actionable pick
+}) {
+  const isActionTier = tier === "STRONG LEAN" || tier === "LEAN";
+  const tierCol = isActionTier ? tierColor(tier) : "var(--text-3)";
+
+  // Filled-color state only for picks that are actually actionable.
+  const isFilled = isActionTier && !!sidePick;
+
+  let labelText: string;
+  if (isActionTier && sidePick) {
+    labelText = `${tier} · ${sideLabel} ${sidePick}`;
+  } else if (isActionTier) {
+    // Tier rated this side as a lean, but P(+EV) below the action threshold —
+    // surface the tier honestly without claiming a pick the model didn't make.
+    labelText = `${tier} · ${sideLabel} (no lean)`;
+  } else {
+    labelText = `${sideLabel} ${tier}`;
+  }
+
+  return (
+    <span
+      className="tier-badge"
+      style={{
+        color: tierCol,
+        borderColor: isFilled ? tierCol : "var(--border-2)",
+        fontSize: "9px",
+        whiteSpace: "nowrap",
+        opacity: isActionTier ? (isFilled ? 1 : 0.7) : 0.55,
+      }}
+    >
+      {labelText}
+    </span>
+  );
+}
+
 // ── Track button + unit modal ─────────────────────────────────────────────────
 
 type TrackCtx = {
@@ -340,7 +397,7 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
       </div>
 
       {/* Card body */}
-      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+      <div className="potd-body" style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
         {/* Matchup */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <TeamLogo abbr={pick.away_team_abbr} size={26} />
@@ -456,9 +513,12 @@ function PickCard({
           } as React.CSSProperties}
           onMouseMove={isActionable ? onSlabMouseMove : undefined}
         >
-          {/* Top: matchup + tier */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Top: matchup + per-side tier badges. The previous design showed a
+              single tier label without saying which side it referred to, which
+              left readers staring at "STRONG LEAN" without knowing whether
+              that was the ML pick or the total. */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
               <TeamLogo abbr={pick.away_team_abbr} size={22} />
               <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "15px" }}>{pick.away_team_abbr}</span>
               <span style={{ color: "var(--text-3)", fontSize: "12px" }}>@</span>
@@ -466,13 +526,28 @@ function PickCard({
               <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "15px" }}>{pick.home_team_abbr}</span>
               {pick.venue && <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginLeft: "4px" }}>{pick.venue}</span>}
             </div>
-            <ExplainTooltip term="tiers">
-              <span className="tier-badge" style={{ color: tc, borderColor: tc }}>{pick.ml_tier}</span>
-            </ExplainTooltip>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end", flexShrink: 0 }}>
+              {/* ML side badge */}
+              <SideTierBadge
+                tier={pick.ml_tier}
+                sideLabel="ML"
+                sidePick={isMlAction && leanAbbr ? leanAbbr : null}
+              />
+              {/* Total (O/U) side badge */}
+              <SideTierBadge
+                tier={pick.total_tier}
+                sideLabel="O/U"
+                sidePick={
+                  isTotalAction && (pick.total_lean === "OVER" || pick.total_lean === "UNDER")
+                    ? `${pick.total_lean === "OVER" ? "O" : "U"} ${pick.total_line ?? ""}`.trim()
+                    : null
+                }
+              />
+            </div>
           </div>
 
           {/* Middle: ML verdict + gauge */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "20px", alignItems: "center", marginTop: "14px" }}>
+          <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "20px", alignItems: "center", marginTop: "14px" }}>
             <div>
               {isMlAction && leanAbbr ? (
                 <>
@@ -504,10 +579,19 @@ function PickCard({
                   </div>
                 </>
               ) : (
-                <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", fontWeight: 800, color: "var(--text-3)", textTransform: "uppercase", lineHeight: 1 }}>
-                  {pick.ml_tier === "AVOID" ? "AVOID" : "PASS"}
+                <div style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "22px",
+                  fontWeight: 800,
+                  color: isMlAction ? tc : "var(--text-3)",
+                  textTransform: "uppercase",
+                  lineHeight: 1,
+                }}>
+                  {pick.ml_tier}
                   <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", fontWeight: 400, marginTop: "5px" }}>
-                    P(+EV) {(pick.q_prob_positive * 100).toFixed(0)}% — below action threshold
+                    {isMlAction
+                      ? `P(+EV) ${(pick.q_prob_positive * 100).toFixed(0)}% — no directional lean`
+                      : `P(+EV) ${(pick.q_prob_positive * 100).toFixed(0)}% — below action threshold`}
                   </div>
                 </div>
               )}

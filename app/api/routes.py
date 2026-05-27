@@ -56,6 +56,10 @@ import app.models.odds     # noqa: F401
 import app.models.reports  # noqa: F401
 Base.metadata.create_all(engine)
 
+# Additive column migrations that `create_all` can't handle on existing tables.
+from app.migrations import apply_lightweight_migrations  # noqa: E402
+apply_lightweight_migrations(engine)
+
 app = FastAPI(
     title="Diamond Mind API",
     description=(
@@ -1576,6 +1580,13 @@ def _bet_to_dict(b: BetRecord) -> dict:
         "total_line": b.total_line,
         "projected_total": b.projected_total,
         "created_at": b.created_at.isoformat() if b.created_at else None,
+        "model_prob": b.model_prob,
+        "market_implied_prob": b.market_implied_prob,
+        "edge": b.edge,
+        "p_edge_positive": b.p_edge_positive,
+        "kelly_fraction_raw": b.kelly_fraction_raw,
+        "evidence_quality": b.evidence_quality,
+        "snapshot_source": b.snapshot_source,
     }
 
 
@@ -1796,10 +1807,300 @@ def tracker_summary(
     }
 
 
+# ── /tracker/track-record helpers ────────────────────────────────────────────
+# These compute calibration + tier hit rate + P&L over LIVE TRACKED PICKS
+# (BetRecord), not a model replay. This is the honest "how have we actually
+# done in operation" view. /backtest is the orthogonal R&D tool for replaying
+# a model variant over historical games.
+
+_CALIBRATION_BUCKET_EDGES = [round(0.50 + 0.05 * i, 10) for i in range(11)]  # 0.50..1.00
+_CALIBRATION_MIDPOINTS = [
+    round((_CALIBRATION_BUCKET_EDGES[i] + _CALIBRATION_BUCKET_EDGES[i + 1]) / 2, 10)
+    for i in range(10)
+]
+
+
+def _calibration_bucket_index(p: float) -> Optional[int]:
+    """Bucket index in [0,9] for a picked-side probability p∈[0.50,1.00]."""
+    if p < 0.50 or p > 1.0:
+        return None
+    if p >= 1.0:
+        return 9
+    idx = int((p - 0.50) // 0.05)
+    if idx < 0 or idx > 9:
+        return None
+    return idx
+
+
+def _wilson_ci(wins: int, n: int, z: float = 1.96) -> tuple[Optional[float], Optional[float]]:
+    """Wilson score interval for a binomial proportion. (low, high) or (None, None) if n=0.
+
+    More appropriate than normal-approx CI for small/extreme samples — this is
+    the standard interval for reporting confidence on bettor win-rates.
+    """
+    if n == 0:
+        return (None, None)
+    import math as _m
+    phat = wins / n
+    denom = 1.0 + z * z / n
+    center = (phat + z * z / (2 * n)) / denom
+    margin = (z * _m.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n))) / denom
+    return (max(0.0, center - margin), min(1.0, center + margin))
+
+
+@app.get("/tracker/track-record", tags=["tracker"])
+def tracker_track_record(
+    start: Optional[date] = Query(None),
+    end: Optional[date] = Query(None),
+    db: Session = Depends(_get_db),
+):
+    """Honest track-record summary computed from live-tracked picks.
+
+    Source of truth is `BetRecord` (the bets actually logged at pick time),
+    not a model replay. This makes the page survivorship-safe — every pick
+    that was ever logged appears, settled or pending. It also keeps the
+    response fast (one query, in-memory aggregation) so the page can render
+    instantly on any date range.
+
+    Calibration / Brier metrics restrict to rows with `model_prob IS NOT NULL`.
+    `snapshot_source` lets the UI distinguish live-captured (the truth) from
+    replay-backfilled (an approximation, since the live model code may have
+    drifted since the pick was originally made).
+
+    Returns enough structure to drive the UI without further math:
+      - `summary`: combined + ML + total record (n, w/l/p/pending, ROI, CI)
+      - `tier_hit_rates`: per-tier counts, win%, CI
+      - `pnl_curve`: ordered list of cumulative flat P&L per settled bet
+      - `calibration`: 10 buckets [0.50..1.00] of (n, actual_win_rate) over
+        the snapshot slice
+      - `brier`: Brier score over the snapshot slice (null when n=0)
+      - `edge_realization`: mean predicted edge vs realized win rate over the
+        snapshot slice
+      - `snapshot_coverage`: count of rows by snapshot_source — exposes the
+        live-vs-replay-vs-null split honestly
+    """
+    stmt = select(BetRecord)
+    if start:
+        stmt = stmt.where(BetRecord.game_date >= start)
+    if end:
+        stmt = stmt.where(BetRecord.game_date <= end)
+    stmt = stmt.order_by(BetRecord.game_date.asc(), BetRecord.id.asc())
+    rows = list(db.execute(stmt).scalars().all())
+
+    def _record(bets):
+        wins   = sum(1 for b in bets if b.result == "WIN")
+        losses = sum(1 for b in bets if b.result == "LOSS")
+        pushes = sum(1 for b in bets if b.result == "PUSH")
+        pending = sum(1 for b in bets if b.result is None)
+        settled = wins + losses + pushes
+        graded = wins + losses                  # exclude pushes from W%
+        wagered = sum(b.units for b in bets if b.result is not None)
+        net = sum(
+            b.units_returned for b in bets
+            if b.units_returned is not None
+        )
+        roi = (net / wagered) if wagered > 0 else None
+        win_rate = (wins / graded) if graded > 0 else None
+        ci_low, ci_high = _wilson_ci(wins, graded)
+        return {
+            "n": len(bets),
+            "settled": settled,
+            "wins": wins,
+            "losses": losses,
+            "pushes": pushes,
+            "pending": pending,
+            "units_wagered": round(wagered, 2),
+            "units_net": round(net, 2),
+            "roi": (None if roi is None else round(roi, 4)),
+            "win_rate": (None if win_rate is None else round(win_rate, 4)),
+            "win_rate_ci_low":  (None if ci_low  is None else round(ci_low,  4)),
+            "win_rate_ci_high": (None if ci_high is None else round(ci_high, 4)),
+        }
+
+    ml_rows    = [b for b in rows if b.market == "moneyline"]
+    total_rows = [b for b in rows if b.market == "total"]
+
+    # ── Per-tier hit rate (settled only; ML+Total combined per tier) ─────────
+    tier_hit_rates = []
+    for tier_name in ("STRONG LEAN", "LEAN"):
+        bets = [b for b in rows if b.tier == tier_name]
+        graded = [b for b in bets if b.result in ("WIN", "LOSS")]
+        wins   = sum(1 for b in graded if b.result == "WIN")
+        n      = len(graded)
+        ci_low, ci_high = _wilson_ci(wins, n)
+        tier_hit_rates.append({
+            "tier": tier_name,
+            "n": len(bets),
+            "settled": n,
+            "wins": wins,
+            "win_rate": (round(wins / n, 4) if n > 0 else None),
+            "win_rate_ci_low":  (None if ci_low  is None else round(ci_low,  4)),
+            "win_rate_ci_high": (None if ci_high is None else round(ci_high, 4)),
+        })
+
+    # ── Flat & Kelly P&L curves (cumulative, settled only, chronological) ────
+    flat_pnl_curve: list[dict] = []
+    flat_cum = 0.0
+    settled_bets_sorted = [b for b in rows if b.units_returned is not None]
+    # rows is already ordered (game_date asc, id asc).
+    for b in settled_bets_sorted:
+        flat_cum += b.units_returned
+        flat_pnl_curve.append({
+            "bet_id": b.id,
+            "game_date": b.game_date.isoformat(),
+            "cum_units": round(flat_cum, 4),
+        })
+
+    # ── Snapshot-coverage breakdown ──────────────────────────────────────────
+    from collections import Counter
+    src_counts = Counter((b.snapshot_source or "null") for b in rows)
+    snapshot_coverage = [
+        {"source": k, "n": v} for k, v in sorted(src_counts.items())
+    ]
+
+    # ── Calibration (snapshot slice only) ────────────────────────────────────
+    # For each row with model_prob set AND a settled outcome (WIN/LOSS), bucket
+    # the picked-side model_prob and tally actual wins.
+    bucket_n    = [0] * 10
+    bucket_wins = [0] * 10
+    brier_sum = 0.0
+    brier_n = 0
+    edge_sum = 0.0
+    edge_n   = 0
+
+    snapshot_bets = [
+        b for b in rows
+        if b.model_prob is not None and b.result in ("WIN", "LOSS")
+    ]
+    for b in snapshot_bets:
+        # selection_won_int: 1 if pick won, 0 otherwise
+        won_int = 1 if b.result == "WIN" else 0
+
+        # Brier — applies to the entire snapshot slice
+        brier_sum += (b.model_prob - won_int) ** 2
+        brier_n += 1
+
+        # Edge realization: pure mean predicted edge across the slice
+        if b.edge is not None:
+            edge_sum += b.edge
+            edge_n += 1
+
+        # Calibration: only the picked side's >=0.50 prob can bucket
+        bi = _calibration_bucket_index(b.model_prob)
+        if bi is not None:
+            bucket_n[bi] += 1
+            bucket_wins[bi] += won_int
+
+    calibration = [
+        {
+            "midpoint": _CALIBRATION_MIDPOINTS[i],
+            "n": bucket_n[i],
+            "actual_win_rate": (
+                round(bucket_wins[i] / bucket_n[i], 4)
+                if bucket_n[i] > 0 else None
+            ),
+        }
+        for i in range(10)
+    ]
+
+    brier = round(brier_sum / brier_n, 6) if brier_n > 0 else None
+
+    # Edge realization: predicted-edge mean vs actual outperformance.
+    # Compare the slice's mean(model_prob) to slice's actual win rate.
+    if snapshot_bets:
+        n_slice = len(snapshot_bets)
+        mean_model = sum(b.model_prob for b in snapshot_bets) / n_slice
+        actual_win = sum(1 for b in snapshot_bets if b.result == "WIN") / n_slice
+        mean_edge_implied = (edge_sum / edge_n) if edge_n > 0 else None
+        edge_realization = {
+            "n": n_slice,
+            "mean_model_prob": round(mean_model, 4),
+            "actual_win_rate": round(actual_win, 4),
+            "mean_predicted_edge": (
+                None if mean_edge_implied is None else round(mean_edge_implied, 4)
+            ),
+            "realized_outperformance": round(actual_win - mean_model, 4),
+        }
+    else:
+        edge_realization = {
+            "n": 0,
+            "mean_model_prob": None,
+            "actual_win_rate": None,
+            "mean_predicted_edge": None,
+            "realized_outperformance": None,
+        }
+
+    return {
+        "start": (start.isoformat() if start else None),
+        "end":   (end.isoformat()   if end   else None),
+        "summary": {
+            "combined": _record(rows),
+            "ml":       _record(ml_rows),
+            "total":    _record(total_rows),
+        },
+        "tier_hit_rates": tier_hit_rates,
+        "pnl_curve": flat_pnl_curve,
+        "calibration": calibration,
+        "brier_score": brier,
+        "edge_realization": edge_realization,
+        "snapshot_coverage": snapshot_coverage,
+    }
+
+
 _ACTIONABLE_TIERS = {"STRONG LEAN", "LEAN"}
 
 
 _UNIT_SCALE = 0.5  # global scale factor — keeps 1u = ~0.5% bankroll at sane exposure
+
+
+def _pick_snapshot(analysis: dict, market: str) -> dict:
+    """Extract the model-state snapshot for a pick from a serialized GameAnalysis.
+
+    Returns a dict of the picked-side probabilities + edge metrics, ready to
+    splat into a BetRecord constructor. All fields are picked-side oriented
+    (matches `BetRecord.selection`), which is the natural form for calibration
+    and Brier-score computation downstream.
+
+    Both ML and Total branches of the model already orient their `*_p_shrunk`
+    fields to the leaned side (see game_analyzer.py: `p_lean_side` for totals,
+    `q_p_shrunk` for ML), so no per-side flipping is needed here.
+
+    Returns None-valued fields when the underlying analysis lacks real odds
+    (q_has_real_odds=False / qt_has_real_odds=False); the row will still be
+    written so the pick is tracked, but it won't contribute to calibration.
+    """
+    if market == "moneyline":
+        if not analysis.get("q_has_real_odds"):
+            return {}
+        return {
+            "model_prob":          analysis.get("q_p_shrunk"),
+            "market_implied_prob": analysis.get("q_shin_vig_free"),
+            "edge":                analysis.get("q_edge_quant"),
+            "p_edge_positive":     analysis.get("q_prob_positive"),
+            "kelly_fraction_raw":  analysis.get("q_kelly_sized"),
+            "evidence_quality":    analysis.get("q_evidence_quality"),
+        }
+    if market == "total":
+        if not analysis.get("qt_has_real_odds"):
+            return {}
+        p_shrunk = analysis.get("qt_p_shrunk")
+        edge     = analysis.get("qt_edge_quant")
+        market_implied = (
+            p_shrunk - edge if p_shrunk is not None and edge is not None else None
+        )
+        return {
+            "model_prob":          p_shrunk,
+            "market_implied_prob": market_implied,
+            "edge":                edge,
+            "p_edge_positive":     analysis.get("qt_prob_positive"),
+            "kelly_fraction_raw":  analysis.get("qt_kelly_sized"),
+            # Totals use a single evidence_quality input upstream; reuse the ML
+            # field as a proxy — the value driving qt's shrinkage came from the
+            # same `total_evidence_quality` term that's not exposed in the
+            # serialized dataclass. Fall back to ML evidence_quality.
+            "evidence_quality":    analysis.get("q_evidence_quality"),
+        }
+    return {}
 
 
 def _kelly_units(kelly_sized: float) -> float:
@@ -1914,6 +2215,7 @@ def auto_track(
                 if units == 0.0:
                     skipped += 1
                     continue
+                snap = _pick_snapshot(analysis, "moneyline")
                 db.add(BetRecord(
                     game_id=game.id,
                     game_date=game_date,
@@ -1929,6 +2231,8 @@ def auto_track(
                     result=None,
                     units_returned=None,
                     created_at=datetime.utcnow(),
+                    snapshot_source="live",
+                    **snap,
                 ))
                 created += 1
             else:
@@ -1966,6 +2270,7 @@ def auto_track(
                 if units == 0.0:
                     skipped += 1
                     continue
+                snap = _pick_snapshot(analysis, "total")
                 db.add(BetRecord(
                     game_id=game.id,
                     game_date=game_date,
@@ -1981,6 +2286,8 @@ def auto_track(
                     result=None,
                     units_returned=None,
                     created_at=datetime.utcnow(),
+                    snapshot_source="live",
+                    **snap,
                 ))
                 created += 1
             else:
@@ -1992,6 +2299,96 @@ def auto_track(
         "skipped": skipped,
         "skipped_started": skipped_started,
         "date": game_date.isoformat(),
+    }
+
+
+@app.post("/admin/backfill-pick-snapshots", tags=["admin"])
+def backfill_pick_snapshots(
+    limit: int = Query(default=500, ge=1, le=2000),
+    dry_run: bool = Query(default=False),
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """One-shot replay-backfill of model state for BetRecord rows that predate
+    live snapshot capture (snapshot_source IS NULL).
+
+    For each candidate row, we call `build_game_analysis(game_id, as_of=game_date, db)`
+    and extract the picked-side model state via `_pick_snapshot`. Result is
+    persisted with `snapshot_source="replay-<today>"` so downstream calibration
+    can distinguish replay-derived rows from live-captured ones.
+
+    Caveats — these matter for honest interpretation downstream:
+    1. The model code in this commit may have drifted from the code that
+       originally produced the pick. Replay numbers approximate, not recover,
+       what the model said at the moment of the pick.
+    2. Replay uses current DB state filtered `as_of=game_date`. If any
+       backfilling ingestion since the original pick added stats that
+       weren't visible at pick time, the replay may use richer data than the
+       live model had.
+
+    Both caveats argue for surfacing the replay/live distinction in any UI
+    that reports calibration. Cf. snapshot_source on BetRecord.
+    """
+    from app.betting.analysis_builder import build_game_analysis
+    from datetime import date as _date
+
+    candidates = db.execute(
+        select(BetRecord)
+        .where(BetRecord.snapshot_source.is_(None))
+        .order_by(BetRecord.game_date.asc(), BetRecord.id.asc())
+        .limit(limit)
+    ).scalars().all()
+
+    today_str = _date.today().isoformat()
+    tag = f"replay-{today_str}"
+
+    updated = 0
+    no_analysis = 0
+    no_odds = 0
+    skipped_unknown_market = 0
+
+    for bet in candidates:
+        analysis_obj = build_game_analysis(bet.game_id, bet.game_date, db)
+        if analysis_obj is None:
+            no_analysis += 1
+            continue
+
+        # _pick_snapshot wants the serialized dict form
+        import dataclasses
+        analysis = dataclasses.asdict(analysis_obj)
+
+        snap = _pick_snapshot(analysis, bet.market)
+
+        if not snap:
+            # No real odds at replay time → can't compute a meaningful snapshot.
+            # Still flag the row as replay-attempted so we don't retry forever.
+            no_odds += 1
+            if not dry_run:
+                bet.snapshot_source = f"{tag}-no-odds"
+            continue
+
+        if bet.market not in ("moneyline", "total"):
+            skipped_unknown_market += 1
+            continue
+
+        if not dry_run:
+            for field, value in snap.items():
+                setattr(bet, field, value)
+            bet.snapshot_source = tag
+
+        updated += 1
+
+    if not dry_run:
+        db.commit()
+
+    return {
+        "candidates": len(candidates),
+        "updated": updated,
+        "no_analysis": no_analysis,
+        "no_odds": no_odds,
+        "skipped_unknown_market": skipped_unknown_market,
+        "dry_run": dry_run,
+        "snapshot_source_tag": tag,
     }
 
 

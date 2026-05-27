@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
@@ -13,6 +13,15 @@ const FONTS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;6
 export const metadata: Metadata = {
   title: "Diamond Mind",
   description: "MLB Intelligence System",
+};
+
+// Without an explicit viewport meta, mobile Safari renders the page at 980px
+// and zooms out to fit — which made every @media (max-width: 640px) rule a
+// dead letter (the reported viewport was always desktop-sized). This is the
+// one-line fix that lets the responsive CSS actually engage on phones.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -32,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           proximity={120}
           shockStrength={10}
         />
-        <nav style={{
+        <nav className="app-nav" style={{
           borderBottom: "1px solid var(--border)",
           padding: "0 24px",
           height: "52px",
@@ -44,15 +53,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           top: 0,
           zIndex: 100,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "8px" }}>
+          <div className="app-nav-brand" style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "8px", flexShrink: 0 }}>
             <Image src="/logo.ico" alt="Diamond Mind" width={22} height={22} style={{ display: "block" }} />
-            <span style={{
+            <span className="app-nav-brand-text" style={{
               fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: "14px",
               color: "var(--text)",
               letterSpacing: "0.02em",
               textTransform: "uppercase",
+              whiteSpace: "nowrap",
             }}>
               <DecryptedText
                 text="Diamond Mind"
