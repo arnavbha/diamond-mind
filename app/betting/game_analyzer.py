@@ -893,7 +893,21 @@ def analyze_game(
     _TOTAL_PROB_CAP = 0.60 + 0.25 * total_evidence_quality
 
     compare_line = total_line if total_line is not None else 8.5
-    _z_over = (projected_total - compare_line) / _TOTAL_SIGMA
+
+    # Shrink projected_total toward the market line before computing P(over).
+    # Our run model uses recent-form R/G which is noisy and often inflated.
+    # The market line aggregates far more information — gaps > 1.5 runs almost
+    # always signal model error, not real edge. Shrink 50% toward market so a
+    # 4-run gap becomes a 2-run gap before the CDF sees it.
+    _proj_shrunk = projected_total * 0.5 + compare_line * 0.5
+
+    # Hard cap: raw gap > 2.0 runs → model too uncertain to act.
+    # Still compute a direction but cap P(over) tightly.
+    _raw_gap = abs(projected_total - compare_line)
+    if _raw_gap > 2.0:
+        _TOTAL_PROB_CAP = min(_TOTAL_PROB_CAP, 0.56)
+
+    _z_over = (_proj_shrunk - compare_line) / _TOTAL_SIGMA
     _p_raw = 0.5 * (1.0 + _math.erf(_z_over / _math.sqrt(2.0)))
     p_over_model = min(_TOTAL_PROB_CAP, max(1.0 - _TOTAL_PROB_CAP, _p_raw))
 
