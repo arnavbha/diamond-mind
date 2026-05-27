@@ -12,11 +12,17 @@ import { DitherHeader } from "@/components/dither-header";
 // Shows tier + which side it applies to. Replaces a single ambiguous "STRONG
 // LEAN" pill in the card header.
 //
-// Returns null (renders nothing) when the side has no actionable pick — the
-// data layer occasionally has `tier=STRONG LEAN` with `lean=PASS` (P(+EV)
-// fell below threshold after tier was computed). Showing "ML STRONG LEAN"
-// without a team in that case was misleading; the body's PASS section
-// already communicates the reason.
+// Three visual states surface what the model decided per side:
+//
+//   bright (filled color) — tier is actionable AND a side was picked
+//                           e.g. "STRONG LEAN · ML WSH"
+//
+//   outlined (dim color)  — tier is actionable BUT P(+EV) gated the bet
+//                           e.g. "STRONG LEAN · ML  (no lean)"
+//                           (data path: ml_tier=STRONG LEAN, ml_lean=PASS)
+//
+//   muted (gray)          — tier is PASS / AVOID
+//                           e.g. "ML PASS"
 function SideTierBadge({
   tier,
   sideLabel,
@@ -26,20 +32,35 @@ function SideTierBadge({
   sideLabel: string;      // "ML" or "O/U"
   sidePick: string | null; // e.g. "WSH" or "O 7.5"; null = no actionable pick
 }) {
-  const isAction = tier === "STRONG LEAN" || tier === "LEAN";
-  if (!isAction || !sidePick) return null;
-  const color = tierColor(tier);
+  const isActionTier = tier === "STRONG LEAN" || tier === "LEAN";
+  const tierCol = isActionTier ? tierColor(tier) : "var(--text-3)";
+
+  // Filled-color state only for picks that are actually actionable.
+  const isFilled = isActionTier && !!sidePick;
+
+  let labelText: string;
+  if (isActionTier && sidePick) {
+    labelText = `${tier} · ${sideLabel} ${sidePick}`;
+  } else if (isActionTier) {
+    // Tier rated this side as a lean, but P(+EV) below the action threshold —
+    // surface the tier honestly without claiming a pick the model didn't make.
+    labelText = `${tier} · ${sideLabel} (no lean)`;
+  } else {
+    labelText = `${sideLabel} ${tier}`;
+  }
+
   return (
     <span
       className="tier-badge"
       style={{
-        color,
-        borderColor: color,
+        color: tierCol,
+        borderColor: isFilled ? tierCol : "var(--border-2)",
         fontSize: "9px",
         whiteSpace: "nowrap",
+        opacity: isActionTier ? (isFilled ? 1 : 0.7) : 0.55,
       }}
     >
-      {tier} · {sideLabel} {sidePick}
+      {labelText}
     </span>
   );
 }
@@ -555,10 +576,19 @@ function PickCard({
                   </div>
                 </>
               ) : (
-                <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", fontWeight: 800, color: "var(--text-3)", textTransform: "uppercase", lineHeight: 1 }}>
-                  {pick.ml_tier === "AVOID" ? "AVOID" : "PASS"}
+                <div style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "22px",
+                  fontWeight: 800,
+                  color: isMlAction ? tc : "var(--text-3)",
+                  textTransform: "uppercase",
+                  lineHeight: 1,
+                }}>
+                  {pick.ml_tier}
                   <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", fontWeight: 400, marginTop: "5px" }}>
-                    P(+EV) {(pick.q_prob_positive * 100).toFixed(0)}% — below action threshold
+                    {isMlAction
+                      ? `P(+EV) ${(pick.q_prob_positive * 100).toFixed(0)}% — no directional lean`
+                      : `P(+EV) ${(pick.q_prob_positive * 100).toFixed(0)}% — below action threshold`}
                   </div>
                 </div>
               )}
