@@ -289,15 +289,26 @@ function TotalBadge({
 function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: string; unlocked: boolean }) {
   const [copied, setCopied] = useState(false);
 
-  // Best STRONG LEAN ML by Kelly, fall back to best STRONG LEAN total
+  // Best STRONG LEAN ML by Kelly, fall back to best STRONG LEAN total.
+  // CRITICAL: filter on a real directional lean — the data layer can have
+  // ml_tier="STRONG LEAN" with ml_lean="PASS" when P(+EV) failed the action
+  // gate after the tier was computed. Without this filter, POTD picked the
+  // wrong team (defaulted to away) and clicking through revealed the
+  // contradiction.
   const potd = (() => {
     const slMl = picks
-      .filter((p) => p.ml_tier === "STRONG LEAN")
+      .filter((p) =>
+        p.ml_tier === "STRONG LEAN" &&
+        (p.ml_lean === "HOME" || p.ml_lean === "AWAY"),
+      )
       .sort((a, b) => b.ml_kelly_fraction - a.ml_kelly_fraction)[0] ?? null;
     if (slMl) return { pick: slMl, market: "ml" as const };
 
     const slTotal = picks
-      .filter((p) => p.total_tier === "STRONG LEAN")
+      .filter((p) =>
+        p.total_tier === "STRONG LEAN" &&
+        (p.total_lean === "OVER" || p.total_lean === "UNDER"),
+      )
       .sort((a, b) => b.total_kelly_fraction - a.total_kelly_fraction)[0] ?? null;
     if (slTotal) return { pick: slTotal, market: "total" as const };
 
