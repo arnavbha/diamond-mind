@@ -115,6 +115,18 @@ body::before {
 .game-sidebar.open {
   transform: translateX(0);
 }
+@media (max-width: 640px) {
+  /* Full-screen sheet on phones rather than a side drawer */
+  .game-sidebar {
+    width: 100vw;
+    top: 52px;            /* below nav only; ticker can be hidden by drawer */
+    height: calc(100dvh - 52px);
+    border-left: none;
+  }
+  .game-sidebar-backdrop {
+    top: 52px;
+  }
+}
 .game-sidebar-header {
   position: sticky;
   top: 0;
@@ -936,6 +948,9 @@ body::before {
   button, input[type="date"], input[type="text"], input[type="number"], select {
     min-height: 40px;
   }
-  /* Top-level page padding tightens on phones (default app shell is too generous) */
-  .app-shell { padding: 12px !important; }
+  /* Top-level page padding tightens on phones — the app shell's 28/24 padding
+   * eats too much of a 390px viewport. Targets the <main> wrapper. */
+  main { padding: 16px 12px !important; }
+  /* Nav bar hugs the edges on phones too. */
+  nav { padding: 0 12px !important; }
 }

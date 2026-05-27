@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
@@ -13,6 +13,15 @@ const FONTS_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;6
 export const metadata: Metadata = {
   title: "Diamond Mind",
   description: "MLB Intelligence System",
+};
+
+// Without an explicit viewport meta, mobile Safari renders the page at 980px
+// and zooms out to fit — which made every @media (max-width: 640px) rule a
+// dead letter (the reported viewport was always desktop-sized). This is the
+// one-line fix that lets the responsive CSS actually engage on phones.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
