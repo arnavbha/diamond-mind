@@ -352,14 +352,20 @@ def compute_quant_edge(
 
 _LARGE_DISAGREEMENT_THRESHOLD = 0.20  # |p_shrunk - p_market| gap that triggers demotion
 
-def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_quality: float) -> str:
+def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_quality: float, market: str = "ml") -> str:
     """Tier driven by P(edge>0) and growth rate, not raw edge magnitude.
 
     A desk does not bet a big point edge it is unsure about; it bets a smaller
     edge it is confident is real and that compounds the bankroll. Tiers:
 
-      STRONG LEAN  P(+) ≥ 0.65, shrunk edge ≥ 3.0pp, growth > 0
-      LEAN         P(+) ≥ 0.58, shrunk edge ≥ 1.5pp, growth > 0
+      ML market:
+        STRONG LEAN  P(+) ≥ 0.65, shrunk edge ≥ 3.0pp, growth > 0
+        LEAN         P(+) ≥ 0.58, shrunk edge ≥ 1.5pp, growth > 0
+
+      Total market (higher bars — backtest showed 3-5pp totals hit only 45%):
+        STRONG LEAN  P(+) ≥ 0.65, shrunk edge ≥ 5.0pp, growth > 0
+        LEAN         P(+) ≥ 0.58, shrunk edge ≥ 1.5pp, growth > 0
+
       AVOID        shrunk edge ≤ −4.0pp
       NEED MORE    confidence < 0.40 or evidence < 0.40
       PASS         otherwise
@@ -380,8 +386,11 @@ def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_qualit
     market_gap = abs(qe.p_shrunk - qe.shin_vig_free)
     large_disagreement = market_gap > _LARGE_DISAGREEMENT_THRESHOLD
 
-    if qe.prob_positive >= 0.65 and qe.edge_quant >= 0.03 and qe.growth_rate > 0:
+    sl_edge = 0.05 if market == "total" else 0.03
+    lean_edge = 0.015
+
+    if qe.prob_positive >= 0.65 and qe.edge_quant >= sl_edge and qe.growth_rate > 0:
         return "LEAN" if large_disagreement else "STRONG LEAN"
-    if qe.prob_positive >= 0.58 and qe.edge_quant >= 0.015 and qe.growth_rate > 0:
+    if qe.prob_positive >= 0.58 and qe.edge_quant >= lean_edge and qe.growth_rate > 0:
         return "LEAN"
     return "PASS"

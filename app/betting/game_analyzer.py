@@ -947,7 +947,7 @@ def analyze_game(
             evidence_quality=total_evidence_quality,
             max_effective_n=25.0,
         )
-        total_tier = quant_recommendation(qt, model_confidence=p_lean_side, evidence_quality=total_evidence_quality)
+        total_tier = quant_recommendation(qt, model_confidence=p_lean_side, evidence_quality=total_evidence_quality, market="total")
         if total_tier == "NEED MORE INFO":
             total_tier = "PASS"
         if total_tier in ("STRONG LEAN", "LEAN"):
