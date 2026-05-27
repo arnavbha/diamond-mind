@@ -403,7 +403,10 @@ function PickCard({
   const tc = tierColor(pick.ml_tier);
   const isMlAction = pick.ml_tier === "STRONG LEAN" || pick.ml_tier === "LEAN";
   const isTotalAction = pick.total_tier === "STRONG LEAN" || pick.total_tier === "LEAN";
-  const leanAbbr = pick.ml_lean === "HOME" ? pick.home_team_abbr : pick.ml_lean === "AWAY" ? pick.away_team_abbr : null;
+  const leanAbbr = pick.ml_lean === "HOME" ? pick.home_team_abbr
+    : pick.ml_lean === "AWAY" ? pick.away_team_abbr
+    : (pick.ml_lean && pick.ml_lean !== "PASS") ? pick.ml_lean
+    : null;
   const slab = isMlAction ? tc : isTotalAction ? tierColor(pick.total_tier) : "var(--border-2)";
 
   const mlTrackKey = `${pick.game_id}-ml`;

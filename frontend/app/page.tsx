@@ -78,12 +78,14 @@ function VulnBar({ abbr, bp }: { abbr: string; bp: BullpenData }) {
   );
 }
 
-function GameCard({ game, index, onClick }: { game: SlateGame; index: number; onClick: () => void }) {
+function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: SlateGame; index: number; onClick: () => void; trackedML?: boolean; trackedTotal?: boolean }) {
   const analysis: GameAnalysis | null = game.analysis;
   const hasTier = analysis && analysis.ml_tier !== "PASS" && analysis.ml_lean !== "PASS";
   const tc = hasTier ? tierColor(analysis!.ml_tier) : "var(--border-2)";
   const leanAbbr = analysis?.ml_lean === "HOME" ? game.home_team_abbr
-    : analysis?.ml_lean === "AWAY" ? game.away_team_abbr : null;
+    : analysis?.ml_lean === "AWAY" ? game.away_team_abbr
+    : (analysis?.ml_lean && analysis.ml_lean !== "PASS") ? analysis.ml_lean
+    : null;
   const hasTotalTier = analysis && analysis.total_tier !== "PASS" && analysis.total_lean !== "PASS";
   const ttc = hasTotalTier ? tierColor(analysis!.total_tier) : "var(--border-2)";
   const totalLabel = analysis?.total_lean === "OVER" ? `O ${analysis.total_line ?? ""}`.trim()
@@ -164,6 +166,10 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
                       K
                     </div>
                   </>
+                ) : trackedML ? (
+                  <div style={{ fontSize: "9px", fontWeight: 600, color: "var(--blue)", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--blue)", borderRadius: "3px", padding: "2px 6px", display: "inline-block" }}>
+                    ML tracked
+                  </div>
                 ) : (
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>Pass</div>
                 )
@@ -173,26 +179,34 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
             </div>
 
             {/* Total signal */}
-            {hasTotalTier && totalLabel && (
+            {(hasTotalTier && totalLabel) || trackedTotal ? (
               <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: "6px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 600, color: ttc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                  {analysis!.total_tier}
-                </div>
-                <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
-                  {totalLabel}
-                </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
-                  <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
-                    {Math.round(analysis!.total_confidence * 100)}%
-                  </span>{" "}
-                  ·{" "}
-                  <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
-                    {(analysis!.total_kelly_fraction * 100).toFixed(1)}%
-                  </span>{" "}
-                  K
-                </div>
+                {hasTotalTier && totalLabel ? (
+                  <>
+                    <div style={{ fontSize: "11px", fontWeight: 600, color: ttc, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                      {analysis!.total_tier}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", marginTop: "2px" }}>
+                      {totalLabel}
+                    </div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", marginTop: "1px" }}>
+                      <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                        {Math.round(analysis!.total_confidence * 100)}%
+                      </span>{" "}
+                      ·{" "}
+                      <span className="scoreboard-num" style={{ fontSize: "12px", color: "var(--text)" }}>
+                        {(analysis!.total_kelly_fraction * 100).toFixed(1)}%
+                      </span>{" "}
+                      K
+                    </div>
+                  </>
+                ) : trackedTotal ? (
+                  <div style={{ fontSize: "9px", fontWeight: 600, color: "var(--blue)", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--blue)", borderRadius: "3px", padding: "2px 6px", display: "inline-block" }}>
+                    Total tracked
+                  </div>
+                ) : null}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Bullpen */}
@@ -308,6 +322,8 @@ function SlatePageInner() {
   const [error, setError] = useState(false);
   const [sidebar, setSidebar] = useState<{ gameId: number; date: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Set of "gameId-market" keys for tracked bets on the current date
+  const [trackedKeys, setTrackedKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let alive = true;
@@ -316,6 +332,10 @@ function SlatePageInner() {
         if (!alive) return;
         if (g === null) setError(true);
         else setGames(g);
+      });
+      api.trackerBets({ game_date: date }).then((bets) => {
+        if (!alive || !bets) return;
+        setTrackedKeys(new Set(bets.map((b) => `${b.game_id}-${b.market}`)));
       });
     }
     load();
@@ -411,6 +431,8 @@ function SlatePageInner() {
             game={g}
             index={i}
             onClick={() => openSidebar(g.game_id, g.game_date)}
+            trackedML={trackedKeys.has(`${g.game_id}-moneyline`)}
+            trackedTotal={trackedKeys.has(`${g.game_id}-total`)}
           />
         ))}
       </div>
