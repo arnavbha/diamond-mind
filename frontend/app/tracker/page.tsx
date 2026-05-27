@@ -142,9 +142,44 @@ function BetRow({
       padding: "8px 12px",
       borderBottom: "1px solid var(--border)",
     }}>
-      {/* date */}
+      {/* date / game status */}
       <span className="tracker-cell" data-label="Date" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
         {bet.game_date}
+        {isPending && bet.game_status && (() => {
+          const isLive = bet.game_status === "In Progress";
+          const isPreGame = bet.game_status === "Pre-Game";
+          if (isLive) {
+            return (
+              <span style={{
+                display: "block",
+                fontSize: "9px",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                color: "var(--red)",
+                marginTop: "2px",
+              }}>● LIVE</span>
+            );
+          }
+          if ((bet.game_status === "Scheduled" || isPreGame) && bet.game_time_utc) {
+            // Convert UTC to ET
+            const d = new Date(bet.game_time_utc);
+            const etStr = d.toLocaleTimeString("en-US", {
+              timeZone: "America/New_York",
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+            });
+            return (
+              <span style={{
+                display: "block",
+                fontSize: "9px",
+                color: "var(--text-3)",
+                marginTop: "2px",
+              }}>{etStr} ET</span>
+            );
+          }
+          return null;
+        })()}
       </span>
 
       {/* game + pick */}

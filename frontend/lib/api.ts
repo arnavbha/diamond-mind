@@ -407,8 +407,9 @@ export const api = {
       `/quant/verify?model_prob=${modelProb}&side_odds=${sideOdds}&other_odds=${otherOdds}&evidence_quality=${evidence}`,
     ),
   // ── Tracker ──────────────────────────────────────────────────────────────
-  trackerBets: (params?: { date_from?: string; date_to?: string; market?: string }) => {
+  trackerBets: (params?: { date_from?: string; date_to?: string; market?: string; game_date?: string }) => {
     const qs = new URLSearchParams();
+    if (params?.game_date) qs.set("game_date", params.game_date);
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);
     if (params?.market) qs.set("market", params.market);
@@ -521,6 +522,8 @@ export type BetRecord = {
   total_line: number | null;
   projected_total: number | null;
   created_at: string | null;
+  game_time_utc: string | null;
+  game_status: string | null;
 };
 
 export type BetCreatePayload = {

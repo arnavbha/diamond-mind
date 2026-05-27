@@ -1686,19 +1686,32 @@ def list_bets(
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     market: Optional[str] = Query(None),
+    game_date: Optional[date] = Query(None, description="Shortcut for single-day filter"),
     db: Session = Depends(_get_db),
 ):
-    """Return tracked bets, optionally filtered by date range and market."""
-    stmt = select(BetRecord)
-    if date_from:
-        stmt = stmt.where(BetRecord.game_date >= date_from)
-    if date_to:
-        stmt = stmt.where(BetRecord.game_date <= date_to)
+    """Return tracked bets with game time and live status for pending picks."""
+    stmt = (
+        select(BetRecord, Game.game_time_utc, Game.status)
+        .outerjoin(Game, BetRecord.game_id == Game.id)
+    )
+    if game_date:
+        stmt = stmt.where(BetRecord.game_date == game_date)
+    else:
+        if date_from:
+            stmt = stmt.where(BetRecord.game_date >= date_from)
+        if date_to:
+            stmt = stmt.where(BetRecord.game_date <= date_to)
     if market:
         stmt = stmt.where(BetRecord.market == market)
     stmt = stmt.order_by(BetRecord.game_date.desc(), BetRecord.id.desc())
-    rows = db.execute(stmt).scalars().all()
-    return [_bet_to_dict(b) for b in rows]
+    rows = db.execute(stmt).all()
+    result = []
+    for b, game_time_utc, game_status in rows:
+        d = _bet_to_dict(b)
+        d["game_time_utc"] = game_time_utc.isoformat() if game_time_utc else None
+        d["game_status"] = game_status
+        result.append(d)
+    return result
 
 
 @app.post("/tracker/bets", tags=["tracker"], status_code=201)
