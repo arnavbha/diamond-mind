@@ -1911,6 +1911,9 @@ def auto_track(
                     odds = away_odds_row if away_odds_row is not None else analysis.get("ml_american_odds", 0)
 
                 units = _kelly_units(analysis.get("q_kelly_sized", 0.01))
+                if units == 0.0:
+                    skipped += 1
+                    continue
                 db.add(BetRecord(
                     game_id=game.id,
                     game_date=game_date,
@@ -1960,6 +1963,9 @@ def auto_track(
                 total_odds = int(total_odds_row) if total_odds_row is not None else -110
 
                 units = _kelly_units(analysis.get("qt_kelly_sized", 0.01))
+                if units == 0.0:
+                    skipped += 1
+                    continue
                 db.add(BetRecord(
                     game_id=game.id,
                     game_date=game_date,
