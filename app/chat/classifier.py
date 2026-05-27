@@ -337,6 +337,21 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
     players = _extract_player_names(text)
     player = players[0] if players else None
 
+    # Hard override: "today/tonight" + a stake-side word ALWAYS means
+    # pick_today, regardless of "how/did/etc". Otherwise tracker_record's
+    # broad `how.{0,20}(do|did|...)` swallows "how many units did we bet today".
+    if re.search(r"\b(today|tonight)\b", lower) and re.search(
+        r"\b(bet|bets|wager|wagers|risk|risking|risked|units?|stake|stakes|"
+        r"bankroll|put down)\b",
+        lower,
+    ) and not re.search(r"\b(roi|record|profit|net|return|won|lost)\b", lower):
+        entities = ChatEntities(
+            team_abbr=team, team_abbrs=teams, query_date=dt,
+            raw_date_str=str(dt) if dt else None,
+            player_name=player, player_names=players,
+        )
+        return ClassifiedQuery(intent="pick_today", entities=entities, original=text)
+
     entities = ChatEntities(
         team_abbr=team,
         team_abbrs=teams,

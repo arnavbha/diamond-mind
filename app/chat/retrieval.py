@@ -385,6 +385,50 @@ def get_bullpen_vulnerability(db: Session, query_date: date) -> list[dict]:
     return rows
 
 
+def _model_explain_from_bet_records(
+    db: Session,
+    game_date: date,
+    team_abbr: Optional[str] = None,
+) -> list[dict]:
+    """Fallback: synthesize a model-explain doc from bet_records.
+
+    Used when bet_evaluations has no rows for the date (which is the prod
+    reality on most days — only the live picks land in bet_records, the
+    full evaluation table isn't always populated).
+    """
+    where_team = ""
+    params: dict = {"dt": str(game_date)}
+    if team_abbr:
+        where_team = "AND (br.home_team_abbr = :abbr OR br.away_team_abbr = :abbr OR br.selection = :abbr)"
+        params["abbr"] = team_abbr
+    sql = f"""
+        SELECT
+            br.market,
+            br.selection,
+            br.american_odds   AS current_odds,
+            br.model_prob      AS estimated_probability,
+            br.market_implied_prob AS implied_probability,
+            br.edge,
+            br.tier            AS recommendation,
+            br.kelly_fraction_raw,
+            br.evidence_quality,
+            br.units,
+            br.tier,
+            br.total_line,
+            br.projected_total,
+            br.home_team_abbr  AS home_abbr,
+            br.away_team_abbr  AS away_abbr,
+            br.game_date
+        FROM bet_records br
+        WHERE br.game_date = :dt {where_team}
+        ORDER BY
+            CASE br.tier WHEN 'STRONG LEAN' THEN 1 WHEN 'LEAN' THEN 2 ELSE 3 END,
+            br.edge DESC NULLS LAST
+        LIMIT 10
+    """
+    return _rows(db, sql, params)
+
+
 def get_model_explanation(
     db: Session,
     game_date: date,
@@ -418,7 +462,10 @@ def get_model_explanation(
             ORDER BY be.generated_at DESC
             LIMIT 5
         """
-        return _rows(db, sql, {"dt": str(game_date), "abbr": team_abbr})
+        rows = _rows(db, sql, {"dt": str(game_date), "abbr": team_abbr})
+        if not rows:
+            rows = _model_explain_from_bet_records(db, game_date, team_abbr)
+        return rows
     else:
         sql = """
             SELECT
@@ -446,7 +493,10 @@ def get_model_explanation(
             ORDER BY be.confidence_score DESC
             LIMIT 8
         """
-        return _rows(db, sql, {"dt": str(game_date)})
+        rows = _rows(db, sql, {"dt": str(game_date)})
+        if not rows:
+            rows = _model_explain_from_bet_records(db, game_date, None)
+        return rows
 
 
 def get_player_stats(
