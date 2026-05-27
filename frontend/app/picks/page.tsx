@@ -292,23 +292,21 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
   // Best STRONG LEAN ML by Kelly, fall back to best STRONG LEAN total.
   // CRITICAL: filter on a real directional lean — the data layer can have
   // ml_tier="STRONG LEAN" with ml_lean="PASS" when P(+EV) failed the action
-  // gate after the tier was computed. Without this filter, POTD picked the
-  // wrong team (defaulted to away) and clicking through revealed the
-  // contradiction.
+  // gate after the tier was computed. The lean can also arrive as a team
+  // abbreviation directly (e.g. "WSH") rather than "HOME"/"AWAY".
+  const hasMlLean = (p: GameAnalysis) =>
+    !!p.ml_lean && p.ml_lean !== "PASS";
+  const hasTotalLean = (p: GameAnalysis) =>
+    p.total_lean === "OVER" || p.total_lean === "UNDER";
+
   const potd = (() => {
     const slMl = picks
-      .filter((p) =>
-        p.ml_tier === "STRONG LEAN" &&
-        (p.ml_lean === "HOME" || p.ml_lean === "AWAY"),
-      )
+      .filter((p) => p.ml_tier === "STRONG LEAN" && hasMlLean(p))
       .sort((a, b) => b.ml_kelly_fraction - a.ml_kelly_fraction)[0] ?? null;
     if (slMl) return { pick: slMl, market: "ml" as const };
 
     const slTotal = picks
-      .filter((p) =>
-        p.total_tier === "STRONG LEAN" &&
-        (p.total_lean === "OVER" || p.total_lean === "UNDER"),
-      )
+      .filter((p) => p.total_tier === "STRONG LEAN" && hasTotalLean(p))
       .sort((a, b) => b.total_kelly_fraction - a.total_kelly_fraction)[0] ?? null;
     if (slTotal) return { pick: slTotal, market: "total" as const };
 
@@ -319,8 +317,14 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
 
   const { pick, market } = potd;
   const isMl = market === "ml";
+  // Mirror PickCard's defensive ternary — ml_lean can be "HOME"/"AWAY" or a
+  // team abbr ("WSH") depending on the data path. The earlier `!= "HOME"
+  // defaults to away` heuristic was the source of POTD showing the wrong team.
   const leanAbbr = isMl
-    ? (pick.ml_lean === "HOME" ? pick.home_team_abbr : pick.away_team_abbr)
+    ? (pick.ml_lean === "HOME" ? pick.home_team_abbr
+       : pick.ml_lean === "AWAY" ? pick.away_team_abbr
+       : (pick.ml_lean && pick.ml_lean !== "PASS") ? pick.ml_lean
+       : null)
     : null;
   const pickLabel = isMl
     ? `${leanAbbr} ML`
