@@ -951,6 +951,13 @@ body::before {
   /* Top-level page padding tightens on phones — the app shell's 28/24 padding
    * eats too much of a 390px viewport. Targets the <main> wrapper. */
   main { padding: 16px 12px !important; }
-  /* Nav bar hugs the edges on phones too. */
-  nav { padding: 0 12px !important; }
+
+  /* Nav: 8 links + brand + glossary button doesn't fit at 380px. Compress
+   * the gap, drop the brand wordmark (logo still shows), and let the link
+   * row scroll horizontally as a last resort — touch users can swipe across
+   * to reach Track Record / Admin even at the narrowest screens. */
+  .app-nav { padding: 0 12px !important; gap: 12px !important; }
+  .app-nav-brand-text { display: none !important; }
+  .app-nav { overflow-x: auto; }
+  .app-nav::-webkit-scrollbar { display: none; }
 }

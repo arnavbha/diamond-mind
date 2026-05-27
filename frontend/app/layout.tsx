@@ -41,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           proximity={120}
           shockStrength={10}
         />
-        <nav style={{
+        <nav className="app-nav" style={{
           borderBottom: "1px solid var(--border)",
           padding: "0 24px",
           height: "52px",
@@ -53,15 +53,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           top: 0,
           zIndex: 100,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "8px" }}>
+          <div className="app-nav-brand" style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "8px", flexShrink: 0 }}>
             <Image src="/logo.ico" alt="Diamond Mind" width={22} height={22} style={{ display: "block" }} />
-            <span style={{
+            <span className="app-nav-brand-text" style={{
               fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: "14px",
               color: "var(--text)",
               letterSpacing: "0.02em",
               textTransform: "uppercase",
+              whiteSpace: "nowrap",
             }}>
               <DecryptedText
                 text="Diamond Mind"
