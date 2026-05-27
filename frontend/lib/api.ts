@@ -307,6 +307,73 @@ export type BacktestResult = {
   game_ids: number[];
 };
 
+// ── Track record (live-tracked picks, not a replay) ─────────────────────────
+export type TrackRecordSummarySlice = {
+  n: number;
+  settled: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  pending: number;
+  units_wagered: number;
+  units_net: number;
+  roi: number | null;
+  win_rate: number | null;
+  win_rate_ci_low: number | null;
+  win_rate_ci_high: number | null;
+};
+
+export type TrackRecordTier = {
+  tier: string;
+  n: number;
+  settled: number;
+  wins: number;
+  win_rate: number | null;
+  win_rate_ci_low: number | null;
+  win_rate_ci_high: number | null;
+};
+
+export type TrackRecordPnlPoint = {
+  bet_id: number;
+  game_date: string;
+  cum_units: number;
+};
+
+export type TrackRecordCalibrationBucket = {
+  midpoint: number;
+  n: number;
+  actual_win_rate: number | null;
+};
+
+export type TrackRecordEdgeRealization = {
+  n: number;
+  mean_model_prob: number | null;
+  actual_win_rate: number | null;
+  mean_predicted_edge: number | null;
+  realized_outperformance: number | null;
+};
+
+export type TrackRecordSnapshotCoverage = {
+  source: string;       // "live" | "replay-YYYY-MM-DD" | "replay-YYYY-MM-DD-no-odds" | "null"
+  n: number;
+};
+
+export type TrackRecordResult = {
+  start: string | null;
+  end: string | null;
+  summary: {
+    combined: TrackRecordSummarySlice;
+    ml: TrackRecordSummarySlice;
+    total: TrackRecordSummarySlice;
+  };
+  tier_hit_rates: TrackRecordTier[];
+  pnl_curve: TrackRecordPnlPoint[];
+  calibration: TrackRecordCalibrationBucket[];
+  brier_score: number | null;
+  edge_realization: TrackRecordEdgeRealization;
+  snapshot_coverage: TrackRecordSnapshotCoverage[];
+};
+
 export const api = {
   games: (date: string) => get<Game[]>(`/games?game_date=${date}`),
   slate: (date: string) => get<SlateGame[]>(`/games/slate?game_date=${date}`),
@@ -398,6 +465,13 @@ export const api = {
     >(`/admin/ingestion-jobs`),
   backtest: (start: string, end: string) =>
     get<BacktestResult>(`/backtest?start=${start}&end=${end}`),
+  trackRecord: (start?: string, end?: string) => {
+    const qs = new URLSearchParams();
+    if (start) qs.set("start", start);
+    if (end) qs.set("end", end);
+    const q = qs.toString();
+    return get<TrackRecordResult>(`/tracker/track-record${q ? "?" + q : ""}`);
+  },
   chat: (message: string, date?: string) =>
     post<{ answer: string; intent: string; sources_count: number }>(
       "/chat",

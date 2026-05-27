@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type BacktestResult, type CalibrationBucket, type TierHitRate } from "@/lib/api";
+import {
+  api,
+  type CalibrationBucket,
+  type TierHitRate,
+  type TrackRecordResult,
+} from "@/lib/api";
 import { ExplainTooltip } from "@/components/explain";
 
 /* ── date helpers ──────────────────────────────────────── */
@@ -313,76 +318,7 @@ function PLLineChart({ flat, kelly }: { flat: number[]; kelly: number[] }) {
   );
 }
 
-/* ── 4 · Kelly bankroll ────────────────────────────────── */
-function KellyBankrollChart({ bankroll }: { bankroll: number[] }) {
-  if (bankroll.length === 0) {
-    return (
-      <Accruing
-        label="Bankroll curve accruing"
-        sub="Starts at 100 units once the first graded game lands."
-      />
-    );
-  }
-
-  const W = 480;
-  const H = 220;
-  const pad = { l: 46, r: 14, t: 16, b: 30 };
-  const plotW = W - pad.l - pad.r;
-  const plotH = H - pad.t - pad.b;
-  const series = [100, ...bankroll];
-  const min = Math.min(...series);
-  const max = Math.max(...series);
-  const span = max - min || 1;
-  const n = series.length;
-  const xOf = (i: number) => pad.l + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
-  const yOf = (v: number) => pad.t + (1 - (v - min) / span) * plotH;
-  const line = linePath(series, xOf, yOf);
-  const area = `${line} L ${xOf(n - 1).toFixed(2)} ${yOf(min).toFixed(2)} L ${xOf(0).toFixed(2)} ${yOf(min).toFixed(2)} Z`;
-  const last = bankroll[bankroll.length - 1];
-  const lastCol = last >= 100 ? "var(--green)" : "var(--red)";
-
-  return (
-    <svg
-      className="chart-draw"
-      viewBox={`0 0 ${W} ${H}`}
-      role="img"
-      aria-label="Uncertainty-Kelly bankroll value over time, starting from 100 units, with a 100-unit reference line."
-      style={{ width: "100%", height: "auto", display: "block" }}
-    >
-      {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-        const v = min + span * t;
-        const y = yOf(v);
-        return (
-          <g key={t}>
-            <line x1={pad.l} y1={y} x2={W - pad.r} y2={y} stroke="var(--border)" strokeWidth={1} />
-            <text x={pad.l - 8} y={y + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono)" fill="var(--text-3)">
-              {v.toFixed(0)}
-            </text>
-          </g>
-        );
-      })}
-      {min < 100 && max > 100 && (
-        <line x1={pad.l} y1={yOf(100)} x2={W - pad.r} y2={yOf(100)} stroke="var(--text-3)" strokeWidth={1} strokeDasharray="4 4" />
-      )}
-      <path d={area} fill="rgba(63,185,80,0.07)" stroke="none" />
-      <path d={line} fill="none" stroke="var(--green)" strokeWidth={1.8} />
-      <circle cx={xOf(n - 1)} cy={yOf(series[n - 1])} r={3} fill={lastCol} />
-      <text x={xOf(n - 1) - 4} y={yOf(series[n - 1]) - 8} textAnchor="end" fontSize={10} fontFamily="var(--font-mono)" fontWeight={700} fill={lastCol}>
-        {last.toFixed(1)}
-      </text>
-      {[0, n - 1].map((i) => (
-        <text key={i} x={xOf(i)} y={H - 10} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono)" fill="var(--text-3)">
-          {i}
-        </text>
-      ))}
-      <text x={pad.l + plotW / 2} y={H - 1} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono)" fill="var(--text-2)">
-        bets placed
-      </text>
-    </svg>
-  );
-}
-
-/* ── 5 · Brier readout ─────────────────────────────────── */
+/* ── Brier readout ─────────────────────────────────────── */
 function BrierReadout({ brier }: { brier: number | null }) {
   if (brier === null) {
     return (
@@ -496,6 +432,75 @@ function DateField({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
+/**
+ * Surface the live-vs-replay-vs-null split on the calibration section.
+ *
+ * Calibration is computed *only* on rows where model_prob is set. We must be
+ * loud about which subset that is, because:
+ *   - "live" rows = model state captured at the moment of the pick (truth)
+ *   - "replay-*" rows = model state re-derived by running today's code over
+ *     the historical game; an approximation, not the original model output
+ *   - "null" rows = picks created before snapshot capture shipped; excluded
+ *     from calibration entirely
+ *
+ * A user defending +EV claims based on calibration needs this distinction.
+ */
+function CalibrationCoverageNote({
+  coverage,
+}: {
+  coverage: { source: string; n: number }[];
+}) {
+  const live = coverage.find((c) => c.source === "live")?.n ?? 0;
+  const replay = coverage
+    .filter((c) => c.source.startsWith("replay-") && !c.source.endsWith("no-odds"))
+    .reduce((s, c) => s + c.n, 0);
+  const replayNoOdds = coverage
+    .filter((c) => c.source.endsWith("-no-odds"))
+    .reduce((s, c) => s + c.n, 0);
+  const nullN = coverage.find((c) => c.source === "null")?.n ?? 0;
+  const total = live + replay + replayNoOdds + nullN;
+  if (total === 0) return null;
+  return (
+    <div
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "10px",
+        color: "var(--text-3)",
+        marginBottom: "12px",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "10px",
+        alignItems: "center",
+      }}
+    >
+      <span style={{ color: "var(--text-2)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        Snapshot coverage:
+      </span>
+      <span>
+        <strong style={{ color: "var(--green)" }}>{live}</strong> live
+      </span>
+      {replay > 0 && (
+        <span>
+          <strong style={{ color: "var(--amber)" }}>{replay}</strong> replay-backfilled
+        </span>
+      )}
+      {replayNoOdds > 0 && (
+        <span style={{ color: "var(--text-3)" }}>
+          <strong>{replayNoOdds}</strong> replay (no odds)
+        </span>
+      )}
+      {nullN > 0 && (
+        <span style={{ color: "var(--text-3)" }}>
+          <strong>{nullN}</strong> pre-capture (excluded)
+        </span>
+      )}
+      <span style={{ marginLeft: "auto", color: "var(--text-3)" }}>
+        live = captured at pick time; replay = re-derived from today&apos;s model code
+      </span>
+    </div>
+  );
+}
+
 function ChartSkeleton() {
   return (
     <div
@@ -512,16 +517,21 @@ function ChartSkeleton() {
 }
 
 export default function TrackRecordPage() {
+  // Default: cover the entire tracked history. The endpoint reads BetRecord
+  // rows (162-ish), not a model replay, so any window is cheap.
   const [start, setStart] = useState(() => daysAgo(90));
   const [end, setEnd] = useState(() => daysAgo(0));
-  const [result, setResult] = useState<BacktestResult | null>(null);
+  const [result, setResult] = useState<TrackRecordResult | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     let alive = true;
+    // The pre-fetch reset is intentional; cascading renders are benign here
+    // because we always immediately await a network call.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState("loading");
     setResult(null);
-    api.backtest(start, end).then((r) => {
+    api.trackRecord(start, end).then((r) => {
       if (!alive) return;
       if (r === null) {
         setState("error");
@@ -535,8 +545,26 @@ export default function TrackRecordPage() {
     };
   }, [start, end]);
 
-  const flatTotal = result?.flat_pnl_total ?? 0;
-  const kellyTotal = result?.kelly_pnl_total ?? 0;
+  // Existing TierHitRateChart expects { tier, n, hit_rate }. The new endpoint
+  // returns richer rows; adapt and order them to the chart's TIER_ORDER list.
+  const tierRowsForChart: TierHitRate[] =
+    result?.tier_hit_rates.map((r) => ({
+      tier: r.tier,
+      n: r.settled,
+      hit_rate: r.win_rate,
+    })) ?? [];
+
+  // Existing CalibrationChart consumes the same { midpoint, n, actual_win_rate }
+  // shape; no transformation needed.
+  const calibrationForChart: CalibrationBucket[] = result?.calibration ?? [];
+
+  // The realized P&L curve is the cumulative units_returned per settled bet.
+  // We dropped the synthetic flat-vs-Kelly split because Kelly stakes were
+  // discretized into the `units` column before storage — there is no separate
+  // Kelly-bankroll curve to honestly render. The curve we DO have is the real
+  // money line: every bet was sized at the discretized Kelly value.
+  const pnlCurve = result?.pnl_curve ?? [];
+  const flatSeries = pnlCurve.map((p) => p.cum_units);
 
   return (
     <div style={{ position: "relative" }}>
@@ -579,7 +607,7 @@ export default function TrackRecordPage() {
               letterSpacing: "0.03em",
             }}
           >
-            Deterministic model replay over completed games · real box-score outcomes, no stored picks
+            Live-tracked picks · settled vs. predicted · no replay, no fabricated data
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "10px" }}>
@@ -600,7 +628,7 @@ export default function TrackRecordPage() {
             marginBottom: "16px",
           }}
         >
-          Backtest endpoint not reachable — run: uvicorn app.api.routes:app --port 8000
+          Track-record endpoint not reachable — run: uvicorn app.api.routes:app --port 8000
         </div>
       )}
 
@@ -614,76 +642,175 @@ export default function TrackRecordPage() {
         </div>
       )}
 
-      {state === "ready" && result && result.n === 0 && (
+      {state === "ready" && result && result.summary.combined.n === 0 && (
         <div className="accruing-state" style={{ padding: "56px 24px" }} role="status">
           <span style={{ fontWeight: 700, color: "var(--text-2)", fontSize: "13px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            No completed games in range
+            No tracked picks in range
           </span>
           <span style={{ marginTop: "10px", color: "var(--text-3)", fontSize: "12px", lineHeight: 1.6, maxWidth: "440px", margin: "10px auto 0" }}>
-            The backtest found zero finished games with box-score results between{" "}
-            <strong style={{ color: "var(--text-2)" }}>{result.start_date}</strong> and{" "}
-            <strong style={{ color: "var(--text-2)" }}>{result.end_date}</strong>. Widen the date
-            range or pick a window with played games. Nothing is fabricated to fill this view.
+            No picks logged between{" "}
+            <strong style={{ color: "var(--text-2)" }}>{result.start ?? "—"}</strong> and{" "}
+            <strong style={{ color: "var(--text-2)" }}>{result.end ?? "—"}</strong>. Widen the
+            date range or wait for the next slate. Nothing is fabricated to fill this view.
           </span>
         </div>
       )}
 
-      {state === "ready" && result && result.n > 0 && (
+      {state === "ready" && result && result.summary.combined.n > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* summary strip — box-score grid */}
+          {/* summary strip — combined record */}
           <div
             className="box-score-grid"
             style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}
           >
             <div className="bsg-row" style={{ display: "contents" }}>
-              <SummaryStat label="Games" value={String(result.n)} />
               <SummaryStat
-                label="Brier"
-                value={result.brier_score != null ? result.brier_score.toFixed(4) : "—"}
-                color={
-                  result.brier_score == null
-                    ? "var(--text-3)"
-                    : result.brier_score < 0.25
-                    ? "var(--green)"
-                    : result.brier_score > 0.25
-                    ? "var(--red)"
-                    : "var(--amber)"
+                label="Record"
+                value={`${result.summary.combined.wins}-${result.summary.combined.losses}${result.summary.combined.pushes ? "-" + result.summary.combined.pushes : ""}`}
+                color="var(--text)"
+              />
+              <SummaryStat
+                label="Win %"
+                value={
+                  result.summary.combined.win_rate != null
+                    ? `${(result.summary.combined.win_rate * 100).toFixed(1)}%`
+                    : "—"
                 }
-                term="brier-score"
+                color={
+                  result.summary.combined.win_rate == null
+                    ? "var(--text-3)"
+                    : result.summary.combined.win_rate >= 0.524
+                    ? "var(--green)"
+                    : "var(--red)"
+                }
               />
               <SummaryStat
-                label="Flat P&L"
-                value={`${flatTotal >= 0 ? "+" : ""}${flatTotal.toFixed(2)}u`}
-                color={flatTotal >= 0 ? "var(--green)" : "var(--red)"}
+                label="ROI"
+                value={
+                  result.summary.combined.roi != null
+                    ? `${result.summary.combined.roi >= 0 ? "+" : ""}${(result.summary.combined.roi * 100).toFixed(1)}%`
+                    : "—"
+                }
+                color={
+                  result.summary.combined.roi == null
+                    ? "var(--text-3)"
+                    : result.summary.combined.roi >= 0
+                    ? "var(--green)"
+                    : "var(--red)"
+                }
               />
               <SummaryStat
-                label="Kelly P&L"
-                value={`${kellyTotal >= 0 ? "+" : ""}${kellyTotal.toFixed(2)}u`}
-                color={kellyTotal >= 0 ? "var(--green)" : "var(--red)"}
-                term="uncertainty-kelly"
+                label="Net Units"
+                value={`${result.summary.combined.units_net >= 0 ? "+" : ""}${result.summary.combined.units_net.toFixed(2)}u`}
+                color={result.summary.combined.units_net >= 0 ? "var(--green)" : "var(--red)"}
               />
             </div>
           </div>
 
-          <ChartFrame title="Calibration" term="calibration">
-            <CalibrationChart buckets={result.calibration} />
-          </ChartFrame>
+          {/* Win-rate Wilson CI strip */}
+          {result.summary.combined.win_rate != null &&
+            result.summary.combined.win_rate_ci_low != null &&
+            result.summary.combined.win_rate_ci_high != null && (
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  color: "var(--text-2)",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "6px",
+                  padding: "10px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "6px",
+                }}
+              >
+                <span>
+                  95% CI on win rate:{" "}
+                  <strong style={{ color: "var(--text)" }}>
+                    {(result.summary.combined.win_rate_ci_low * 100).toFixed(1)}% –{" "}
+                    {(result.summary.combined.win_rate_ci_high * 100).toFixed(1)}%
+                  </strong>{" "}
+                  (Wilson, n={result.summary.combined.wins + result.summary.combined.losses})
+                </span>
+                <span style={{ color: "var(--text-3)" }}>
+                  Break-even at -110 = 52.4%
+                </span>
+              </div>
+            )}
 
+          {/* Per-market split */}
+          <div className="box-score-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }}>
+            {(["ml", "total"] as const).map((mkt) => {
+              const s = result.summary[mkt];
+              const label = mkt === "ml" ? "Moneyline" : "Over/Under";
+              return (
+                <div
+                  key={mkt}
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "6px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div
+                    className="section-label"
+                    style={{ marginBottom: "10px", color: "var(--text-2)" }}
+                  >
+                    {label}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+                    <SummaryStat
+                      label="Record"
+                      value={`${s.wins}-${s.losses}${s.pushes ? "-" + s.pushes : ""}`}
+                    />
+                    <SummaryStat
+                      label="Win %"
+                      value={s.win_rate != null ? `${(s.win_rate * 100).toFixed(1)}%` : "—"}
+                      color={
+                        s.win_rate == null
+                          ? "var(--text-3)"
+                          : s.win_rate >= 0.524
+                          ? "var(--green)"
+                          : "var(--red)"
+                      }
+                    />
+                    <SummaryStat
+                      label="Net"
+                      value={`${s.units_net >= 0 ? "+" : ""}${s.units_net.toFixed(2)}u`}
+                      color={s.units_net >= 0 ? "var(--green)" : "var(--red)"}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tier hit rate + Brier */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <ChartFrame title="Tier hit rate" term="tiers">
-              <TierHitRateChart rows={result.tier_hit_rates} />
+              <TierHitRateChart rows={tierRowsForChart} />
             </ChartFrame>
             <ChartFrame title="Brier vs coin flip" term="brier-score">
               <BrierReadout brier={result.brier_score} />
             </ChartFrame>
           </div>
 
-          <ChartFrame title="Cumulative P&L — flat vs Kelly">
-            <PLLineChart flat={result.flat_pnl} kelly={result.kelly_pnl} />
+          {/* Calibration — caveats inline */}
+          <ChartFrame title="Calibration (model prob vs realized)" term="calibration">
+            <CalibrationCoverageNote coverage={result.snapshot_coverage} />
+            <CalibrationChart buckets={calibrationForChart} />
           </ChartFrame>
 
-          <ChartFrame title="Kelly bankroll" term="expected-log-growth">
-            <KellyBankrollChart bankroll={result.kelly_bankroll} />
+          {/* P&L line (realized) */}
+          <ChartFrame title="Cumulative net units (realized)">
+            {flatSeries.length === 0 ? (
+              <Accruing label="No settled picks yet" sub="Curve fills in as bets settle." />
+            ) : (
+              <PLLineChart flat={flatSeries} kelly={[]} />
+            )}
           </ChartFrame>
 
           <div
@@ -696,9 +823,12 @@ export default function TrackRecordPage() {
               borderLeft: "2px solid var(--clay)",
             }}
           >
-            Replay basis: model re-run as-of each game date against final scores already in the DB.
-            P&amp;L counts only games carrying a HOME/AWAY lean; flat stakes 1 unit, Kelly stakes the
-            uncertainty-adjusted fraction. Past replay performance does not establish future results.
+            Live-pick basis: every row aggregates real BetRecord entries created
+            by /tracker/auto-track at the time the pick was made, settled against
+            real box scores. ROI uses units actually wagered (Kelly-discretized
+            stakes, not flat). Calibration restricts to picks with a captured
+            model probability — see the coverage note above. Past performance
+            doesn&apos;t establish future results.
           </div>
         </div>
       )}

@@ -34,6 +34,22 @@ class BetRecord(Base):
     projected_total: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # model projection
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # ── Model state at pick time ──────────────────────────────────────────────
+    # Captured from GameAnalysis when the pick is auto-tracked. Required for
+    # honest calibration / Brier / edge-realization analysis. Nullable because
+    # picks created before 2026-05-26 predate this capture.
+    model_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    market_implied_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # Shin vig-free for the picked side
+    edge: Mapped[Optional[float]] = mapped_column(Float, nullable=True)                  # honest edge = model_prob − market_implied_prob
+    p_edge_positive: Mapped[Optional[float]] = mapped_column(Float, nullable=True)       # P(edge > 0)
+    kelly_fraction_raw: Mapped[Optional[float]] = mapped_column(Float, nullable=True)    # pre-discretization Kelly fraction
+    evidence_quality: Mapped[Optional[float]] = mapped_column(Float, nullable=True)      # shrinkage weight ∈ [0,1]
+    # "live" = captured at auto-track time. "replay-<YYYY-MM-DD>" = backfilled
+    # by re-running the model over the historical game on that date. Replay
+    # rows must be flagged in any analysis surfaced to users (the live model
+    # code may have drifted since the pick was originally made).
+    snapshot_source: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
 
 def decimal_odds(american_odds: int) -> float:
     """Convert American odds to decimal odds."""

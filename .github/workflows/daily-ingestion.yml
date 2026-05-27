@@ -18,6 +18,15 @@ on:
         required: false
         default: ""
 
+# Serialize ingestion runs. When two scheduled crons land near each other
+# (free-tier scheduler jitter is 1.5–4 hours), parallel runs racing the same
+# /admin/run-ingestion job caused both pollers to see empty status forever
+# after the deploy-hook step restarted Render and wiped in-memory job state.
+# cancel-in-progress: false → queue, don't kill the in-flight run.
+concurrency:
+  group: daily-ingestion
+  cancel-in-progress: false
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
