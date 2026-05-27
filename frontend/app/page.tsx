@@ -117,7 +117,7 @@ function GameCard({ game, index, onClick }: { game: SlateGame; index: number; on
         } as React.CSSProperties}
       >
         {/* Main row: matchup · signal · bullpen */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr", gap: "16px", alignItems: "center" }}>
+        <div className="game-card-grid mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr", gap: "16px", alignItems: "center" }}>
           {/* Matchup */}
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

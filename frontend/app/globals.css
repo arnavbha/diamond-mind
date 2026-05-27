@@ -900,6 +900,25 @@ body::before {
   .mobile-stack { grid-template-columns: 1fr !important; }
 }
 
+/* Tracker summary cards (Combined / Moneyline / Over/Under): the inline
+ * `flex: 1` keeps three columns even when the +XX.XXu numbers overflow at
+ * 28px. Force full-row stacking on phones. */
+@media (max-width: 640px) {
+  .tracker-summary-card { flex: 1 1 100% !important; min-width: 0; }
+}
+
+/* Pick of the Day body: three flex sections (matchup, pick text, stats)
+ * collide at 380px. Wrap to two rows on phones — matchup on top, then a
+ * row with pick text + stats. */
+@media (max-width: 640px) {
+  .potd-body {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    gap: 10px !important;
+  }
+  .potd-body > * { flex-basis: auto; }
+}
+
 /* Pages with desktop sidebars: stack into a column on phones. */
 .responsive-sidebar {
   display: grid;
@@ -952,12 +971,15 @@ body::before {
    * eats too much of a 390px viewport. Targets the <main> wrapper. */
   main { padding: 16px 12px !important; }
 
-  /* Nav: 8 links + brand + glossary button doesn't fit at 380px. Compress
-   * the gap, drop the brand wordmark (logo still shows), and let the link
-   * row scroll horizontally as a last resort — touch users can swipe across
-   * to reach Track Record / Admin even at the narrowest screens. */
-  .app-nav { padding: 0 12px !important; gap: 12px !important; }
+  /* Nav: drop the brand wordmark (logo still shows) and hide the two
+   * low-frequency links (Admin, Verifier) — both still reachable by URL.
+   * That brings us from 8 links to 6, which fits at 380px without needing
+   * an undiscoverable horizontal scroll. */
+  .app-nav { padding: 0 12px !important; gap: 10px !important; overflow-x: hidden; }
   .app-nav-brand-text { display: none !important; }
-  .app-nav { overflow-x: auto; }
-  .app-nav::-webkit-scrollbar { display: none; }
+  .app-nav a[href="/admin"],
+  .app-nav a[href="/verify"] { display: none !important; }
+  /* Hide the brand→nav divider on phones — it doesn't separate anything
+   * meaningful once the wordmark is gone, and it eats a few pixels we need. */
+  .app-nav > div[style*="width: 1px"] { display: none !important; }
 }

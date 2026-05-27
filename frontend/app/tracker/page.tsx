@@ -44,7 +44,7 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
     ? ((g.wins / (g.wins + g.losses)) * 100).toFixed(0) + "%"
     : "—";
   return (
-    <div className="glare-card" style={{
+    <div className="glare-card tracker-summary-card" style={{
       flex: 1, minWidth: 0,
       background: "var(--surface-2)",
       border: "1px solid var(--border)",

@@ -340,7 +340,7 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
       </div>
 
       {/* Card body */}
-      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+      <div className="potd-body" style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
         {/* Matchup */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <TeamLogo abbr={pick.away_team_abbr} size={26} />
