@@ -147,7 +147,7 @@ export function GrowthReadout({ a }: { a: GameAnalysis }) {
   const g = a.q_growth_rate;
   const dbl = a.q_doubling_bets;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+    <div className="responsive-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
       <HudChip k="EV / $1" v={`${a.ev_per_dollar >= 0 ? "+" : ""}${(a.ev_per_dollar * 100).toFixed(1)}¢`} color={a.ev_per_dollar >= 0 ? "var(--green)" : "var(--red)"} />
       <HudChip k="log-growth / bet" v={g > 0 ? `+${(g * 100).toFixed(2)}%` : "0.00%"} color={g > 0 ? "var(--green)" : "var(--text-3)"} />
       <HudChip k="2× bankroll in" v={dbl > 0 ? `${dbl} bets` : "—"} color={dbl > 0 ? "var(--blue)" : "var(--text-3)"} />

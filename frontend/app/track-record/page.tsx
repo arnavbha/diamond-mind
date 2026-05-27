@@ -660,7 +660,7 @@ export default function TrackRecordPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {/* summary strip — combined record */}
           <div
-            className="box-score-grid"
+            className="box-score-grid responsive-grid-4"
             style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}
           >
             <div className="bsg-row" style={{ display: "contents" }}>
@@ -741,7 +741,7 @@ export default function TrackRecordPage() {
             )}
 
           {/* Per-market split */}
-          <div className="box-score-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }}>
+          <div className="box-score-grid responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }}>
             {(["ml", "total"] as const).map((mkt) => {
               const s = result.summary[mkt];
               const label = mkt === "ml" ? "Moneyline" : "Over/Under";
@@ -789,7 +789,7 @@ export default function TrackRecordPage() {
           </div>
 
           {/* Tier hit rate + Brier */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div className="responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <ChartFrame title="Tier hit rate" term="tiers">
               <TierHitRateChart rows={tierRowsForChart} />
             </ChartFrame>

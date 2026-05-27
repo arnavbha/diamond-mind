@@ -134,7 +134,7 @@ function BetRow({
   };
 
   return (
-    <div className={resultClass} style={{
+    <div className={`${resultClass} tracker-row`} style={{
       display: "grid",
       gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 80px",
       alignItems: "center",
@@ -143,12 +143,12 @@ function BetRow({
       borderBottom: "1px solid var(--border)",
     }}>
       {/* date */}
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
+      <span className="tracker-cell" data-label="Date" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
         {bet.game_date}
       </span>
 
       {/* game + pick */}
-      <div style={{ minWidth: 0 }}>
+      <div className="tracker-cell" data-label="Pick" style={{ minWidth: 0 }}>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 600 }}>
           {bet.away_team_abbr} @ {bet.home_team_abbr}
         </div>
@@ -161,27 +161,27 @@ function BetRow({
       </div>
 
       {/* odds */}
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+      <span className="tracker-cell" data-label="Odds" style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
         {fmtOdds(bet.american_odds)}
       </span>
 
       {/* units wagered */}
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)" }}>
+      <span className="tracker-cell" data-label="Units" style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)" }}>
         {bet.units}u
       </span>
 
       {/* tier badge */}
-      <span className="tier-badge" style={{ color: tc, borderColor: tc, fontSize: "9px" }}>
+      <span className="tier-badge tracker-cell" data-label="Tier" style={{ color: tc, borderColor: tc, fontSize: "9px" }}>
         {bet.tier === "STRONG LEAN" ? "SL" : bet.tier === "LEAN" ? "L" : bet.tier}
       </span>
 
       {/* result badge */}
-      <span className="tier-badge" style={{ color: rc, borderColor: rc, fontSize: "9px" }}>
+      <span className="tier-badge tracker-cell" data-label="Result" style={{ color: rc, borderColor: rc, fontSize: "9px" }}>
         {resultLabel(bet.result)}
       </span>
 
       {/* units net */}
-      <span style={{
+      <span className="tracker-cell" data-label="+/− Units" style={{
         fontFamily: "var(--font-display)",
         fontSize: "15px",
         fontWeight: 800,
@@ -194,7 +194,7 @@ function BetRow({
       </span>
 
       {/* actions — only shown when admin is unlocked */}
-      <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+      <div className="tracker-cell" data-label="Actions" style={{ display: "flex", gap: "4px", alignItems: "center" }}>
         {unlocked && isPending && (
           <>
             <button
@@ -238,7 +238,7 @@ function TableHeader() {
     color: "var(--text-3)",
   };
   return (
-    <div style={{
+    <div className="tracker-header" style={{
       display: "grid",
       gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 80px",
       alignItems: "center",

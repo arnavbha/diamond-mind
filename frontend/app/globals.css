@@ -858,3 +858,84 @@ body::before {
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-3); }
 .dim   { color: var(--text-2); }
+
+/* ── Responsive grids ─────────────────────────────
+ * The codebase was written desktop-first with inline CSS-in-JS grids.
+ * These classes give us a deterministic mobile breakpoint without touching
+ * every page. Apply alongside an inline `display:grid` definition; CSS class
+ * grid-template-columns override the inline ones below the breakpoint via
+ * `!important` because inline styles otherwise win specificity battles.
+ */
+.responsive-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.responsive-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .responsive-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+  .responsive-grid-2 { grid-template-columns: 1fr           !important; }
+}
+
+/* Universal opt-in: collapse any grid to a single column on phones. Pair
+ * with an inline `display:grid` style. The !important is necessary to
+ * defeat React inline-style specificity. */
+@media (max-width: 640px) {
+  .mobile-stack { grid-template-columns: 1fr !important; }
+}
+
+/* Pages with desktop sidebars: stack into a column on phones. */
+.responsive-sidebar {
+  display: grid;
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .responsive-sidebar { grid-template-columns: 1fr !important; }
+}
+
+/* Tracker ledger: 8-col grid on desktop, vertical card list on phones.
+ * The page already uses inline grid-template-columns; this @media rule
+ * just retargets the .tracker-row class to flex-column below the breakpoint
+ * and gives the cells block layout with labels. Cells become labeled rows.
+ */
+@media (max-width: 768px) {
+  .tracker-row {
+    display: flex !important;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tracker-row > * {
+    padding: 0 !important;
+    border: none !important;
+  }
+  .tracker-row .tracker-cell {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .tracker-row .tracker-cell::before {
+    content: attr(data-label);
+    color: var(--text-3);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .tracker-header { display: none !important; }
+}
+
+/* Touch-target safe button/input minimums on phones. */
+@media (max-width: 640px) {
+  button, input[type="date"], input[type="text"], input[type="number"], select {
+    min-height: 40px;
+  }
+  /* Top-level page padding tightens on phones (default app shell is too generous) */
+  .app-shell { padding: 12px !important; }
+}

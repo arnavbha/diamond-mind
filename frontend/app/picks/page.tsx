@@ -469,7 +469,7 @@ function PickCard({
           </div>
 
           {/* Middle: ML verdict + gauge */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "20px", alignItems: "center", marginTop: "14px" }}>
+          <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "20px", alignItems: "center", marginTop: "14px" }}>
             <div>
               {isMlAction && leanAbbr ? (
                 <>
