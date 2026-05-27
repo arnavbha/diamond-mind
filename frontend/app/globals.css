@@ -979,11 +979,14 @@ body::before {
   /* Hide the brand→nav divider on phones — it doesn't separate anything
    * meaningful once the wordmark is gone, and it eats a few pixels we need. */
   .app-nav > div[style*="width: 1px"] { display: none !important; }
-  /* Swap long/short label on the few links that provide a shortLabel.
+  /* Swap long/short label on links that provide a shortLabel. Use
+   * :only-child to keep the full label visible on links that have no short
+   * variant — otherwise those links render with empty text on mobile.
    * !important is needed because the desktop default rules below have equal
    * specificity but come later in source order. */
-  .nav-label-full  { display: none !important; }
-  .nav-label-short { display: inline !important; }
+  .nav-label-full              { display: none   !important; }
+  .nav-label-full:only-child   { display: inline !important; }
+  .nav-label-short             { display: inline !important; }
   /* Mobile: hide secondary links inline; the ••• popover takes over. */
   .nav-secondary-desktop { display: none !important; }
   /* Push the overflow button to the right edge of the nav. */

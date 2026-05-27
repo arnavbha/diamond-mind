@@ -11,6 +11,12 @@ import { DitherHeader } from "@/components/dither-header";
 // ── Per-side tier badge ───────────────────────────────────────────────────────
 // Shows tier + which side it applies to. Replaces a single ambiguous "STRONG
 // LEAN" pill in the card header.
+//
+// Returns null (renders nothing) when the side has no actionable pick — the
+// data layer occasionally has `tier=STRONG LEAN` with `lean=PASS` (P(+EV)
+// fell below threshold after tier was computed). Showing "ML STRONG LEAN"
+// without a team in that case was misleading; the body's PASS section
+// already communicates the reason.
 function SideTierBadge({
   tier,
   sideLabel,
@@ -21,25 +27,19 @@ function SideTierBadge({
   sidePick: string | null; // e.g. "WSH" or "O 7.5"; null = no actionable pick
 }) {
   const isAction = tier === "STRONG LEAN" || tier === "LEAN";
-  const color = isAction ? tierColor(tier) : "var(--text-3)";
-  // When the side has no pick (PASS / AVOID / unspecified), keep the badge
-  // visible but dim and only show the side label — confirms there IS a side
-  // here, model just didn't lean it.
-  const labelText = isAction && sidePick
-    ? `${tier} · ${sideLabel} ${sidePick}`
-    : `${sideLabel} ${tier}`;
+  if (!isAction || !sidePick) return null;
+  const color = tierColor(tier);
   return (
     <span
       className="tier-badge"
       style={{
         color,
-        borderColor: isAction ? color : "var(--border-2)",
+        borderColor: color,
         fontSize: "9px",
         whiteSpace: "nowrap",
-        opacity: isAction ? 1 : 0.55,
       }}
     >
-      {labelText}
+      {tier} · {sideLabel} {sidePick}
     </span>
   );
 }
