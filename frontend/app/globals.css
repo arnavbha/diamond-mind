@@ -972,10 +972,9 @@ body::before {
   main { padding: 16px 12px !important; }
 
   /* Nav: drop the brand wordmark (logo still shows), shorten "Track Record"
-   * → "Record", and let the link row scroll horizontally if it still doesn't
-   * fit at the narrowest viewports. */
-  .app-nav { padding: 0 12px !important; gap: 10px !important; overflow-x: auto; }
-  .app-nav::-webkit-scrollbar { display: none; }
+   * → "Record", and tuck Admin + Verifier behind a "•••" popover so the row
+   * fits at the narrowest viewports without horizontal scroll. */
+  .app-nav { padding: 0 12px !important; gap: 10px !important; overflow-x: hidden; }
   .app-nav-brand-text { display: none !important; }
   /* Hide the brand→nav divider on phones — it doesn't separate anything
    * meaningful once the wordmark is gone, and it eats a few pixels we need. */
@@ -983,7 +982,18 @@ body::before {
   /* Swap long/short label on the few links that provide a shortLabel. */
   .nav-label-full  { display: none; }
   .nav-label-short { display: inline; }
+  /* Mobile: hide secondary links inline; the ••• popover takes over. */
+  .nav-secondary-desktop { display: none !important; }
 }
-/* Default (desktop): show the long label, hide the short one. */
-.nav-label-short { display: none; }
-.nav-label-full  { display: inline; }
+/* Default (desktop): show the long label, hide the short one, render
+ * secondary links inline, hide the ••• overflow button. */
+.nav-label-short  { display: none; }
+.nav-label-full   { display: inline; }
+.nav-overflow     { display: none; }
+@media (max-width: 640px) {
+  /* Push the overflow button to the right edge of the nav. */
+  .nav-overflow {
+    display: inline-flex;
+    margin-left: auto;
+  }
+}

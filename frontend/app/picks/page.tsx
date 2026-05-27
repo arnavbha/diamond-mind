@@ -8,6 +8,42 @@ import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } f
 import { ExplainTooltip } from "@/components/explain";
 import { DitherHeader } from "@/components/dither-header";
 
+// ── Per-side tier badge ───────────────────────────────────────────────────────
+// Shows tier + which side it applies to. Replaces a single ambiguous "STRONG
+// LEAN" pill in the card header.
+function SideTierBadge({
+  tier,
+  sideLabel,
+  sidePick,
+}: {
+  tier: string;
+  sideLabel: string;      // "ML" or "O/U"
+  sidePick: string | null; // e.g. "WSH" or "O 7.5"; null = no actionable pick
+}) {
+  const isAction = tier === "STRONG LEAN" || tier === "LEAN";
+  const color = isAction ? tierColor(tier) : "var(--text-3)";
+  // When the side has no pick (PASS / AVOID / unspecified), keep the badge
+  // visible but dim and only show the side label — confirms there IS a side
+  // here, model just didn't lean it.
+  const labelText = isAction && sidePick
+    ? `${tier} · ${sideLabel} ${sidePick}`
+    : `${sideLabel} ${tier}`;
+  return (
+    <span
+      className="tier-badge"
+      style={{
+        color,
+        borderColor: isAction ? color : "var(--border-2)",
+        fontSize: "9px",
+        whiteSpace: "nowrap",
+        opacity: isAction ? 1 : 0.55,
+      }}
+    >
+      {labelText}
+    </span>
+  );
+}
+
 // ── Track button + unit modal ─────────────────────────────────────────────────
 
 type TrackCtx = {
@@ -453,9 +489,12 @@ function PickCard({
           } as React.CSSProperties}
           onMouseMove={isActionable ? onSlabMouseMove : undefined}
         >
-          {/* Top: matchup + tier */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Top: matchup + per-side tier badges. The previous design showed a
+              single tier label without saying which side it referred to, which
+              left readers staring at "STRONG LEAN" without knowing whether
+              that was the ML pick or the total. */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
               <TeamLogo abbr={pick.away_team_abbr} size={22} />
               <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "15px" }}>{pick.away_team_abbr}</span>
               <span style={{ color: "var(--text-3)", fontSize: "12px" }}>@</span>
@@ -463,9 +502,24 @@ function PickCard({
               <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "15px" }}>{pick.home_team_abbr}</span>
               {pick.venue && <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-3)", marginLeft: "4px" }}>{pick.venue}</span>}
             </div>
-            <ExplainTooltip term="tiers">
-              <span className="tier-badge" style={{ color: tc, borderColor: tc }}>{pick.ml_tier}</span>
-            </ExplainTooltip>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end", flexShrink: 0 }}>
+              {/* ML side badge */}
+              <SideTierBadge
+                tier={pick.ml_tier}
+                sideLabel="ML"
+                sidePick={isMlAction && leanAbbr ? leanAbbr : null}
+              />
+              {/* Total (O/U) side badge */}
+              <SideTierBadge
+                tier={pick.total_tier}
+                sideLabel="O/U"
+                sidePick={
+                  isTotalAction && (pick.total_lean === "OVER" || pick.total_lean === "UNDER")
+                    ? `${pick.total_lean === "OVER" ? "O" : "U"} ${pick.total_line ?? ""}`.trim()
+                    : null
+                }
+              />
+            </div>
           </div>
 
           {/* Middle: ML verdict + gauge */}
