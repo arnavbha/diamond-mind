@@ -21,12 +21,15 @@ Rules:
 - Answer only from the CONTEXT provided. If context is empty or insufficient, say "I don't have enough data to answer that."
 - Cite the source of each key fact: pick date, tier, team, market.
 - Never invent odds, probabilities, player names, or stats.
+- NEVER compute ROI, units staked, net units, or win percentage yourself. Read those numbers DIRECTLY from the context. If the context does not include a pre-computed value, say so — do not derive it. No arithmetic on user-visible numbers, ever.
 - Never say "lock", "guaranteed", "hammer", "free money", or "must bet".
 - Signal tiers: Strong Lean / Lean / Pass / Avoid / Need More Info.
 - For any pick recommendation, append: "⚠ All signals are probabilistic. Bet within your bankroll."
 - Be direct and concise. Lead with the answer, then the supporting data.
 - If data is from a past date, clearly note it.
 - Format numbers cleanly: odds as +120 / -145, percentages as 62%, units as +1.4u.
+- "Units bet today" / "units risked today" / "stake today" → sum the per-pick STAKE values from the picks context (each line shows `Stake: Xu`). Pending bets count.
+- "Record" / "ROI" / "net" → read the pre-computed totals block from the tracker context; never re-derive.
 
 Tone: sharp, data-first, no filler, no hype. Terminal intelligence, not sports talk radio.
 """
@@ -40,16 +43,45 @@ def _format_context(intent: str, docs: list[dict]) -> str:
     lines: list[str] = []
 
     if intent in ("pick_today", "pick_date", "pick_team"):
+        # Aggregate header so totals are visible without LLM arithmetic
+        total_stake = 0.0
+        ml_stake = 0.0
+        tot_stake = 0.0
+        ml_count = 0
+        tot_count = 0
+        for d in docs:
+            try:
+                u = float(d.get("units") or 0)
+            except Exception:
+                u = 0.0
+            total_stake += u
+            mk = (d.get("market") or "").lower()
+            if mk == "moneyline":
+                ml_stake += u
+                ml_count += 1
+            elif mk == "total":
+                tot_stake += u
+                tot_count += 1
+        lines.append(
+            f"PICKS SUMMARY: {len(docs)} picks | total stake = {total_stake:.2f}u "
+            f"({ml_count} ML = {ml_stake:.2f}u, {tot_count} total = {tot_stake:.2f}u)"
+        )
         lines.append("PICKS DATA:")
         for d in docs:
             away = d.get("away_abbr", "?")
             home = d.get("home_abbr", "?")
             result_str = f" → {d['result']}" if d.get("result") else " (pending)"
-            units_str = f" ({d['units_returned']:+.2f}u)" if d.get("units_returned") is not None else ""
+            ret_str = f" ({d['units_returned']:+.2f}u)" if d.get("units_returned") is not None else ""
+            stake_str = ""
+            try:
+                if d.get("units") is not None:
+                    stake_str = f" | Stake: {float(d['units']):.2f}u"
+            except Exception:
+                pass
             lines.append(
                 f"  [{d.get('game_date')}] {away}@{home} | {d.get('market','?').upper()} "
                 f"| {d.get('tier','?')} | Pick: {d.get('selection','?')} "
-                f"({d.get('american_odds','')}){result_str}{units_str}"
+                f"({d.get('american_odds','')}){stake_str}{result_str}{ret_str}"
             )
             if d.get("total_line"):
                 lines.append(f"    Total line: {d['total_line']} | Projected: {d.get('projected_total', '?')}")
@@ -57,15 +89,35 @@ def _format_context(intent: str, docs: list[dict]) -> str:
     elif intent == "tracker_record":
         for block in docs:
             if block["type"] == "overall":
-                lines.append(f"OVERALL RECORD (last {block['window_days']} days):")
+                label = block.get("window_label") or f"last {block.get('window_days', 30)} days"
+                lines.append(f"OVERALL RECORD ({label}):")
                 for r in block["rows"]:
-                    lines.append(f"  {r['result']}: {r['count']} bets | {r['total_units']:+.2f}u")
+                    staked = r.get("units_staked")
+                    returned = r.get("units_returned")
+                    staked_str = f" | staked={float(staked):.2f}u" if staked is not None else ""
+                    ret_str = f" | net={float(returned):+.2f}u" if returned is not None else ""
+                    lines.append(f"  {r['result']}: {r['count']} bets{staked_str}{ret_str}")
             elif block["type"] == "by_tier":
                 lines.append("BY TIER:")
                 for r in block["rows"]:
-                    lines.append(f"  {r['tier']} | {r['result']}: {r['count']} | {r['total_units']:+.2f}u")
+                    returned = r.get("units_returned")
+                    ret_str = f"{float(returned):+.2f}u" if returned is not None else "0.00u"
+                    lines.append(f"  {r['tier']} | {r['result']}: {r['count']} | net={ret_str}")
+            elif block["type"] == "totals":
+                roi = block.get("roi_pct")
+                roi_str = f"{roi}%" if roi is not None else "N/A (no staked units)"
+                lines.append(
+                    f"COMPUTED TOTALS (use these verbatim, do not recompute):\n"
+                    f"  settled_bets = {block.get('settled_bets', 0)}\n"
+                    f"  total_staked = {block.get('total_staked_units', 0):.2f}u\n"
+                    f"  net_units    = {block.get('net_units', 0):+.2f}u\n"
+                    f"  roi          = {roi_str}"
+                )
             elif block["type"] == "pending":
-                lines.append(f"Pending (unsettled): {block['count']} bets")
+                lines.append(
+                    f"Pending (unsettled): {block.get('count', 0)} bets | "
+                    f"staked = {block.get('pending_staked_units', 0):.2f}u"
+                )
 
     elif intent == "team_stat":
         lines.append("TEAM STATS:")

@@ -237,55 +237,110 @@ def get_tracker_record(
     db: Session,
     days_back: int = 30,
     today: Optional[date] = None,
+    query_date: Optional[date] = None,
 ) -> list[dict]:
-    """Aggregate betting record: W/L/push counts + units by tier."""
+    """Aggregate betting record: W/L/push counts + units staked + ROI.
+
+    If ``query_date`` is given, the window is restricted to that single day
+    (so "yesterday's record" actually slices to yesterday). Otherwise the
+    rolling ``days_back`` window is used.
+    """
     if today is None:
         today = date.today()
-    start = today - timedelta(days=days_back)
 
-    # Overall record
-    overall_sql = """
+    if query_date is not None:
+        start = query_date
+        end = query_date
+        window_label = str(query_date)
+        date_clause = "game_date = :start"
+        params: dict = {"start": str(start)}
+    else:
+        start = today - timedelta(days=days_back)
+        end = today
+        window_label = f"last {days_back} days"
+        date_clause = "game_date >= :start"
+        params = {"start": str(start)}
+
+    # Overall record (settled only)
+    overall_sql = f"""
         SELECT
             result,
-            COUNT(*)              AS count,
-            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS total_units
+            COUNT(*)                                                    AS count,
+            ROUND(CAST(SUM(COALESCE(units, 0))          AS numeric), 2) AS units_staked,
+            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS units_returned
         FROM bet_records
         WHERE result IS NOT NULL
-          AND game_date >= :start
+          AND {date_clause}
         GROUP BY result
         ORDER BY result
     """
 
-    # By tier
-    tier_sql = """
+    tier_sql = f"""
         SELECT
             tier,
             result,
             COUNT(*) AS count,
-            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS total_units
+            ROUND(CAST(SUM(COALESCE(units, 0))          AS numeric), 2) AS units_staked,
+            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS units_returned
         FROM bet_records
         WHERE result IS NOT NULL
-          AND game_date >= :start
+          AND {date_clause}
         GROUP BY tier, result
         ORDER BY tier, result
     """
 
-    overall = _rows(db, overall_sql, {"start": str(start)})
-    by_tier = _rows(db, tier_sql, {"start": str(start)})
+    # Totals: lets us compute true ROI in SQL, not in the LLM
+    totals_sql = f"""
+        SELECT
+            COUNT(*)                                                    AS settled_bets,
+            ROUND(CAST(SUM(COALESCE(units, 0))          AS numeric), 2) AS total_staked,
+            ROUND(CAST(SUM(COALESCE(units_returned, 0)) AS numeric), 2) AS total_returned
+        FROM bet_records
+        WHERE result IS NOT NULL
+          AND {date_clause}
+    """
 
-    # Pending count
-    pending_sql = """
-        SELECT COUNT(*) AS pending
+    pending_sql = f"""
+        SELECT
+            COUNT(*)                                           AS pending,
+            ROUND(CAST(SUM(COALESCE(units, 0)) AS numeric), 2) AS pending_staked
         FROM bet_records
         WHERE result IS NULL
-          AND game_date >= :start
+          AND {date_clause}
     """
-    pending = _rows(db, pending_sql, {"start": str(start)})
+
+    overall = _rows(db, overall_sql, params)
+    by_tier = _rows(db, tier_sql, params)
+    totals = _rows(db, totals_sql, params)
+    pending = _rows(db, pending_sql, params)
+
+    t = totals[0] if totals else {}
+    staked = float(t.get("total_staked") or 0)
+    returned = float(t.get("total_returned") or 0)
+    roi_pct = round((returned / staked) * 100.0, 1) if staked > 0 else None
+
+    p = pending[0] if pending else {}
 
     return [
-        {"type": "overall", "window_days": days_back, "rows": overall},
+        {
+            "type": "overall",
+            "window_days": days_back,
+            "window_label": window_label,
+            "rows": overall,
+        },
         {"type": "by_tier", "rows": by_tier},
-        {"type": "pending", "count": pending[0]["pending"] if pending else 0},
+        {
+            "type": "totals",
+            "settled_bets": int(t.get("settled_bets") or 0),
+            "total_staked_units": staked,
+            "net_units": returned,
+            "roi_pct": roi_pct,
+        },
+        {
+            "type": "pending",
+            "count": int(p.get("pending") or 0),
+            "pending_staked_units": float(p.get("pending_staked") or 0),
+        },
     ]
 
 
@@ -358,7 +413,7 @@ def get_model_explanation(
             JOIN games       g   ON be.game_id    = g.id
             JOIN teams       ht  ON g.home_team_id = ht.id
             JOIN teams       at_ ON g.away_team_id = at_.id
-            WHERE DATE(be.generated_at) = :dt
+            WHERE g.game_date = :dt
               AND (ht.abbr = :abbr OR at_.abbr = :abbr)
             ORDER BY be.generated_at DESC
             LIMIT 5
@@ -386,7 +441,7 @@ def get_model_explanation(
             JOIN games       g   ON be.game_id    = g.id
             JOIN teams       ht  ON g.home_team_id = ht.id
             JOIN teams       at_ ON g.away_team_id = at_.id
-            WHERE DATE(be.generated_at) = :dt
+            WHERE g.game_date = :dt
               AND be.recommendation IN ('STRONG LEAN', 'LEAN')
             ORDER BY be.confidence_score DESC
             LIMIT 8
@@ -650,7 +705,7 @@ def get_context_for_intent(
         return get_team_stats(db, teams, as_of=query_date or today)
 
     if intent == "tracker_record":
-        return get_tracker_record(db, today=today)
+        return get_tracker_record(db, today=today, query_date=query_date)
 
     if intent == "bullpen_today":
         return get_bullpen_vulnerability(db, query_date or today)

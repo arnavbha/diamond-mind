@@ -91,22 +91,23 @@ class ClassifiedQuery:
 # Patterns — order matters, first match wins
 # ---------------------------------------------------------------------------
 _PATTERNS: list[tuple[str, str]] = [
-    # Tracker / record
-    (r"\b(record|roi|profit|loss(es)?|units?|how.{0,20}(done|perform)|winning|losing|track record|result)\b", "tracker_record"),
+    # Tracker / record — settled-result words only. "units" alone is ambiguous
+    # (could mean units risked today); handled separately below.
+    (r"\b(record|roi|profit|loss(es)?|how.{0,20}(done|perform|do|did|doing)|winning|losing|won|lost|track record|results?|returns?|net|bankroll)\b", "tracker_record"),
     # Bullpen
     (r"\b(bullpen|vuln|fatig|relief|closer|pen\b)", "bullpen_today"),
     # Player stats (pitcher or batter) — before model_explain to avoid false match
-    (r"\b(era|whip|fip|k/?9|bb/?9|innings?\s+pitched|strikeouts?|batting\s+(avg|average)|averages?|avg|obp|slg|ops|wrc|babip|splits?|vs\s+(lhp|rhp|leftie?s?|rightie?s?)|pitcher|starter|reliever|batter|hitter|how.{0,40}(hit|pitch|perform)|stats?|season\s+line)\b", "player_stat"),
-    # Model explanation
-    (r"\b(why|explain|reason|because|factor|support|confi(dent|dence)|edge|what.*model|model.*think)\b", "model_explain"),
+    (r"\b(era|whip|fip|k/?9|bb/?9|innings?\s+pitched|strikeouts?|batting\s+(avg|average)|averages?|avg|obp|slg|ops|wrc|babip|splits?|vs\s+(lhp|rhp|leftie?s?|rightie?s?)|pitcher|starter|reliever|batter|hitter|how.{0,40}(hit|pitch|perform)|season\s+line)\b", "player_stat"),
+    # Model explanation — includes kelly / edge / projection / size language
+    (r"\b(why|explain|reason|because|factor|support|confi(dent|dence)|edges?|kelly|size|sizing|projected|projection|fraction|what.*model|model.*think)\b", "model_explain"),
     # Pick for a specific date (must come before pick_today)
     (r"\b(\d{4}-\d{2}-\d{2}|yesterday|last\s+\w+day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", "pick_date"),
-    # Today's picks
-    (r"\b(today|tonight|tonight'?s?|pick|lean|signal|slate|play|bet|wager|lock|strong)\b", "pick_today"),
+    # Today's picks — plural-safe alternates
+    (r"\b(today|tonight|tonight'?s?|picks?|leans?|signals?|slate|plays?|bets?|wagers?|locks?|strong|overs?|unders?|moneylines?|totals?|risk(ed|ing)?|units?)\b", "pick_today"),
 ]
 
 _DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
-_YESTERDAY_RE = re.compile(r"\byesterday\b", re.I)
+_YESTERDAY_RE = re.compile(r"\byesterday(?:'?s)?\b", re.I)
 _DAY_RE = re.compile(
     r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I
 )
@@ -275,6 +276,44 @@ def _extract_player_names(text: str) -> list[str]:
             seen.add(clean)
             found.append(clean)
 
+        # Lowercase fallback: if user typed "wheeler era" / "ohtani stats" /
+        # "skubal vs sanchez" the Title Case extractor misses everything.
+        # Pick up bare alphabetic tokens > 3 chars that aren't stop/team/stat
+        # words. Retrieval does fuzzy LIKE so casing won't block resolution.
+        if not found:
+            _STAT_STOP = {
+                "era", "whip", "fip", "xfip", "babip", "ops", "obp", "slg",
+                "woba", "wrc", "stat", "stats", "split", "splits", "avg",
+                "average", "averages", "compare", "comparison", "versus",
+                "better", "worse", "hit", "hitting", "pitch", "pitching",
+                "perform", "performance", "recent", "line", "inning",
+                "innings", "start", "starts", "relief", "batter", "hitter",
+                "pitcher", "starter", "reliever", "season", "year", "today",
+                "yesterday", "kelly", "edge", "projected", "projection",
+                "moneyline", "total", "totals", "over", "under", "pick",
+                "picks", "lean", "leans", "signal", "signals", "play", "plays",
+                "bet", "bets", "wager", "wagers", "lock", "locks", "strong",
+                "show", "tell", "what", "which", "when", "where", "why",
+                "how", "the", "and", "for", "with", "from", "his", "her",
+                "their", "your", "our", "this", "that", "these", "those",
+                "have", "has", "had", "been", "are", "was", "did", "does",
+                "will", "would", "could", "should", "any", "all", "some",
+                "good", "bad", "best", "worst", "most", "least", "more",
+                "less", "data", "info", "team", "teams", "player", "players",
+            }
+            for tok in re.findall(r"\b([a-z][a-z'\-]{3,})\b", text.lower()):
+                if tok in _STAT_STOP:
+                    continue
+                if tok in TEAM_NAMES:
+                    continue
+                if tok.upper() in ALL_ABBRS:
+                    continue
+                cand = tok.capitalize()
+                if cand in seen:
+                    continue
+                seen.add(cand)
+                found.append(cand)
+
     return found
 
 
@@ -350,7 +389,8 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
     if team and re.search(
         r"\b(record|how.{0,15}done|recent(?:ly)?|show|last|history|involve|"
         r"doing|performing|perform|form|season|year|trend|streak|hot|cold|"
-        r"hitting|pitching|ops|runs|win|wins|loss|losses|standing|standings)\b",
+        r"hitting|pitching|ops|runs?|run|win|wins|loss|losses|standing|standings|"
+        r"stats?|statistics|numbers?)\b",
         lower,
     ):
         return ClassifiedQuery(intent="team_stat", entities=entities, original=text)
@@ -361,5 +401,14 @@ def classify(message: str, today: Optional[date] = None) -> ClassifiedQuery:
             if intent == "pick_today" and dt and dt != today:
                 intent = "pick_date"
             return ClassifiedQuery(intent=intent, entities=entities, original=text)
+
+    # Fallbacks before giving up: if we found an entity, route to its
+    # most-useful default instead of out_of_scope.
+    if player:
+        return ClassifiedQuery(intent="player_stat", entities=entities, original=text)
+    if team:
+        return ClassifiedQuery(intent="pick_team", entities=entities, original=text)
+    if dt:
+        return ClassifiedQuery(intent="pick_date", entities=entities, original=text)
 
     return ClassifiedQuery(intent="out_of_scope", entities=entities, original=text)
