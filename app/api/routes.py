@@ -2181,6 +2181,25 @@ def auto_track(
     HomeTeam = aliased(TeamModel)
     AwayTeam = aliased(TeamModel)
 
+    # ── Picks-locked gate ────────────────────────────────────────────────────
+    # Auto-track runs multiple times per day (odds updates, cron re-runs). Once
+    # any bet exists for this date, the slate is considered locked. New games
+    # crossing the LEAN threshold on later runs will NOT be added. This prevents
+    # deleted picks from re-appearing as new games or re-analyzed edges.
+    # Bypass with allow_started=true for admin manual backfill.
+    if not allow_started:
+        existing_count = db.execute(
+            select(func.count()).where(BetRecord.game_date == game_date)
+        ).scalar() or 0
+        if existing_count > 0:
+            return {
+                "created": 0,
+                "skipped": existing_count,
+                "locked": True,
+                "message": f"Picks locked: {existing_count} bets already tracked for {game_date}. "
+                           f"Use allow_started=true to force a re-run (admin backfill only).",
+            }
+
     rows = db.execute(
         select(Game, HomeTeam, AwayTeam)
         .join(HomeTeam, Game.home_team_id == HomeTeam.id)
