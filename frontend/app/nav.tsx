@@ -10,6 +10,7 @@ type NavLink = { href: string; label: string; shortLabel?: string };
 const PRIMARY_LINKS: NavLink[] = [
   { href: "/", label: "Slate" },
   { href: "/picks", label: "Picks" },
+  { href: "/edge", label: "Edge" },
   { href: "/tracker", label: "Tracker" },
   { href: "/chat", label: "ACE" },
   { href: "/report", label: "Report" },

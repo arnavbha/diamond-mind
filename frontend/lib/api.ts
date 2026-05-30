@@ -552,6 +552,35 @@ export type LiveState = {
   alert: LiveAlertPayload | null;
 };
 
+// ── Model edge (+EV) — model vig-free prob MINUS book Shin no-vig prob ───────
+// The purest edge signal: where the model's true-price estimate disagrees with
+// the no-vig market, for the model's lean side. Positive = model thinks the
+// fair price is better than the de-vigged market = genuine edge (independent of
+// vig and of the tier heuristic; realized edge shows up as CLV). VERIFICATION,
+// NOT a guaranteed-winners list. All fields additive — older payloads omit it.
+//
+// model_edge.<mkt> is null (render an honest "no market" cell, excluded from
+// ranking — never a fabricated 0 edge) when that market has no two-sided
+// same-book price (live_odds.<mkt>.fair == null) or, for a PASS total, when the
+// total line is null. model_edge itself is null only when the game has no
+// analysis at all.
+export type ModelEdge = {
+  side: "home" | "away" | "over" | "under";   // the lean, or model-implied side on PASS
+  line?: number | null;                        // total only: the total line
+  tier: string;                                // 'STRONG LEAN' | 'LEAN' | 'PASS'
+  actionable: boolean;                         // false when no directional lean (PASS/model-implied side)
+  model_prob: number;                          // leaned-side vig-free model prob (q_p_shrunk / qt_p_shrunk), 0..1
+  novig_prob: number;                          // leaned-side Shin no-vig market prob, 0..1
+  edge: number;                                // model_prob - novig_prob, signed, 4dp
+  hold_pct: number | null;                     // book overround from live_odds.<mkt>.fair; null when no fair block
+  movement_agreement: "toward" | "away" | "neutral" | null; // from live_odds.<mkt>.movement
+};
+
+export type ModelEdgeBundle = {
+  moneyline: ModelEdge | null;
+  total: ModelEdge | null;
+};
+
 /** Returned by /games/slate — one entry per game, everything bundled. */
 export type SlateGame = {
   game_id: number;
@@ -573,6 +602,9 @@ export type SlateGame = {
   live?: LiveState | null;
   // First-pitch time (UTC, ISO8601). Additive — older payloads may omit it.
   game_time_utc?: string | null;
+  // Per-market +EV edge (model vig-free prob − book no-vig prob). Additive;
+  // null only when the game has no analysis at all. See ModelEdge above.
+  model_edge?: ModelEdgeBundle | null;
 };
 
 export type CalibrationBucket = {

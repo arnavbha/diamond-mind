@@ -1752,6 +1752,17 @@ def slate(
         if isinstance(live.get("total"), dict):
             live["total"]["movement"] = mv["total"]
 
+    # +EV Edge Board: per game/market model-vs-no-vig edge on the model's lean side.
+    # Reuses the analyzer's already-leaned q_*/qt_* quant fields (model prob,
+    # no-vig market prob, edge = q_edge_quant / qt_edge_quant) plus the fair/movement
+    # blocks just attached above — NO new devig pass. Null per market when there is
+    # no two-sided same-book price (honest "no market"); never a fabricated 0 edge.
+    from app.betting.edge_board import build_model_edge as _build_model_edge
+    for gid, payload in output_map.items():
+        payload["model_edge"] = _build_model_edge(
+            payload.get("analysis"), payload.get("live_odds")
+        )
+
     # Live monitoring: for in-progress games, (a) fall back to the captured live
     # score/inning when the terminal-score gate leaves games.home/away_score
     # NULL mid-game, and (b) inline a LiveState object for watchlisted
@@ -2995,7 +3006,7 @@ def auto_track(
                     select(OddsSnapshotRow.american_odds)
                     .where(
                         OddsSnapshotRow.game_id == game.id,
-                        OddsSnapshotRow.market == "totals",
+                        OddsSnapshotRow.market == "total",
                         OddsSnapshotRow.selection.ilike(f"%{side_frag}%"),
                     )
                     .order_by(OddsSnapshotRow.captured_at.desc())
