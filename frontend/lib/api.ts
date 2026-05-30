@@ -253,11 +253,90 @@ export type GameContext = {
   analysis: GameAnalysis | null;
 };
 
+// ── Beat-the-Book fair value (no-vig) ───────────────────────────────────────
+// Computed server-side via Shin devig and attached inline to the slate's
+// live_odds payload. Present ONLY when BOTH sides have a non-zero captured price
+// from the one pinned book; otherwise null (honest empty state — never a
+// fabricated single-side fair line). All fields additive so older payloads parse.
+// This exposes the book's vig; it is NOT a pick.
+export type FairMoneyline = {
+  home_odds: number | null;
+  away_odds: number | null;
+  home_prob: number;
+  away_prob: number;
+  hold_pct: number;
+  shin_z: number;
+};
+
+export type FairTotal = {
+  over_odds: number | null;
+  under_odds: number | null;
+  over_prob: number;
+  under_prob: number;
+  hold_pct: number;
+  shin_z?: number;
+};
+
 /** Latest market odds per game — refreshed by /admin/tick. */
 export type LiveOdds = {
-  moneyline: { home: number | null; away: number | null };
-  total: { line: number; over: number | null; under: number | null; bookmaker: string } | null;
+  moneyline: {
+    home: number | null;
+    away: number | null;
+    bookmaker?: string | null;
+    fair?: FairMoneyline | null;
+  };
+  total: {
+    line: number;
+    over: number | null;
+    under: number | null;
+    bookmaker: string;
+    fair?: FairTotal | null;
+  } | null;
   captured_at: string | null;
+};
+
+// ── /games/{id}/fair-value — per-market fair vs offered + book hold ──────────
+export type FairValueResult = {
+  game_id: number;
+  home_team_abbr: string | null;
+  away_team_abbr: string | null;
+  captured_at: string | null;
+  moneyline: {
+    offered: { home: number | null; away: number | null } | null;
+    bookmaker: string | null;
+    fair: FairMoneyline | null;
+    hold_pct: number | null;
+    // model's vig-free prob for the LEANED side only (null unless analyzer ran
+    // against real odds). A disagreement readout vs the book's no-vig prob — not a pick.
+    model_fair_prob: number | null;
+    model_fair_side: "home" | "away" | null;
+  };
+  total: {
+    offered: { line: number | null; over: number | null; under: number | null } | null;
+    bookmaker: string | null;
+    fair: FairTotal | null;
+    hold_pct: number | null;
+  };
+};
+
+// ── /tools/boost-ev — stateless DraftKings profit-boost EV checker ───────────
+// A profit boost multiplies NET PROFIT only (never the stake). Verification
+// framing: returns +EV / marginal / -EV — never "bet this".
+export type BoostEv = {
+  odds: number;
+  boost_pct: number;
+  fair_prob: number;
+  stake: number;
+  decimal: number;
+  boosted_decimal: number;
+  boosted_american: number | null;
+  boosted_payout_per_unit: number;
+  boosted_profit_per_unit: number;
+  ev_units: number;
+  ev_pct: number;
+  breakeven_prob: number;
+  edge_vs_breakeven: number; // fair_prob - breakeven_prob
+  verdict: "+EV" | "marginal" | "-EV";
 };
 
 /** Live monitoring alert payload — surfaced on slate cards / detail panel.
@@ -500,6 +579,16 @@ export const api = {
     get<QuantVerify>(
       `/quant/verify?model_prob=${modelProb}&side_odds=${sideOdds}&other_odds=${otherOdds}&evidence_quality=${evidence}`,
     ),
+  // ── Beat-the-Book pricing layer ────────────────────────────────────────────
+  // Per-market fair (no-vig) value + book hold for a single game.
+  fairValue: (gameId: number) => get<FairValueResult>(`/games/${gameId}/fair-value`),
+  // Stateless profit-boost EV check. odds != 0, boostPct >= 0, fairProb in (0,1).
+  boostEv: (odds: number, boostPct: number, fairProb: number) =>
+    post<BoostEv>("/tools/boost-ev", {
+      american_odds: odds,
+      boost_pct: boostPct,
+      fair_prob: fairProb,
+    }),
   // ── Tracker ──────────────────────────────────────────────────────────────
   trackerBets: (params?: { date_from?: string; date_to?: string; market?: string; game_date?: string }) => {
     const qs = new URLSearchParams();

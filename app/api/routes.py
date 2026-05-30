@@ -923,6 +923,92 @@ def game_context(
     }
 
 
+@app.get("/games/{game_id}/fair-value", tags=["analysis"])
+def game_fair_value(
+    game_id: int,
+    db: Session = Depends(_get_db),
+):
+    """No-vig fair value + book hold per market for a game. Public, read-only.
+
+    "Beat the Book" pricing layer: for each market (moneyline, total) that has a
+    two-sided captured price from the one preferred book, returns the book's
+    offered prices, the no-vig FAIR American line per side, the no-vig fair prob
+    per side, and the book's HOLD% (overround). This visually exposes the vig.
+
+    Honest empty state: a market with only one side captured (or a side priced at
+    the 0 sentinel) yields ``fair=null`` / ``hold_pct=null`` — never a fabricated
+    single-side fair line. A game with no captured odds at all returns markets
+    with ``offered=null``.
+
+    ``model_fair_prob`` (per market) is the model's vig-free prob for the LEANED
+    side, attached ONLY when the analyzer ran against real odds; it is for the
+    leaned side only (labelled by ``model_fair_side``) and is the model's view, to
+    be shown beside the book's no-vig prob — a disagreement readout, not a pick.
+    """
+    game = db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(404, f"Game {game_id} not found")
+    home_team = db.get(Team, game.home_team_id)
+    away_team = db.get(Team, game.away_team_id)
+    team_map = {
+        game_id: (
+            home_team.abbr if home_team else "",
+            away_team.abbr if away_team else "",
+        )
+    }
+    live = _latest_odds_by_game(db, [game_id], team_abbr_by_game=team_map).get(game_id)
+    analysis = _build_analysis_cached(game_id, game.game_date, db)
+
+    # Model fair prob (vig-free) for the LEANED side only, gated on real odds.
+    # q_p_shrunk is the post-shrinkage model prob; q_shin_vig_free is the market
+    # no-vig prob — both meaningful only when q_has_real_odds is true.
+    model_fair_prob = None
+    model_fair_side = None
+    if analysis and analysis.get("q_has_real_odds"):
+        lean = analysis.get("ml_lean")
+        if lean in ("HOME", "AWAY"):
+            model_fair_prob = analysis.get("q_p_shrunk")
+            model_fair_side = lean.lower()
+
+    ml = (live or {}).get("moneyline") or {}
+    total = (live or {}).get("total")
+
+    ml_fair = ml.get("fair")
+    moneyline_block = {
+        "offered": (
+            {"home": ml.get("home"), "away": ml.get("away")}
+            if (ml.get("home") is not None or ml.get("away") is not None)
+            else None
+        ),
+        "bookmaker": ml.get("bookmaker"),
+        "fair": ml_fair,
+        "hold_pct": (ml_fair or {}).get("hold_pct"),
+        "model_fair_prob": model_fair_prob,
+        "model_fair_side": model_fair_side,
+    }
+
+    total_fair = (total or {}).get("fair") if total else None
+    total_block = {
+        "offered": (
+            {"line": total.get("line"), "over": total.get("over"), "under": total.get("under")}
+            if total and (total.get("over") is not None or total.get("under") is not None)
+            else None
+        ),
+        "bookmaker": (total or {}).get("bookmaker") if total else None,
+        "fair": total_fair,
+        "hold_pct": (total_fair or {}).get("hold_pct"),
+    }
+
+    return {
+        "game_id": game_id,
+        "home_team_abbr": home_team.abbr if home_team else None,
+        "away_team_abbr": away_team.abbr if away_team else None,
+        "captured_at": (live or {}).get("captured_at"),
+        "moneyline": moneyline_block,
+        "total": total_block,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Park factors
 # ---------------------------------------------------------------------------
@@ -1147,6 +1233,41 @@ def quant_verify(
     qe = compute_quant_edge(model_prob, side_odds, other_odds, evidence_quality)
     rec = quant_recommendation(qe, model_confidence=model_prob, evidence_quality=evidence_quality)
     return {**dataclasses.asdict(qe), "recommendation": rec}
+
+
+from pydantic import BaseModel as _BoostBaseModel
+
+
+class BoostEvBody(_BoostBaseModel):
+    american_odds: int
+    boost_pct: float           # e.g. 50 for a +50% profit boost
+    fair_prob: float           # fair win prob in (0, 1)
+    stake: float = 1.0
+
+
+@app.post("/tools/boost-ev", tags=["analysis"])
+def tools_boost_ev(body: BoostEvBody):
+    """Stateless DraftKings profit-boost EV checker. Public, no DB writes.
+
+    A profit boost multiplies NET PROFIT only (never the stake). Given a price,
+    a boost %, and a fair win probability, returns the boosted payout, boosted
+    equivalent American price, EV (units + %), break-even prob, and a
+    verification verdict (+EV / marginal / -EV). The widget evaluates whether a
+    promo is worth taking at the supplied probability — it never says "bet this".
+
+    422 on: american_odds == 0 (missing-price sentinel), fair_prob outside (0,1),
+    boost_pct < 0, or stake <= 0.
+    """
+    from app.betting.fair_value import boost_ev
+    try:
+        return boost_ev(
+            american_odds=body.american_odds,
+            boost_pct=body.boost_pct,
+            fair_prob=body.fair_prob,
+            stake=body.stake,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 @app.get("/backtest", tags=["analysis"])
@@ -1550,6 +1671,14 @@ def _latest_odds_by_game(
         return {}
     placeholders = ",".join(f":g{i}" for i in range(len(game_ids)))
     params: dict = {f"g{i}": gid for i, gid in enumerate(game_ids)}
+    # C1 (single-bookmaker enforcement): fair-value devig requires BOTH sides of a
+    # market to come from the SAME book — feeding a cross-book home/away pair into
+    # Shin devig is invalid and would silently mis-compute the fair line and hold.
+    # Prod is effectively single-book (DraftKings), but the partition below does
+    # NOT key on bookmaker, so a second captured book could otherwise mix per
+    # selection. Pin to the preferred book so every leg is auditably one book.
+    book = get_settings().preferred_bookmaker
+    params["book"] = book
     rows = db.execute(text(f"""
         SELECT game_id, market, selection, line, american_odds, bookmaker, captured_at
         FROM (
@@ -1560,7 +1689,7 @@ def _latest_odds_by_game(
                     ORDER BY captured_at DESC
                 ) AS rn
             FROM odds_snapshots
-            WHERE game_id IN ({placeholders})
+            WHERE game_id IN ({placeholders}) AND bookmaker = :book
         ) sub
         WHERE rn = 1
     """), params).fetchall()
@@ -1588,7 +1717,7 @@ def _latest_odds_by_game(
     out: dict[int, dict] = {}
     for r in rows:
         gid, market, selection, line, odds, bookmaker, captured_at = r
-        entry = out.setdefault(gid, {"moneyline": {"home": None, "away": None}, "total": None, "captured_at": None})
+        entry = out.setdefault(gid, {"moneyline": {"home": None, "away": None, "bookmaker": None, "fair": None}, "total": None, "captured_at": None})
         if captured_at is None:
             captured_iso = None
         elif isinstance(captured_at, str):
@@ -1608,8 +1737,10 @@ def _latest_odds_by_game(
                 norm_away = ABBR_NORM.get(away_abbr, away_abbr)
                 if norm_abbr == norm_home:
                     entry["moneyline"]["home"] = odds
+                    entry["moneyline"]["bookmaker"] = bookmaker
                 elif norm_abbr == norm_away:
                     entry["moneyline"]["away"] = odds
+                    entry["moneyline"]["bookmaker"] = bookmaker
                 else:
                     # Selection didn't match either team — store raw for debugging
                     entry["moneyline"].setdefault("_unmatched", []).append({"selection": selection, "odds": odds})
@@ -1624,6 +1755,36 @@ def _latest_odds_by_game(
                 entry["total"]["over"] = odds
             elif sel_lower == "under":
                 entry["total"]["under"] = odds
+
+    # Attach the no-vig `fair` sub-block per market. Present ONLY when BOTH sides
+    # have a non-zero captured price from the one pinned book (C1/C2/C3); otherwise
+    # null — an honest empty state, never a fabricated single-side fair line.
+    from app.betting.fair_value import fair_value as _fair_value
+    for entry in out.values():
+        ml = entry["moneyline"]
+        fv = _fair_value(ml.get("away"), ml.get("home"))  # order: (A=away, B=home)
+        if fv is not None:
+            ml["fair"] = {
+                "home_odds": fv["fair_b"],
+                "away_odds": fv["fair_a"],
+                "home_prob": fv["prob_b"],
+                "away_prob": fv["prob_a"],
+                "hold_pct": fv["hold_pct"],
+                "shin_z": fv["shin_z"],
+            }
+        total = entry["total"]
+        if total is not None:
+            total.setdefault("fair", None)
+            tfv = _fair_value(total.get("over"), total.get("under"))  # (A=over, B=under)
+            if tfv is not None:
+                total["fair"] = {
+                    "over_odds": tfv["fair_a"],
+                    "under_odds": tfv["fair_b"],
+                    "over_prob": tfv["prob_a"],
+                    "under_prob": tfv["prob_b"],
+                    "hold_pct": tfv["hold_pct"],
+                    "shin_z": tfv["shin_z"],
+                }
     return out
 
 

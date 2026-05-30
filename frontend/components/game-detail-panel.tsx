@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState } from "@/lib/api";
+import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState, type FairValueResult, type BoostEv } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
@@ -464,6 +464,281 @@ function AnalysisPanel({ a }: { a: GameAnalysis }) {
   );
 }
 
+// ── Beat-the-Book: fair value, book hold, profit-boost EV ───────────────────────
+
+function fmtAmerican(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return n >= 0 ? `+${n}` : `${n}`;
+}
+
+function verdictColor(verdict: string): string {
+  if (verdict === "+EV") return "var(--green)";
+  if (verdict === "-EV") return "var(--red)";
+  return "var(--amber)"; // marginal
+}
+
+/** One market's offered price vs the no-vig fair line + book hold. Verification
+ *  only — this exposes the vig the book charges; it is NOT a pick. */
+function FairMarketRow({ label, offered, fair, holdPct, fmt = fmtAmerican }: {
+  label: string;
+  offered: { aTag: string; a: number | null; bTag: string; b: number | null } | null;
+  fair: { a: number | null; b: number | null } | null;
+  holdPct: number | null;
+  fmt?: (n: number | null | undefined) => string;
+}) {
+  if (!offered) {
+    return (
+      <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
+          {label} — odds not captured (two-sided price required)
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
+        <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>{label}</span>
+        {holdPct != null && (
+          <span
+            title="Book hold (overround) — the vig baked into both sides of this market"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--orange)", fontWeight: 600 }}
+          >
+            hold {holdPct.toFixed(1)}%
+          </span>
+        )}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "6px" }}>
+        {[
+          { tag: offered.aTag, off: offered.a, fr: fair?.a ?? null },
+          { tag: offered.bTag, off: offered.b, fr: fair?.b ?? null },
+        ].map(({ tag, off, fr }) => (
+          <div key={tag} style={{ display: "flex", alignItems: "baseline", gap: "6px", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+            <span style={{ color: "var(--text-3)", width: "34px" }}>{tag}</span>
+            <span style={{ color: "var(--text)", fontWeight: 600 }}>{fmt(off)}</span>
+            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>book</span>
+            <span style={{ color: "var(--text-3)" }}>·</span>
+            <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmt(fr)}</span>
+            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>fair</span>
+          </div>
+        ))}
+      </div>
+      {!fair && (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", marginTop: "4px" }}>
+          fair line needs both sides priced
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Profit-Boost EV calculator. Stateless — evaluates whether a DraftKings-style
+ *  profit boost (applies to winnings only) is +EV at a supplied fair win prob.
+ *  Seeds the price + fair prob from the model when available. Never says "bet". */
+function BoostEvWidget({ fv }: { fv: FairValueResult }) {
+  // Seed the side/price from the model's leaned side when it ran on real odds;
+  // else fall back to the home moneyline. Boost defaults to 30%.
+  const ml = fv.moneyline;
+  const modelSide = ml.model_fair_side; // "home" | "away" | null
+  const seedSide: "home" | "away" = modelSide ?? "home";
+  const seedOdds = (s: "home" | "away") => (s === "home" ? ml.offered?.home : ml.offered?.away) ?? null;
+  // Fair prob seed: model's vig-free prob for the leaned side, else the book's
+  // no-vig prob for the chosen side, else null (user must supply).
+  const bookFairProb = (s: "home" | "away") =>
+    ml.fair ? (s === "home" ? ml.fair.home_prob : ml.fair.away_prob) : null;
+  const seedProb = (s: "home" | "away") =>
+    modelSide === s ? ml.model_fair_prob ?? bookFairProb(s) : bookFairProb(s);
+
+  const [side, setSide] = useState<"home" | "away">(seedSide);
+  const [boostPct, setBoostPct] = useState<number>(30);
+  const [oddsStr, setOddsStr] = useState<string>(() => {
+    const o = seedOdds(seedSide);
+    return o != null ? String(o) : "";
+  });
+  const [probStr, setProbStr] = useState<string>(() => {
+    const p = seedProb(seedSide);
+    return p != null ? (p * 100).toFixed(1) : "";
+  });
+  const [result, setResult] = useState<BoostEv | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function pickSide(s: "home" | "away") {
+    setSide(s);
+    const o = seedOdds(s);
+    setOddsStr(o != null ? String(o) : "");
+    const p = seedProb(s);
+    setProbStr(p != null ? (p * 100).toFixed(1) : "");
+    setResult(null);
+    setErr(null);
+  }
+
+  async function compute() {
+    setErr(null);
+    const odds = parseInt(oddsStr, 10);
+    const probPct = parseFloat(probStr);
+    if (!Number.isFinite(odds) || odds === 0) { setErr("Enter a non-zero American price."); return; }
+    if (!Number.isFinite(boostPct) || boostPct < 0) { setErr("Boost % must be ≥ 0."); return; }
+    if (!Number.isFinite(probPct) || probPct <= 0 || probPct >= 100) { setErr("Fair win prob must be between 0 and 100%."); return; }
+    setBusy(true);
+    const r = await api.boostEv(odds, boostPct, probPct / 100);
+    setBusy(false);
+    if (!r) { setErr("Could not evaluate — check the inputs."); setResult(null); return; }
+    setResult(r);
+  }
+
+  const homeAbbr = fv.home_team_abbr ?? "HOME";
+  const awayAbbr = fv.away_team_abbr ?? "AWAY";
+  const sideLabel = side === "home" ? homeAbbr : awayAbbr;
+
+  const inputStyle: React.CSSProperties = {
+    background: "var(--bg)", border: "1px solid var(--border-2)", borderRadius: "4px",
+    padding: "5px 8px", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "12px",
+    width: "100%", outline: "none",
+  };
+  const sideBtn = (active: boolean): React.CSSProperties => ({
+    background: active ? "var(--surface-2, var(--surface))" : "transparent",
+    border: `1px solid ${active ? "var(--blue)" : "var(--border-2)"}`,
+    color: active ? "var(--text)" : "var(--text-2)",
+    borderRadius: "4px", padding: "5px 10px", cursor: "pointer",
+    fontFamily: "var(--font-mono)", fontSize: "11px", fontWeight: 600,
+  });
+
+  return (
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+      <Label>Profit-Boost EV</Label>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", marginBottom: "12px", lineHeight: 1.45 }}>
+        A profit boost lifts your winnings only (never the stake). Enter a boost % and a fair
+        win probability to verify whether the promo is +EV — this is a check, not a recommendation.
+      </div>
+
+      {/* Side toggle (moneyline) */}
+      <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
+        <button style={sideBtn(side === "away")} onClick={() => pickSide("away")}>{awayAbbr}</button>
+        <button style={sideBtn(side === "home")} onClick={() => pickSide("home")}>{homeAbbr}</button>
+        {modelSide && (
+          <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", alignSelf: "center" }}>
+            seeded from model · {modelSide === "home" ? homeAbbr : awayAbbr}
+          </span>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "10px" }}>
+        <div>
+          <div style={{ fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "3px" }}>{sideLabel} price</div>
+          <input style={inputStyle} value={oddsStr} onChange={(e) => setOddsStr(e.target.value)} placeholder="e.g. -120" inputMode="numeric" />
+        </div>
+        <div>
+          <div style={{ fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "3px" }}>boost %</div>
+          <input style={inputStyle} value={String(boostPct)} onChange={(e) => setBoostPct(parseFloat(e.target.value))} inputMode="decimal" />
+        </div>
+        <div>
+          <div style={{ fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "3px" }}>fair win %</div>
+          <input style={inputStyle} value={probStr} onChange={(e) => setProbStr(e.target.value)} placeholder="e.g. 55" inputMode="decimal" />
+        </div>
+      </div>
+
+      <button
+        onClick={compute}
+        disabled={busy}
+        style={{
+          background: "var(--blue)", border: "none", borderRadius: "4px", padding: "7px 14px",
+          color: "#fff", fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 600,
+          cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1,
+        }}
+      >
+        {busy ? "Evaluating…" : "Evaluate boost"}
+      </button>
+
+      {err && (
+        <div style={{ marginTop: "10px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--red)" }}>{err}</div>
+      )}
+
+      {result && (
+        <div style={{ marginTop: "14px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)" }}>
+              boosted price{" "}
+              <span style={{ color: "var(--text)", fontWeight: 700 }}>{fmtAmerican(result.boosted_american)}</span>
+            </span>
+            <span style={{
+              fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 700,
+              color: verdictColor(result.verdict),
+              border: `1px solid ${verdictColor(result.verdict)}`, borderRadius: "4px", padding: "2px 8px",
+            }}>
+              {result.verdict}
+            </span>
+          </div>
+          <StatRow label="EV %" value={`${result.ev_pct >= 0 ? "+" : ""}${result.ev_pct.toFixed(2)}%`} />
+          <StatRow label="EV (units / $1)" value={`${result.ev_units >= 0 ? "+" : ""}${result.ev_units.toFixed(3)}`} />
+          <StatRow label="Break-even prob" value={`${(result.breakeven_prob * 100).toFixed(1)}%`} />
+          <StatRow label="Edge vs break-even" value={`${result.edge_vs_breakeven >= 0 ? "+" : ""}${(result.edge_vs_breakeven * 100).toFixed(1)} pts`} />
+          <StatRow label="Boosted payout / $1" value={result.boosted_payout_per_unit.toFixed(3)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Fair value (no-vig) + book hold per market, plus the boost-EV widget. */
+function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
+  const ml = fv.moneyline;
+  const tot = fv.total;
+  const hasAnyOffered = ml.offered != null || tot.offered != null;
+
+  // Model-vs-market fair-edge: model's vig-free prob vs the book's no-vig prob on
+  // the same side. A disagreement readout — not a pick.
+  let modelVsMarket: { side: string; model: number; market: number } | null = null;
+  if (ml.model_fair_prob != null && ml.model_fair_side && ml.fair) {
+    const market = ml.model_fair_side === "home" ? ml.fair.home_prob : ml.fair.away_prob;
+    const sideAbbr = ml.model_fair_side === "home"
+      ? (fv.home_team_abbr ?? "HOME")
+      : (fv.away_team_abbr ?? "AWAY");
+    modelVsMarket = { side: sideAbbr, model: ml.model_fair_prob, market };
+  }
+
+  return (
+    <div style={{ marginBottom: "24px" }}>
+      <div className="section-label">Beat the Book — fair value &amp; vig</div>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", margin: "4px 0 12px", lineHeight: 1.45 }}>
+        The no-vig fair line is what the book&apos;s own two-sided price implies once the hold
+        (overround) is removed. Single-book (no-vig), not a market consensus — and not a pick.
+      </div>
+
+      {!hasAnyOffered ? (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)" }}>
+          No two-sided price captured for this game — fair value not available.
+        </div>
+      ) : (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px", marginBottom: "12px" }}>
+          <FairMarketRow
+            label="Moneyline"
+            offered={ml.offered ? { aTag: fv.away_team_abbr ?? "AWAY", a: ml.offered.away, bTag: fv.home_team_abbr ?? "HOME", b: ml.offered.home } : null}
+            fair={ml.fair ? { a: ml.fair.away_odds, b: ml.fair.home_odds } : null}
+            holdPct={ml.hold_pct}
+          />
+          <FairMarketRow
+            label={`Total${tot.offered?.line != null ? ` (${tot.offered.line})` : ""}`}
+            offered={tot.offered ? { aTag: "Over", a: tot.offered.over, bTag: "Under", b: tot.offered.under } : null}
+            fair={tot.fair ? { a: tot.fair.over_odds, b: tot.fair.under_odds } : null}
+            holdPct={tot.hold_pct}
+          />
+          {modelVsMarket && (
+            <div style={{ marginTop: "10px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)" }}>
+              <span style={{ color: "var(--text-3)" }}>model vs market</span>{" "}
+              <span style={{ color: "var(--text)", fontWeight: 600 }}>{modelVsMarket.side}</span>{" "}
+              model <span style={{ color: "var(--text)", fontWeight: 600 }}>{(modelVsMarket.model * 100).toFixed(1)}%</span>{" "}
+              vs no-vig <span style={{ color: "var(--text)", fontWeight: 600 }}>{(modelVsMarket.market * 100).toFixed(1)}%</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <BoostEvWidget fv={fv} />
+    </div>
+  );
+}
+
 // ── Main export ────────────────────────────────────────────────────────────────
 
 export function GameDetailPanel({ gameId, date }: { gameId: number; date: string }) {
@@ -471,12 +746,14 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
   const [homeBatting, setHomeBatting] = useState<TeamBatting | null>(null);
   const [awayBatting, setAwayBatting] = useState<TeamBatting | null>(null);
   const [live, setLive] = useState<LiveState | null>(null);
+  const [fairValue, setFairValue] = useState<FairValueResult | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     setCtx(null);
     setLive(null);
+    setFairValue(null);
     api.context(gameId, date).then((c) => {
       setCtx(c);
       setLoading(false);
@@ -487,6 +764,8 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
     });
     // Live monitoring is best-effort; default to "No live signal" on failure.
     api.live(gameId).then(setLive).catch(() => setLive(null));
+    // Beat-the-Book fair value (no-vig + hold). Best-effort; null hides the panel.
+    api.fairValue(gameId).then(setFairValue).catch(() => setFairValue(null));
   }, [gameId, date]);
 
   if (loading) return (
@@ -560,6 +839,9 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
 
       {/* Analysis */}
       {analysis && <AnalysisPanel a={analysis} />}
+
+      {/* Beat the Book — no-vig fair value, book hold, profit-boost EV calculator */}
+      {fairValue && <BeatTheBookPanel fv={fairValue} />}
     </div>
   );
 }

@@ -260,12 +260,43 @@ function oddsColor(n: number | null | undefined): string {
   return n > 0 ? "var(--amber)" : "var(--blue)";
 }
 
+// Beat-the-Book chip — exposes the book's vig via the no-vig fair line + hold%.
+// Verification only: this is NOT a pick. Rendered ONLY when the book priced both
+// sides (fair is non-null server-side); otherwise nothing.
+function FairChip({ label, fairAway, fairHome, awayTag, homeTag, holdPct }: {
+  label: string;
+  fairAway: number | null;
+  fairHome: number | null;
+  awayTag: string;
+  homeTag: string;
+  holdPct: number;
+}) {
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--text-3)" }}>
+      <span style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label} fair</span>
+      <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{awayTag}</span>
+      <span style={{ color: "var(--text-2)" }}>{fmtOdds(fairAway)}</span>
+      <span style={{ color: "var(--border-2)" }}>/</span>
+      <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{homeTag}</span>
+      <span style={{ color: "var(--text-2)" }}>{fmtOdds(fairHome)}</span>
+      <span
+        title="Book hold (overround) — the vig baked into both sides"
+        style={{ color: "var(--orange)", fontWeight: 600 }}
+      >
+        · hold {holdPct.toFixed(1)}%
+      </span>
+    </span>
+  );
+}
+
 function LiveOddsRow({ game }: { game: SlateGame }) {
   const odds = game.live_odds;
   if (!odds) return null;
   const awayML = odds.moneyline?.away;
   const homeML = odds.moneyline?.home;
   const tot = odds.total;
+  const mlFair = odds.moneyline?.fair ?? null;
+  const totFair = tot?.fair ?? null;
   const hasAnything = awayML != null || homeML != null || tot;
   if (!hasAnything) return null;
   return (
@@ -314,6 +345,32 @@ function LiveOddsRow({ game }: { game: SlateGame }) {
         <span style={{ marginLeft: "auto", color: "var(--text-3)", fontSize: "10px" }}>
           updated {relTime(odds.captured_at)}
         </span>
+      )}
+      {/* No-vig fair line + book hold. Server emits `fair` only when the book
+          priced both sides; this exposes the vig and is NOT a pick. */}
+      {(mlFair || totFair) && (
+        <div style={{ flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "center" }}>
+          {mlFair && (
+            <FairChip
+              label="ML"
+              awayTag={game.away_team_abbr}
+              homeTag={game.home_team_abbr}
+              fairAway={mlFair.away_odds}
+              fairHome={mlFair.home_odds}
+              holdPct={mlFair.hold_pct}
+            />
+          )}
+          {totFair && (
+            <FairChip
+              label="O/U"
+              awayTag="O"
+              homeTag="U"
+              fairAway={totFair.over_odds}
+              fairHome={totFair.under_odds}
+              holdPct={totFair.hold_pct}
+            />
+          )}
+        </div>
       )}
     </div>
   );
