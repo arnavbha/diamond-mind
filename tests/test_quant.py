@@ -150,7 +150,7 @@ class TestQuantEdgePipeline:
 
     def test_recommendation_no_forbidden_language(self):
         qe = compute_quant_edge(0.60, -120, 100, evidence_quality=0.7)
-        rec = quant_recommendation(qe, 0.60, 0.7)
+        rec = quant_recommendation(qe, evidence_quality=0.7)
         for bad in ("lock", "guaranteed", "hammer", "free money", "must bet"):
             assert bad not in rec.lower()
         assert rec in {"STRONG LEAN", "LEAN", "PASS", "AVOID", "NEED MORE INFO"}

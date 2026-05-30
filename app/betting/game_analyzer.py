@@ -206,7 +206,15 @@ class GameAnalysis:
 
 # ── Kelly criterion ────────────────────────────────────────────────────────────
 def kelly(p: float, american_odds: int = -110) -> float:
-    """Fractional Kelly bet size given model probability p and American odds."""
+    """Fractional Kelly bet size given model probability p and American odds.
+
+    DEPRECATED — not the live recommendation/sizing path. This is a simple
+    point-estimate Kelly retained only because tests/test_game_analyzer.py
+    (test_kelly_uses_american_odds) imports and asserts on it. Production bet
+    sizing uses ``app/betting/quant.py`` ``uncertainty_kelly``, which sizes off
+    the full posterior over the edge (P(edge>0), growth rate) rather than a
+    single probability. Do not call this for live recommendations.
+    """
     if american_odds < 0:
         b = 100 / abs(american_odds)
     else:
@@ -786,7 +794,10 @@ def analyze_game(
         ml_kelly = 0.0
     else:
         qe = compute_quant_edge(lean_prob, actual_odds, other_odds, evidence_quality)
-        tier = quant_recommendation(qe, model_confidence=lean_prob, evidence_quality=evidence_quality)
+        # NEED-MORE-INFO is gated solely on evidence_quality (see quant.py). We no
+        # longer pass a model_confidence/margin operand — the [0.30,0.72] prob clamp
+        # caps margin at ~0.44, so a 0.40 margin gate would demote legitimate LEANs.
+        tier = quant_recommendation(qe, evidence_quality=evidence_quality)
         if tier == "NEED MORE INFO":
             tier = "PASS"
         ml_lean = lean_side if tier in ("STRONG LEAN", "LEAN") else "PASS"
@@ -947,7 +958,8 @@ def analyze_game(
             evidence_quality=total_evidence_quality,
             max_effective_n=25.0,
         )
-        total_tier = quant_recommendation(qt, model_confidence=p_lean_side, evidence_quality=total_evidence_quality, market="total")
+        # NEED-MORE-INFO gated solely on evidence_quality (see quant.py); no margin operand.
+        total_tier = quant_recommendation(qt, evidence_quality=total_evidence_quality, market="total")
         if total_tier == "NEED MORE INFO":
             total_tier = "PASS"
         if total_tier in ("STRONG LEAN", "LEAN"):

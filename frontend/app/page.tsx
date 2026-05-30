@@ -6,6 +6,7 @@ import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis } fro
 import { teamLogoUrl } from "@/lib/team-logos";
 import { DitherHeader } from "@/components/dither-header";
 import { GameDetailPanel } from "@/components/game-detail-panel";
+import { LiveAlert } from "@/components/live-alert";
 
 function TeamLogo({ abbr, size = 28 }: { abbr: string; size?: number }) {
   return (
@@ -218,6 +219,10 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
           </div>
         </div>
 
+        {/* Live monitoring — watchlist only (LEAN / STRONG LEAN). PASS games show nothing.
+            Delegates all alert markup + freshness/stale styling to the shared component. */}
+        {hasTier && <LiveAlert live={game.live ?? null} />}
+
         {/* Live odds — inside the card */}
         <LiveOddsRow game={game} />
       </div>
@@ -357,6 +362,22 @@ function SlatePageInner() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Browser Back / mobile back gesture: openSidebar pushes /game/{id}, so pressing
+  // Back pops the history entry and the URL returns to "/". Dismiss the sheet to
+  // keep URL and UI in sync. We DON'T pushState here (the pop already updated the
+  // URL); we just animate the sheet closed.
+  useEffect(() => {
+    function onPop() {
+      const onGameUrl = window.location.pathname.startsWith("/game/");
+      if (!onGameUrl) {
+        setSidebarOpen(false);
+        setTimeout(() => setSidebar(null), 280);
+      }
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   function openSidebar(gameId: number, gameDate: string) {

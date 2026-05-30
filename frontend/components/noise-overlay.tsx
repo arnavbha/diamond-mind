@@ -1,7 +1,7 @@
 "use client";
 
 // Adapted from reactbits.dev/animations/noise
-// Full-page canvas grain — renders once, refreshes every N frames
+// Full-page canvas grain — renders once, refreshes on a throttled interval.
 
 import { useRef, useEffect } from "react";
 
@@ -28,9 +28,6 @@ export default function NoiseOverlay({
     canvas.width = SIZE;
     canvas.height = SIZE;
 
-    let frame = 0;
-    let raf = 0;
-
     function drawGrain() {
       const imageData = ctx!.createImageData(SIZE, SIZE);
       const data = imageData.data;
@@ -44,15 +41,56 @@ export default function NoiseOverlay({
       ctx!.putImageData(imageData, 0, 0);
     }
 
-    function loop() {
-      if (frame % patternRefreshInterval === 0) drawGrain();
-      frame++;
+    // Respect reduced-motion: render a single static grain frame, no rAF loop.
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    drawGrain();
+    if (reduceMotion) return;
+
+    // Animated path. Regenerate grain on a throttled wall-clock interval rather
+    // than allocating a 512x512 ImageData every 3rd frame — far less CPU/GC.
+    // ~16.67ms per frame * patternRefreshInterval ≈ minimum ms between redraws.
+    const minIntervalMs = Math.max(1, patternRefreshInterval) * 16.67;
+    let lastDraw = 0;
+    let raf = 0;
+    let running = true;
+
+    function loop(ts: number) {
+      if (!running) return;
+      if (ts - lastDraw >= minIntervalMs) {
+        drawGrain();
+        lastDraw = ts;
+      }
       raf = requestAnimationFrame(loop);
     }
 
-    drawGrain();
+    function start() {
+      if (running) return;
+      running = true;
+      lastDraw = 0;
+      raf = requestAnimationFrame(loop);
+    }
+    function stop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+    }
+
+    function onVisibility() {
+      if (document.hidden) stop();
+      else start();
+    }
+
+    document.addEventListener("visibilitychange", onVisibility);
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+
+    return () => {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [patternAlpha, patternRefreshInterval]);
 
   return (
@@ -61,11 +99,14 @@ export default function NoiseOverlay({
       aria-hidden="true"
       style={{
         position: "fixed",
+        // inset:0 + dynamic viewport units: avoids the 100vw scrollbar overflow
+        // and the mobile Safari/Chrome dynamic-chrome gap that 100vh/100vw cause.
         inset: 0,
-        width: "100vw",
-        height: "100vh",
+        width: "100dvw",
+        height: "100dvh",
         pointerEvents: "none",
-        zIndex: 9999,
+        // Below modals/sidebars/nav (nav is z-index:100); the grain is decoration.
+        zIndex: 50,
         opacity: 1,
         imageRendering: "pixelated",
         mixBlendMode: "overlay",

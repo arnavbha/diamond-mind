@@ -20,6 +20,7 @@ from app.models.players import (
     TeamFormWindowRow,
 )
 from app.models.bullpen import BullpenFatigueRow, RelieverUsageRow
+from app.models.live import LiveGameState
 from app.models.odds import OddsSnapshotRow, WeatherSnapshotRow
 from app.models.reports import BetEvaluationRow, ModelRun, ObsidianExportRow
 
@@ -36,6 +37,7 @@ __all__ = [
     "RelieverFormWindowRow",
     "RelieverUsageRow",
     "BullpenFatigueRow",
+    "LiveGameState",
     "OddsSnapshotRow",
     "WeatherSnapshotRow",
     "ModelRun",

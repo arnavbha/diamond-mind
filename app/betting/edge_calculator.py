@@ -1,5 +1,13 @@
 """Edge calculation and recommendation tiers.
 
+DEPRECATED — NOT the source of truth for live recommendations.
+    The functions ``edge()`` and ``recommendation()`` in this module compute a
+    naive point-edge tier and are retained only because tests/test_betting_utils.py
+    imports and asserts on them. The live recommendation path is
+    ``app/betting/quant.py``: use ``quant_recommendation`` (Shin devig + Bayesian
+    shrinkage + P(edge>0) tiers) together with ``uncertainty_kelly`` for sizing.
+    Do not call ``edge()`` / ``recommendation()`` for production recommendations.
+
 All edge comparisons use VIG-FREE implied probability (Pinnacle method).
 Raw implied prob includes book margin (~4-7%) and systematically understates
 true edge. Comparing model prob to vig-free prob gives the honest number.

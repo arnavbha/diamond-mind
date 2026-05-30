@@ -65,8 +65,8 @@ export default function DotGrid({
     const [ar, ag, ab] = hexToRgb(activeColor);
 
     let dots: Dot[] = [];
-    let mouse = { x: -9999, y: -9999 };
-    let lastMouse = { x: -9999, y: -9999 };
+    const mouse = { x: -9999, y: -9999 };
+    const lastMouse = { x: -9999, y: -9999 };
     let mouseSpeed = 0;
     let rafId: number;
     let W = 0, H = 0;
@@ -145,7 +145,7 @@ export default function DotGrid({
         ctx!.fill();
       }
 
-      rafId = requestAnimationFrame(draw);
+      if (running) rafId = requestAnimationFrame(draw);
     }
 
     function onMouseMove(e: MouseEvent) {
@@ -169,17 +169,60 @@ export default function DotGrid({
       }
     }
 
+    // Respect reduced-motion: build + paint a single static frame, no rAF loop.
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function drawStatic() {
+      ctx!.clearRect(0, 0, W, H);
+      for (const dot of dots) {
+        ctx!.beginPath();
+        ctx!.arc(dot.x, dot.y, dotSize / 2, 0, Math.PI * 2);
+        ctx!.fillStyle = `rgb(${br},${bg},${bb})`;
+        ctx!.fill();
+      }
+    }
+
     resize();
+
+    if (reduceMotion) {
+      drawStatic();
+      window.addEventListener("resize", () => { resize(); drawStatic(); });
+      return () => {
+        window.removeEventListener("resize", resize);
+      };
+    }
+
+    let running = true;
+    function startLoop() {
+      if (running) return;
+      running = true;
+      draw();
+    }
+    function stopLoop() {
+      running = false;
+      cancelAnimationFrame(rafId);
+    }
+    function onVisibility() {
+      if (document.hidden) stopLoop();
+      else startLoop();
+    }
+
     draw();
     window.addEventListener("resize", resize);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("click", onClick);
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
+      running = false;
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("click", onClick);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [dotSize, gap, baseColor, activeColor, proximity, speedTrigger, shockRadius, shockStrength, maxSpeed, resistance, returnSpeed]);
 

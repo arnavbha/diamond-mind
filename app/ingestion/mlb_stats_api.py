@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.entities import Player, Team
 from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
+from app.models.live import LiveGameState
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +158,103 @@ def parse_schedule(payload: dict) -> list[_ScheduledGame]:
                 game_time_utc=_game_time_utc,
             ))
     return games
+
+
+@dataclass
+class LiveSnapshot:
+    """Parsed live-feed state for one game. Every field is best-effort and may
+    be None when the upstream payload is missing the relevant path."""
+
+    status: Optional[str]
+    inning: Optional[int]
+    inning_half: Optional[str]          # "top" / "bottom"
+    outs: Optional[int]
+    on_first: bool
+    on_second: bool
+    on_third: bool
+    home_score: Optional[int]
+    away_score: Optional[int]
+    current_pitcher_id: Optional[int]
+    current_pitcher_name: Optional[str]
+    current_pitcher_team_id: Optional[int]
+    pitch_count: Optional[int]
+
+
+def parse_live(payload: dict) -> LiveSnapshot:
+    """Parse the /game/{pk}/feed/live response into a LiveSnapshot.
+
+    Defensively .get()s every path so a partial or pregame payload (no
+    linescore, no currentPlay, no pitcher) yields a snapshot of Nones rather
+    than raising.
+    """
+    payload = payload or {}
+    game_data = payload.get("gameData") or {}
+    live_data = payload.get("liveData") or {}
+
+    status = (game_data.get("status") or {}).get("detailedState")
+
+    linescore = live_data.get("linescore") or {}
+    inning = linescore.get("currentInning")
+    is_top = linescore.get("isTopInning")
+    if is_top is True:
+        inning_half = "top"
+    elif is_top is False:
+        inning_half = "bottom"
+    else:
+        inning_half = None
+    outs = linescore.get("outs")
+
+    offense = linescore.get("offense") or {}
+    on_first = bool(offense.get("first"))
+    on_second = bool(offense.get("second"))
+    on_third = bool(offense.get("third"))
+
+    ls_teams = linescore.get("teams") or {}
+    home_score = (ls_teams.get("home") or {}).get("runs")
+    away_score = (ls_teams.get("away") or {}).get("runs")
+
+    plays = live_data.get("plays") or {}
+    current_play = plays.get("currentPlay") or {}
+    matchup = current_play.get("matchup") or {}
+    pitcher = matchup.get("pitcher") or {}
+    current_pitcher_id = pitcher.get("id")
+    current_pitcher_name = pitcher.get("fullName")
+
+    # Pitch count + pitcher team come from the boxscore player record.
+    pitch_count: Optional[int] = None
+    current_pitcher_team_id: Optional[int] = None
+    if current_pitcher_id is not None:
+        boxscore = live_data.get("boxscore") or {}
+        box_teams = boxscore.get("teams") or {}
+        pid_key = f"ID{current_pitcher_id}"
+        for side_key in ("home", "away"):
+            side = box_teams.get(side_key) or {}
+            players = side.get("players") or {}
+            pdata = players.get(pid_key)
+            if pdata:
+                current_pitcher_team_id = (side.get("team") or {}).get("id")
+                pit = (pdata.get("stats") or {}).get("pitching") or {}
+                pc = pit.get("numberOfPitches")
+                if pc is None:
+                    pc = pit.get("pitchesThrown")
+                pitch_count = pc
+                break
+
+    return LiveSnapshot(
+        status=status,
+        inning=inning,
+        inning_half=inning_half,
+        outs=outs,
+        on_first=on_first,
+        on_second=on_second,
+        on_third=on_third,
+        home_score=home_score,
+        away_score=away_score,
+        current_pitcher_id=current_pitcher_id,
+        current_pitcher_name=current_pitcher_name,
+        current_pitcher_team_id=current_pitcher_team_id,
+        pitch_count=pitch_count,
+    )
 
 
 def parse_teams(payload: dict) -> list[dict]:
@@ -491,10 +589,14 @@ def upsert_game(session: Session, g: _ScheduledGame) -> Game:
         existing.away_probable_starter_id = g.away_probable_pitcher_id
         if g.game_time_utc is not None:
             existing.game_time_utc = g.game_time_utc
-        if g.home_score is not None:
-            existing.home_score = g.home_score
-        if g.away_score is not None:
-            existing.away_score = g.away_score
+        # Only trust scores from the schedule feed once the game is terminal.
+        # Mid-game polls carry live partial scores that must not populate the
+        # final-score columns (which auto-settle grades off of).
+        if g.status in _TERMINAL:
+            if g.home_score is not None:
+                existing.home_score = g.home_score
+            if g.away_score is not None:
+                existing.away_score = g.away_score
         return existing
     obj = Game(
         id=g.game_pk,
@@ -511,6 +613,50 @@ def upsert_game(session: Session, g: _ScheduledGame) -> Game:
     )
     session.add(obj)
     return obj
+
+
+def upsert_live_game_state(
+    session: Session,
+    game_id: int,
+    snapshot: LiveSnapshot,
+) -> LiveGameState:
+    """Upsert the single live_game_states row for a game (by PK).
+
+    Idempotent under overlapping ticks: a second concurrent/sequential tick for
+    the same game overwrites the same row rather than inserting a duplicate.
+    captured_at is stamped with the current UTC time on every write so the UI
+    can compute staleness. The pitcher FK is best-effort: we only set
+    current_pitcher_id when the player already exists, so a never-before-seen
+    reliever doesn't violate the FK — the denormalized name always carries.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Only attach the pitcher FK if the player row exists; otherwise leave the id
+    # NULL and rely on the denormalized name. Avoids FK violations on call-ups.
+    pitcher_id = snapshot.current_pitcher_id
+    if pitcher_id is not None and session.get(Player, pitcher_id) is None:
+        pitcher_id = None
+
+    existing = session.get(LiveGameState, game_id)
+    if existing is None:
+        existing = LiveGameState(game_id=game_id)
+        session.add(existing)
+
+    existing.status = snapshot.status or ""
+    existing.inning = snapshot.inning
+    existing.inning_half = snapshot.inning_half
+    existing.outs = snapshot.outs
+    existing.on_first = snapshot.on_first
+    existing.on_second = snapshot.on_second
+    existing.on_third = snapshot.on_third
+    existing.home_score = snapshot.home_score
+    existing.away_score = snapshot.away_score
+    existing.current_pitcher_id = pitcher_id
+    existing.current_pitcher_name = snapshot.current_pitcher_name
+    existing.current_pitcher_team_id = snapshot.current_pitcher_team_id
+    existing.pitch_count = snapshot.pitch_count
+    existing.captured_at = now
+    return existing
 
 
 def upsert_team_game_log(

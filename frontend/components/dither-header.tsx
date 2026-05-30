@@ -246,25 +246,58 @@ export function DitherHeader({
     resize();
 
     // Render loop
-    let raf: number;
+    let raf = 0;
     let start: number | null = null;
+    let running = true;
 
-    function tick(ts: number) {
-      raf = requestAnimationFrame(tick);
-      if (start === null) start = ts;
-      const t = (ts - start) * 0.001;
-
+    function renderFrame(t: number) {
       gl.uniform1f(uTime, t);
       gl.uniform2f(uMouse, mouse.x, mouse.y);
       gl.uniform1i(uMouseActive, mouse.active ? 1 : 0);
-
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     }
-    raf = requestAnimationFrame(tick);
+
+    function tick(ts: number) {
+      if (!running) return;
+      if (start === null) start = ts;
+      renderFrame((ts - start) * 0.001);
+      raf = requestAnimationFrame(tick);
+    }
+
+    // Respect reduced-motion: paint one static frame, never loop.
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function startLoop() {
+      if (running && raf) return;
+      running = true;
+      raf = requestAnimationFrame(tick);
+    }
+    function stopLoop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    }
+    function onVisibility() {
+      if (document.hidden) stopLoop();
+      else startLoop();
+    }
+
+    if (reduceMotion) {
+      running = false;
+      renderFrame(0);
+    } else {
+      document.addEventListener("visibilitychange", onVisibility);
+      raf = requestAnimationFrame(tick);
+    }
 
     return () => {
-      cancelAnimationFrame(raf);
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibility);
       ro.disconnect();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mouseleave", onLeave);

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { api, todayET, getAdminToken, type GameAnalysis } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
-import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor, pPlusColor } from "@/components/quant";
+import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
 import { DitherHeader } from "@/components/dither-header";
 
@@ -679,7 +679,7 @@ export default function PicksPage() {
   const [error, setError] = useState(false);
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [trackModal, setTrackModal] = useState<TrackCtx | null>(null);
-  const [unlocked, setUnlocked] = useState(() => Boolean(getAdminToken()));
+  const [unlocked] = useState(() => Boolean(getAdminToken()));
 
   useEffect(() => {
     let alive = true;

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Optional
 
 # ── Normal CDF (no scipy dependency) ──────────────────────────────────────────
 def _norm_cdf(x: float) -> float:
@@ -352,7 +353,7 @@ def compute_quant_edge(
 
 _LARGE_DISAGREEMENT_THRESHOLD = 0.20  # |p_shrunk - p_market| gap that triggers demotion
 
-def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_quality: float, market: str = "ml") -> str:
+def quant_recommendation(qe: QuantEdge, evidence_quality: float, model_confidence: Optional[float] = None, market: str = "ml") -> str:
     """Tier driven by P(edge>0) and growth rate, not raw edge magnitude.
 
     A desk does not bet a big point edge it is unsure about; it bets a smaller
@@ -367,8 +368,16 @@ def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_qualit
         LEAN         P(+) ≥ 0.58, shrunk edge ≥ 1.5pp, growth > 0
 
       AVOID        shrunk edge ≤ −4.0pp
-      NEED MORE    confidence < 0.40 or evidence < 0.40
+      NEED MORE    evidence_quality < 0.40 (sole gate)
       PASS         otherwise
+
+    NEED-MORE-INFO gate: evidence_quality is the *sole* gate. We deliberately
+    do not gate on model_confidence/margin: the upstream [0.30, 0.72] probability
+    clamp caps the model's directional margin at ~0.44, so a margin threshold of
+    0.40 would demote legitimate LEANs. evidence_quality already captures whether
+    we have enough real inputs (lineups, odds, recent form) to trust the edge.
+    The model_confidence parameter is retained for call-site compatibility but is
+    no longer consulted.
 
     Large-disagreement guard: if |p_shrunk − p_market| > 20pp after shrinkage,
     the model-market gap is so large it almost always signals stale data (e.g.
@@ -376,7 +385,7 @@ def quant_recommendation(qe: QuantEdge, model_confidence: float, evidence_qualit
     in this case — we still flag the edge but don't send a high-confidence signal
     off potentially bad inputs.
     """
-    if model_confidence < 0.40 or evidence_quality < 0.40:
+    if evidence_quality < 0.40:
         return "NEED MORE INFO"
     if qe.edge_quant <= -0.04:
         return "AVOID"

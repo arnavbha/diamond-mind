@@ -36,6 +36,52 @@ _COLUMN_ADDITIONS: List[Tuple[str, str, str]] = [
     ("bet_records", "kelly_fraction_raw",    "DOUBLE PRECISION"),
     ("bet_records", "evidence_quality",      "DOUBLE PRECISION"),
     ("bet_records", "snapshot_source",       "VARCHAR(32)"),
+    # Live monitoring (one row per game, upserted by PK). The CREATE TABLE in
+    # _TABLE_CREATIONS handles fresh prod databases; these ADD COLUMN entries
+    # cover databases where the table already exists from an earlier deploy.
+    ("live_game_states", "status",                  "VARCHAR(32)"),
+    ("live_game_states", "inning",                  "INTEGER"),
+    ("live_game_states", "inning_half",             "VARCHAR(8)"),
+    ("live_game_states", "outs",                    "INTEGER"),
+    ("live_game_states", "on_first",                "BOOLEAN DEFAULT FALSE"),
+    ("live_game_states", "on_second",               "BOOLEAN DEFAULT FALSE"),
+    ("live_game_states", "on_third",                "BOOLEAN DEFAULT FALSE"),
+    ("live_game_states", "home_score",              "INTEGER"),
+    ("live_game_states", "away_score",              "INTEGER"),
+    ("live_game_states", "current_pitcher_id",      "BIGINT"),
+    ("live_game_states", "current_pitcher_name",    "VARCHAR(128)"),
+    ("live_game_states", "current_pitcher_team_id", "BIGINT"),
+    ("live_game_states", "pitch_count",             "INTEGER"),
+    ("live_game_states", "captured_at",             "TIMESTAMPTZ"),
+]
+
+
+# Tables that must exist before the ADD COLUMN statements above can target them.
+# `CREATE TABLE IF NOT EXISTS` is idempotent and a no-op on a DB where
+# `create_all` already produced the table. Postgres-only (SQLite uses create_all).
+_TABLE_CREATIONS: List[Tuple[str, str]] = [
+    (
+        "live_game_states",
+        """
+        CREATE TABLE IF NOT EXISTS live_game_states (
+            game_id                 BIGINT PRIMARY KEY REFERENCES games(id),
+            status                  VARCHAR(32),
+            inning                  INTEGER,
+            inning_half             VARCHAR(8),
+            outs                    INTEGER,
+            on_first                BOOLEAN DEFAULT FALSE,
+            on_second               BOOLEAN DEFAULT FALSE,
+            on_third                BOOLEAN DEFAULT FALSE,
+            home_score              INTEGER,
+            away_score              INTEGER,
+            current_pitcher_id      BIGINT REFERENCES players(id),
+            current_pitcher_name    VARCHAR(128),
+            current_pitcher_team_id BIGINT,
+            pitch_count             INTEGER,
+            captured_at             TIMESTAMPTZ
+        )
+        """,
+    ),
 ]
 
 
@@ -51,6 +97,13 @@ def apply_lightweight_migrations(engine: Engine) -> None:
         return
 
     with engine.begin() as conn:
+        for table, create_sql in _TABLE_CREATIONS:
+            try:
+                conn.execute(text(create_sql))
+            except Exception as exc:
+                log.exception(
+                    "Lightweight table creation failed: %s — %s", table, exc
+                )
         for table, column, coltype in _COLUMN_ADDITIONS:
             try:
                 conn.execute(text(

@@ -46,7 +46,9 @@ from app.features.recent_form import (
 from app.features.bullpen_vulnerability import score_bullpen
 from app.models.entities import Player, Team
 from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
+from app.models.live import LiveGameState
 from app.models.tracker import BetRecord, ExcludedPick, compute_units_returned
+from app.live.alerts import derive_live_alert
 
 # Import all models so Base.metadata knows about every table, then create
 # any that don't exist yet (safe on both SQLite and Postgres — additive only).
@@ -1280,6 +1282,138 @@ def daily_picks(
     return results
 
 
+_LIVE_STALE_SECONDS = 180
+
+
+def _no_live_signal(game_id: int, status: str) -> dict:
+    """The default 'No live signal' LiveState shape — every field null/false."""
+    return {
+        "game_id": game_id,
+        "status": status,
+        "is_live": False,
+        "captured_at": None,
+        "stale": True,
+        "inning": None,
+        "inning_half": None,
+        "outs": None,
+        "bases": None,
+        "home_score": None,
+        "away_score": None,
+        "current_pitcher": None,
+        "alert": None,
+    }
+
+
+def _build_live_state(
+    row: LiveGameState,
+    *,
+    analysis: Optional[dict],
+    game: Optional[Game],
+    bullpen_report=None,
+) -> dict:
+    """Serialize a persisted LiveGameState row into the LiveState JSON shape.
+
+    Every value comes from the persisted row (or is null) — nothing fabricated.
+    The alert is computed deterministically via derive_live_alert when the
+    pregame analysis, game row, and a leaning-side bullpen report are supplied.
+    """
+    captured = row.captured_at
+    if captured is not None and captured.tzinfo is None:
+        captured = captured.replace(tzinfo=timezone.utc)
+    if captured is None:
+        captured_iso = None
+        stale = True
+    else:
+        captured_iso = captured.isoformat()
+        stale = (datetime.now(timezone.utc) - captured).total_seconds() > _LIVE_STALE_SECONDS
+
+    is_live = row.status == "In Progress"
+
+    current_pitcher = None
+    if row.current_pitcher_id is not None or row.current_pitcher_name is not None:
+        current_pitcher = {
+            "id": row.current_pitcher_id,
+            "name": row.current_pitcher_name,
+            "team_id": row.current_pitcher_team_id,
+            "pitch_count": row.pitch_count,
+        }
+
+    alert = None
+    if is_live and analysis is not None and game is not None and bullpen_report is not None:
+        alert = derive_live_alert(row, analysis, game, bullpen_report)
+
+    return {
+        "game_id": row.game_id,
+        "status": row.status,
+        "is_live": is_live,
+        "captured_at": captured_iso,
+        "stale": stale,
+        "inning": row.inning,
+        "inning_half": row.inning_half,
+        "outs": row.outs,
+        "bases": {
+            "first": bool(row.on_first),
+            "second": bool(row.on_second),
+            "third": bool(row.on_third),
+        },
+        "home_score": row.home_score,
+        "away_score": row.away_score,
+        "current_pitcher": current_pitcher,
+        "alert": alert,
+    }
+
+
+def _leaning_bullpen_report(db: Session, game: Game, analysis: dict, as_of: date):
+    """Build a BullpenReport for the leaning side (for the alert vuln score).
+
+    The leaning side's own bullpen is what's exposed when its starter is pulled,
+    so we score that side, excluding its probable starter. Returns None if no
+    actionable lean or the state can't be built.
+    """
+    lean = analysis.get("ml_lean")
+    if lean == "HOME":
+        team_id = game.home_team_id
+        starter_id = game.home_probable_starter_id
+    elif lean == "AWAY":
+        team_id = game.away_team_id
+        starter_id = game.away_probable_starter_id
+    else:
+        return None
+    exclude = [starter_id] if starter_id else None
+    state = build_bullpen_state(db, team_id=team_id, as_of_date=as_of, exclude_pitcher_ids=exclude)
+    if state is None:
+        return None
+    return score_bullpen(state)
+
+
+@app.get("/games/{game_id}/live", tags=["games"])
+def game_live(
+    game_id: int,
+    db: Session = Depends(_get_db),
+):
+    """Read-only live monitoring state for a game. Public (no admin token).
+
+    Returns the persisted live state plus a structural monitoring alert (if the
+    pregame model had an actionable lean and the starter was pulled early). When
+    there is no live row or the game isn't in progress, returns the
+    'No live signal' shape with HTTP 200 (never 404) so the UI renders cleanly.
+    """
+    game = db.get(Game, game_id)
+    row = db.get(LiveGameState, game_id)
+    if row is None or row.status != "In Progress":
+        status = (game.status if game else None) or (row.status if row else "") or "unknown"
+        return _no_live_signal(game_id, status)
+
+    analysis = None
+    bullpen_report = None
+    if game is not None:
+        analysis = _build_analysis_cached(game_id, game.game_date, db)
+        if analysis is not None and analysis.get("ml_tier") in ("LEAN", "STRONG LEAN"):
+            bullpen_report = _leaning_bullpen_report(db, game, analysis, game.game_date)
+
+    return _build_live_state(row, analysis=analysis, game=game, bullpen_report=bullpen_report)
+
+
 @app.get("/games/slate", tags=["analysis"])
 def slate(
     game_date: date = Query(..., description="YYYY-MM-DD"),
@@ -1359,6 +1493,39 @@ def slate(
     live_odds_map = _latest_odds_by_game(db, game_ids, team_abbr_by_game=team_map)
     for gid, payload in output_map.items():
         payload["live_odds"] = live_odds_map.get(gid)
+
+    # Live monitoring: for in-progress games, (a) fall back to the captured live
+    # score/inning when the terminal-score gate leaves games.home/away_score
+    # NULL mid-game, and (b) inline a LiveState object for watchlisted
+    # (LEAN/STRONG LEAN) games so cards render the monitoring block without an
+    # extra per-card fetch. Non-watchlisted / non-in-progress games get live=None.
+    live_rows = {
+        r.game_id: r
+        for r in db.execute(
+            select(LiveGameState).where(LiveGameState.game_id.in_(game_ids))
+        ).scalars().all()
+    } if game_ids else {}
+
+    for gid, payload in output_map.items():
+        payload.setdefault("live", None)
+        if payload.get("status") != "In Progress":
+            continue
+        row = live_rows.get(gid)
+        if row is None:
+            continue
+        # (a) Score/inning fallback — games.home/away_score stay NULL mid-game.
+        if payload.get("home_score") is None and row.home_score is not None:
+            payload["home_score"] = row.home_score
+        if payload.get("away_score") is None and row.away_score is not None:
+            payload["away_score"] = row.away_score
+        # (b) Inline LiveState for watchlisted games only.
+        analysis = payload.get("analysis")
+        if analysis and analysis.get("ml_tier") in ("LEAN", "STRONG LEAN"):
+            game_obj = db.get(Game, gid)
+            bp = _leaning_bullpen_report(db, game_obj, analysis, game_date) if game_obj else None
+            payload["live"] = _build_live_state(
+                row, analysis=analysis, game=game_obj, bullpen_report=bp
+            )
 
     # Preserve original game order
     return [output_map[m["game_id"]] for m in game_meta if m["game_id"] in output_map]
@@ -2949,6 +3116,54 @@ def live_tick(
     except Exception as exc:
         db.rollback()
         summary["odds_error"] = str(exc)[:200]
+
+    # 4.5 Live monitoring poll — only watchlisted (LEAN/STRONG LEAN) in-progress
+    # games. PASS games are never fetched. Capped at 12 games to stay defensible
+    # on Render's free tier. Every per-game fetch is isolated so one failure
+    # doesn't redden the whole tick. Recommendation-only; no odds, no edge math.
+    try:
+        from app.ingestion.mlb_stats_api import (
+            MLBStatsClient,
+            parse_live,
+            upsert_live_game_state,
+        )
+
+        in_progress = db.execute(
+            select(Game).where(
+                Game.game_date == today,
+                Game.status == "In Progress",
+            )
+        ).scalars().all()
+
+        watchlist: list[Game] = []
+        for g in in_progress:
+            try:
+                a = _build_analysis_cached(g.id, today, db)
+            except Exception:
+                a = None
+            if a and a.get("ml_tier") in ("LEAN", "STRONG LEAN"):
+                watchlist.append(g)
+            if len(watchlist) >= 12:
+                break
+
+        polled = 0
+        if watchlist:
+            with MLBStatsClient() as client:
+                for g in watchlist:
+                    try:
+                        payload = client.fetch_live(g.id)
+                        snapshot = parse_live(payload)
+                        upsert_live_game_state(db, g.id, snapshot)
+                        polled += 1
+                    except Exception as exc:
+                        log.warning("live poll failed for game %s: %s", g.id, exc)
+                        continue
+            db.commit()
+        summary["live_polled"] = polled
+        summary["live_watchlist"] = len(watchlist)
+    except Exception as exc:
+        db.rollback()
+        summary["live_error"] = str(exc)[:200]
 
     # 2. Settle today's bets that just reached terminal
     try:

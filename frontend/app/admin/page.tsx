@@ -92,79 +92,137 @@ export default function AdminPage() {
 
   const statusColor =
     status === "done"
-      ? "text-green-400"
+      ? "var(--green)"
       : status === "error"
-        ? "text-red-400"
+        ? "var(--red)"
         : status === "running"
-          ? "text-yellow-400"
-          : "text-slate-400";
+          ? "var(--amber)"
+          : "var(--text-2)";
+
+  const panelStyle: React.CSSProperties = {
+    background: "var(--surface)",
+    border: "1px solid var(--border-2)",
+    borderRadius: "8px",
+    padding: "20px",
+  };
+  const labelStyle: React.CSSProperties = {
+    fontFamily: "var(--font-display)",
+    fontSize: "16px",
+    fontWeight: 700,
+    color: "var(--text)",
+    marginBottom: "12px",
+  };
+  const bodyStyle: React.CSSProperties = {
+    fontFamily: "var(--font-body)",
+    fontSize: "13px",
+    color: "var(--text-2)",
+    marginBottom: "16px",
+    lineHeight: 1.6,
+  };
+  const buttonStyle = (active: boolean, accent: string): React.CSSProperties => ({
+    padding: "7px 16px",
+    borderRadius: "6px",
+    border: "1px solid var(--border-2)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "12px",
+    fontWeight: 600,
+    cursor: active ? "pointer" : "not-allowed",
+    background: active ? accent : "var(--surface-2)",
+    color: active ? "#0d1117" : "var(--text-3)",
+    transition: "background 0.12s, color 0.12s",
+  });
+  const errorBoxStyle: React.CSSProperties = {
+    background: "var(--red-dim)",
+    border: "1px solid var(--red)",
+    borderRadius: "6px",
+    padding: "12px",
+    color: "var(--red)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "13px",
+    marginBottom: "12px",
+  };
+  const consoleStyle: React.CSSProperties = {
+    background: "var(--bg)",
+    border: "1px solid var(--border)",
+    borderRadius: "6px",
+    padding: "12px",
+    fontFamily: "var(--font-mono)",
+    fontSize: "12px",
+    color: "var(--text)",
+    lineHeight: "20px",
+  };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-start justify-between gap-4 mb-1">
-          <h1 className="text-2xl font-bold">Admin</h1>
+    <div>
+      <div style={{ maxWidth: "896px", margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", marginBottom: "4px" }}>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: "24px", fontWeight: 800, color: "var(--text)", textTransform: "uppercase", letterSpacing: "-0.01em" }}>Admin</h1>
           <AdminGate onUnlocked={() => setUnlocked(true)} />
         </div>
-        <p className="text-slate-400 text-sm mb-6">
+        <p style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-2)", marginBottom: "24px" }}>
           Server-side operations — these run on the Render VM, not your local machine.
         </p>
 
         {/* Ingestion panel */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-5">
-          <h2 className="text-lg font-semibold mb-3">Run Pregame Ingestion</h2>
-          <p className="text-slate-400 text-sm mb-4">
+        <div style={panelStyle}>
+          <h2 style={labelStyle}>Run Pregame Ingestion</h2>
+          <p style={bodyStyle}>
             Fetches teams, rosters, box scores, and recomputes all form windows for the
             selected date. Runs server-side — no local DB connection needed.
           </p>
 
-          <div className="flex gap-3 items-center mb-4">
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+              style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border-2)",
+                borderRadius: "6px",
+                padding: "6px 12px",
+                fontFamily: "var(--font-mono)",
+                fontSize: "13px",
+                color: "var(--text)",
+                outline: "none",
+              }}
               disabled={running}
             />
             <button
               onClick={handleRunIngestion}
               disabled={running || !unlocked}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors"
+              style={buttonStyle(!running && unlocked, "var(--blue)")}
             >
               {running ? "Running…" : "Run Ingestion"}
             </button>
             {status && (
-              <span className={`text-sm font-mono ${statusColor}`}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: statusColor }}>
                 {status}
-                {jobId && <span className="text-slate-500 ml-2">({jobId})</span>}
+                {jobId && <span style={{ color: "var(--text-3)", marginLeft: "8px" }}>({jobId})</span>}
               </span>
             )}
           </div>
 
-          {error && (
-            <div className="bg-red-900/30 border border-red-700 rounded p-3 text-red-300 text-sm mb-3">
-              {error}
-            </div>
-          )}
+          {error && <div style={errorBoxStyle}>{error}</div>}
 
           {logs.length > 0 && (
             <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-xs text-slate-500 font-mono">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
                   Log output ({totalLines} lines total, showing last {logs.length})
                 </span>
               </div>
               <div
                 ref={logRef}
-                className="bg-slate-950 border border-slate-800 rounded p-3 h-96 overflow-y-auto font-mono text-xs text-slate-300 leading-5"
+                style={{ ...consoleStyle, height: "384px", overflowY: "auto" }}
               >
                 {logs.map((line, i) => (
-                  <div key={i} className={line.includes("ERROR") || line.includes("WARNING") ? "text-yellow-400" : ""}>
+                  <div key={i} style={line.includes("ERROR") || line.includes("WARNING") ? { color: "var(--amber)" } : undefined}>
                     {line}
                   </div>
                 ))}
                 {running && (
-                  <div className="text-slate-500 animate-pulse mt-1">▌</div>
+                  <div style={{ color: "var(--text-3)", marginTop: "4px" }} className="animate-pulse">▌</div>
                 )}
               </div>
             </div>
@@ -172,41 +230,37 @@ export default function AdminPage() {
         </div>
 
         {/* Settle bets panel */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-5 mt-4">
-          <h2 className="text-lg font-semibold mb-3">Settle Bets</h2>
-          <p className="text-slate-400 text-sm mb-4">
+        <div style={{ ...panelStyle, marginTop: "16px" }}>
+          <h2 style={labelStyle}>Settle Bets</h2>
+          <p style={bodyStyle}>
             Resolves all unsettled bets for the selected date using final scores.
-            Only settles games with status&nbsp;<code className="text-slate-300">Final</code>.
+            Only settles games with status&nbsp;<code style={{ color: "var(--text)" }}>Final</code>.
           </p>
 
-          <div className="flex gap-3 items-center mb-4">
-            <span className="text-sm text-slate-400 font-mono">{date}</span>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--text-2)" }}>{date}</span>
             <button
               onClick={handleAutoSettle}
               disabled={settling || !unlocked}
-              className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors"
+              style={buttonStyle(!settling && unlocked, "var(--green)")}
             >
               {settling ? "Settling…" : "Settle Bets"}
             </button>
           </div>
 
-          {settleError && (
-            <div className="bg-red-900/30 border border-red-700 rounded p-3 text-red-300 text-sm mb-3">
-              {settleError}
-            </div>
-          )}
+          {settleError && <div style={errorBoxStyle}>{settleError}</div>}
 
           {settleResult && (
             <div>
-              <div className="text-sm text-slate-400 mb-2">
-                Settled <span className="text-emerald-400 font-semibold">{settleResult.settled}</span> bet(s)
-                {settleResult.skipped_not_final > 0 && <span className="ml-2 text-slate-500">· {settleResult.skipped_not_final} not Final</span>}
-                {settleResult.skipped_no_score > 0 && <span className="ml-2 text-slate-500">· {settleResult.skipped_no_score} missing score</span>}
+              <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-2)", marginBottom: "8px" }}>
+                Settled <span style={{ color: "var(--green)", fontWeight: 600 }}>{settleResult.settled}</span> bet(s)
+                {settleResult.skipped_not_final > 0 && <span style={{ marginLeft: "8px", color: "var(--text-3)" }}>· {settleResult.skipped_not_final} not Final</span>}
+                {settleResult.skipped_no_score > 0 && <span style={{ marginLeft: "8px", color: "var(--text-3)" }}>· {settleResult.skipped_no_score} missing score</span>}
               </div>
               {settleResult.bets.length > 0 && (
-                <div className="bg-slate-950 border border-slate-800 rounded p-3 font-mono text-xs text-slate-300 leading-5 space-y-0.5">
+                <div style={consoleStyle}>
                   {settleResult.bets.map((b) => (
-                    <div key={b.bet_id} className={b.result === "WIN" ? "text-emerald-400" : b.result === "LOSS" ? "text-red-400" : "text-slate-400"}>
+                    <div key={b.bet_id} style={{ color: b.result === "WIN" ? "var(--green)" : b.result === "LOSS" ? "var(--red)" : "var(--text-2)" }}>
                       #{b.bet_id} {b.game} {b.market} {b.selection} → {b.result} ({b.score}) {b.units_returned > 0 ? "+" : ""}{b.units_returned.toFixed(2)}u
                     </div>
                   ))}
@@ -216,6 +270,6 @@ export default function AdminPage() {
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

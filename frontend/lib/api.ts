@@ -260,6 +260,43 @@ export type LiveOdds = {
   captured_at: string | null;
 };
 
+/** Live monitoring alert payload — surfaced on slate cards / detail panel.
+ *  Verification language only; never a "pick". */
+export type LiveAlertPayload = {
+  kind: string;
+  severity: string;
+  side: "HOME" | "AWAY";
+  headline: string;
+  detail: string;
+  label: string;
+  pregame_tier: string;
+  pregame_lean: string;
+  pregame_win_prob: number;
+  bullpen_vuln: number;
+};
+
+/** Live in-game state for a single game (monitoring only). */
+export type LiveState = {
+  game_id: number;
+  status: string;
+  is_live: boolean;
+  captured_at: string | null;
+  stale: boolean;
+  inning: number | null;
+  inning_half: "top" | "bottom" | null;
+  outs: number | null;
+  bases: { first: boolean; second: boolean; third: boolean } | null;
+  home_score: number | null;
+  away_score: number | null;
+  current_pitcher: {
+    id: number | null;
+    name: string | null;
+    team_id: number | null;
+    pitch_count: number | null;
+  } | null;
+  alert: LiveAlertPayload | null;
+};
+
 /** Returned by /games/slate — one entry per game, everything bundled. */
 export type SlateGame = {
   game_id: number;
@@ -278,6 +315,7 @@ export type SlateGame = {
   away_bullpen: BullpenData | null;
   analysis: GameAnalysis | null;
   live_odds: LiveOdds | null;
+  live?: LiveState | null;
 };
 
 export type CalibrationBucket = {
@@ -378,6 +416,7 @@ export const api = {
   games: (date: string) => get<Game[]>(`/games?game_date=${date}`),
   slate: (date: string) => get<SlateGame[]>(`/games/slate?game_date=${date}`),
   bundle: (gameId: number, asOf: string) => get<GameBundle>(`/games/${gameId}/bundle?as_of=${asOf}`),
+  live: (gameId: number) => get<LiveState>(`/games/${gameId}/live`),
   weather: (gameId: number) => get<WeatherData>(`/games/${gameId}/weather`),
   odds: (gameId: number) => get<unknown[]>(`/games/${gameId}/odds`),
   bullpen: (teamId: number, date: string) =>

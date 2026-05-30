@@ -172,7 +172,7 @@ function TickerItem({ game }: { game: TickerGame }) {
           background: "var(--green)",
           display: "inline-block",
           flexShrink: 0,
-          animation: "tickerPulse 1.4s ease-in-out infinite",
+          animation: "livePulse 1.4s ease-in-out infinite",
         }} />
       )}
 

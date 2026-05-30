@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting } from "@/lib/api";
+import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
+import { LiveAlert } from "@/components/live-alert";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -275,8 +276,11 @@ function tierColor(tier: string) {
 
 function AnalysisPanel({ a }: { a: GameAnalysis }) {
   const tc = tierColor(a.ml_tier);
-  const isActionable = a.ml_lean !== "PASS" && a.ml_tier !== "AVOID";
-  const leanAbbr = a.ml_lean === "HOME" ? a.home_team_abbr : a.away_team_abbr;
+  const leanAbbr = a.ml_lean === "HOME" ? a.home_team_abbr
+    : a.ml_lean === "AWAY" ? a.away_team_abbr
+    : (a.ml_lean && a.ml_lean !== "PASS") ? a.ml_lean
+    : null;
+  const isActionable = leanAbbr !== null && a.ml_tier !== "AVOID";
   const evPct = a.ev_per_dollar != null ? a.ev_per_dollar * 100 : null;
   const cardClass = a.ml_tier === "STRONG LEAN" ? "card-strong-lean" : a.ml_tier === "LEAN" ? "card-lean" : "";
 
@@ -466,11 +470,13 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
   const [ctx, setCtx] = useState<GameContext | null>(null);
   const [homeBatting, setHomeBatting] = useState<TeamBatting | null>(null);
   const [awayBatting, setAwayBatting] = useState<TeamBatting | null>(null);
+  const [live, setLive] = useState<LiveState | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     setCtx(null);
+    setLive(null);
     api.context(gameId, date).then((c) => {
       setCtx(c);
       setLoading(false);
@@ -479,6 +485,8 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
         api.batting(c.away_team_id, date).then(d => setAwayBatting(d));
       }
     });
+    // Live monitoring is best-effort; default to "No live signal" on failure.
+    api.live(gameId).then(setLive).catch(() => setLive(null));
   }, [gameId, date]);
 
   if (loading) return (
@@ -506,6 +514,8 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
           </div>
           <TeamLogo abbr={ctx.home_team_abbr} size={42} />
         </div>
+        {/* Live monitoring block (verification, not a pick) */}
+        <LiveAlert live={live} />
       </div>
 
       {/* Team stats */}
