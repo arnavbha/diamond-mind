@@ -6,6 +6,8 @@ import {
   type BoostEv,
   type ParlayEv,
   type ParlayLegBody,
+  type BankrollRisk,
+  type BankrollRiskBody,
 } from "@/lib/api";
 import {
   Card,
@@ -719,6 +721,474 @@ function ParlayResult({ res }: { res: ParlayEv }) {
   );
 }
 
+// ── Bankroll & Risk (Kelly stake / risk-of-ruin) ────────────────────────────
+
+const fmtUsd = (x: number) =>
+  x.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+const fmtUnits = (x: number) => x.toFixed(4);
+const fmtGrowth = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(4)}%`;
+const fmtFrac = (x: number) => `${(x * 100).toFixed(2)}%`;
+const fmtProb = (x: number) => `${(x * 100).toFixed(2)}%`;
+
+const KELLY_QUICK: { label: string; value: number }[] = [
+  { label: "Quarter", value: 0.25 },
+  { label: "Half", value: 0.5 },
+  { label: "Full", value: 1.0 },
+];
+
+/** Bankroll verdict maps onto the same +EV / marginal / -EV color scale. */
+function bankrollVerdictTone(no_bet: boolean): "+EV" | "marginal" | "-EV" {
+  return no_bet ? "-EV" : "+EV";
+}
+
+type SensRow = BankrollRisk["edge_sensitivity"][number];
+
+function BankrollCard() {
+  const [bankroll, setBankroll] = useState("1000");
+  const [odds, setOdds] = useState("-110");
+  const [fairProb, setFairProb] = useState("53");
+  const [kMult, setKMult] = useState("0.5");
+  const [res, setRes] = useState<BankrollRisk | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [outage, setOutage] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setErr(null);
+    setOutage(false);
+    setBusy(true);
+
+    const bk = parseFloat(bankroll);
+    const o = parseInt(odds, 10);
+    const p = parseFloat(fairProb) / 100;
+    const m = parseFloat(kMult);
+
+    if (!Number.isFinite(bk) || bk <= 0) {
+      setErr("Bankroll must be greater than 0.");
+      setBusy(false);
+      return;
+    }
+    if (!Number.isFinite(o) || o === 0) {
+      setErr("American odds must be a non-zero integer.");
+      setBusy(false);
+      return;
+    }
+    if (!Number.isFinite(p) || p <= 0 || p >= 1) {
+      setErr("Fair win % must be between 0 and 100 (exclusive).");
+      setBusy(false);
+      return;
+    }
+    if (!Number.isFinite(m) || m <= 0 || m > 1) {
+      setErr("Kelly multiplier must be greater than 0 and at most 1.");
+      setBusy(false);
+      return;
+    }
+
+    const body: BankrollRiskBody = {
+      bankroll: bk,
+      american_odds: o,
+      fair_prob: p,
+      kelly_multiplier: m,
+    };
+    const r = await api.bankroll(body);
+    setBusy(false);
+    if (r === null) {
+      setOutage(true);
+      setRes(null);
+      return;
+    }
+    setRes(r);
+  }
+
+  return (
+    <Card>
+      <SectionHeader>Bankroll &amp; Risk</SectionHeader>
+      <div
+        style={{
+          fontSize: "var(--fs-meta)",
+          color: "var(--text-2)",
+          marginTop: "calc(-1 * var(--sp-2))",
+          marginBottom: "var(--sp-4)",
+        }}
+      >
+        Kelly stake sizing + an honest risk-of-drawdown estimate. The edge here is
+        ESTIMATED, not known — seed the fair win % from the model&apos;s shrunk
+        prob and read the edge-sensitivity rows. Verification, not a pick.
+      </div>
+
+      <StatGroup min="120px" style={{ marginBottom: "var(--sp-3)" }}>
+        <NumberField
+          label="Bankroll ($)"
+          value={bankroll}
+          onChange={setBankroll}
+          step={50}
+          hint="total roll, > 0"
+        />
+        <NumberField
+          label="American odds"
+          value={odds}
+          onChange={setOdds}
+          step={5}
+          hint="the line you'd bet, != 0"
+        />
+        <NumberField
+          label="Fair win %"
+          value={fairProb}
+          onChange={setFairProb}
+          step={1}
+          hint="vig-free prob 0–100"
+        />
+        <NumberField
+          label="Kelly multiplier"
+          value={kMult}
+          onChange={setKMult}
+          step={0.25}
+          hint="fraction of full Kelly, (0,1]"
+        />
+      </StatGroup>
+
+      <div
+        style={{
+          display: "flex",
+          gap: "var(--sp-2)",
+          flexWrap: "wrap",
+          marginBottom: "var(--sp-4)",
+        }}
+      >
+        {KELLY_QUICK.map((q) => (
+          <Button
+            key={q.label}
+            variant={parseFloat(kMult) === q.value ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setKMult(String(q.value))}
+          >
+            {q.label} ({q.value}×)
+          </Button>
+        ))}
+      </div>
+
+      <Button variant="primary" onClick={run} disabled={busy}>
+        {busy ? "Computing…" : "Size the bet"}
+      </Button>
+
+      {err && (
+        <ErrorBanner
+          kind="validation"
+          detail={err}
+          style={{ marginTop: "var(--sp-4)" }}
+        />
+      )}
+      {outage && (
+        <ErrorBanner
+          kind="outage"
+          detail="Backend rejected these inputs or is unreachable."
+          style={{ marginTop: "var(--sp-4)" }}
+        />
+      )}
+
+      {res && <BankrollResult res={res} />}
+    </Card>
+  );
+}
+
+function BankrollResult({ res }: { res: BankrollRisk }) {
+  const sensColumns: Column<SensRow>[] = [
+    {
+      key: "scenario",
+      header: "Scenario",
+      cell: (r) =>
+        r.delta === 0 ? "p (as entered)" : `p − ${(r.delta * 100).toFixed(0)}%`,
+    },
+    {
+      key: "true_prob",
+      header: "True prob",
+      align: "right",
+      cell: (r) => fmtProb(r.true_prob),
+    },
+    {
+      key: "full_kelly",
+      header: "Full Kelly f*",
+      align: "right",
+      cell: (r) => (
+        <SemanticValue
+          value={r.full_kelly_at_true_p}
+          display={fmtFrac(r.full_kelly_at_true_p)}
+        />
+      ),
+    },
+    {
+      key: "ev",
+      header: "EV / $",
+      align: "right",
+      cell: (r) => (
+        <SemanticValue value={r.ev_per_dollar} display={fmtSignedPct(r.ev_per_dollar * 100, 2)} />
+      ),
+    },
+    {
+      key: "growth",
+      header: "Log-growth",
+      align: "right",
+      cell: (r) => (
+        <SemanticValue value={r.growth_rate} display={fmtGrowth(r.growth_rate)} />
+      ),
+    },
+    {
+      key: "over",
+      header: "Over-betting?",
+      align: "right",
+      cell: (r) =>
+        r.exceeds_full_kelly ? (
+          <span style={{ color: "var(--neg)" }}>over full Kelly</span>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>within</span>
+        ),
+    },
+  ];
+
+  return (
+    <div style={{ marginTop: "var(--sp-5)" }}>
+      <div style={{ marginBottom: "var(--sp-3)" }}>
+        <Verdict verdict={bankrollVerdictTone(res.no_bet)} />
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-meta)",
+            color: res.no_bet ? "var(--neg)" : "var(--text-2)",
+            marginTop: "var(--sp-1)",
+          }}
+        >
+          {res.verdict}
+        </div>
+      </div>
+
+      {/* Headline stake + sizing. */}
+      <StatGroup min="130px" style={{ marginBottom: "var(--sp-2)" }}>
+        <StatCell
+          label="Recommended stake"
+          value={fmtUsd(res.stake_currency)}
+          color={res.no_bet ? "var(--text-muted)" : "var(--pos)"}
+        />
+        <StatCell
+          label="Stake (units)"
+          value={fmtUnits(res.stake_units)}
+          emphasis="data"
+        />
+        <StatCell
+          label="Full Kelly f*"
+          value={
+            <SemanticValue value={res.kelly_full} display={fmtFrac(res.kelly_full)} />
+          }
+          emphasis="data"
+        />
+        <StatCell
+          label={`Used fraction (${res.kelly_multiplier}×)`}
+          value={fmtFrac(res.kelly_used_fraction)}
+          emphasis="data"
+        />
+      </StatGroup>
+
+      <StatGroup min="130px">
+        <StatCell
+          label="EV / $"
+          value={
+            <SemanticValue value={res.ev_per_dollar} display={fmtSignedPct(res.ev_per_dollar * 100, 2)} />
+          }
+          emphasis="data"
+        />
+        <StatCell
+          label="EV on stake"
+          value={
+            <SemanticValue value={res.ev_on_stake} display={fmtUsd(res.ev_on_stake)} />
+          }
+          emphasis="data"
+        />
+        <StatCell
+          label="Expected log-growth"
+          value={
+            <SemanticValue value={res.growth_rate} display={fmtGrowth(res.growth_rate)} />
+          }
+          emphasis="data"
+        />
+        <StatCell
+          label="Bets to double"
+          value={res.doubling_bets !== null ? Math.round(res.doubling_bets).toString() : "—"}
+          sub={res.doubling_bets === null ? "non-positive growth" : "at this fraction"}
+          emphasis="data"
+        />
+        <StatCell label="Decimal odds" value={fmtDec(res.decimal_odds)} emphasis="data" />
+        <StatCell label="Unit size" value={fmtUsd(res.unit_size)} emphasis="data" />
+      </StatGroup>
+
+      {/* Fractional-Kelly multiplier table. */}
+      {res.multiplier_table.length > 0 && (
+        <div style={{ marginTop: "var(--sp-4)" }}>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "var(--fs-meta)",
+              fontWeight: "var(--weight-display)",
+              textTransform: "uppercase",
+              letterSpacing: "var(--tracking-label)",
+              color: "var(--text-2)",
+              marginBottom: "var(--sp-2)",
+            }}
+          >
+            Fractional-Kelly choices
+          </div>
+          <DataTable
+            columns={[
+              {
+                key: "label",
+                header: "Strategy",
+                cell: (r: BankrollRisk["multiplier_table"][number]) =>
+                  `${r.label} (${r.multiplier}×)`,
+              },
+              {
+                key: "fraction",
+                header: "Fraction",
+                align: "right" as const,
+                cell: (r: BankrollRisk["multiplier_table"][number]) => fmtFrac(r.fraction),
+              },
+              {
+                key: "stake",
+                header: "Stake",
+                align: "right" as const,
+                cell: (r: BankrollRisk["multiplier_table"][number]) => fmtUsd(r.stake_currency),
+              },
+              {
+                key: "units",
+                header: "Units",
+                align: "right" as const,
+                cell: (r: BankrollRisk["multiplier_table"][number]) => fmtUnits(r.stake_units),
+              },
+              {
+                key: "growth",
+                header: "Log-growth",
+                align: "right" as const,
+                cell: (r: BankrollRisk["multiplier_table"][number]) => (
+                  <SemanticValue value={r.growth_rate} display={fmtGrowth(r.growth_rate)} />
+                ),
+              },
+              {
+                key: "double",
+                header: "Bets to 2×",
+                align: "right" as const,
+                cell: (r: BankrollRisk["multiplier_table"][number]) =>
+                  r.doubling_bets !== null ? Math.round(r.doubling_bets).toString() : "—",
+              },
+            ]}
+            rows={res.multiplier_table}
+            rowKey={(_, i) => i}
+            caption="Stake + growth at quarter / half / full Kelly"
+          />
+        </div>
+      )}
+
+      {/* Risk of drawdown. */}
+      {res.drawdown.length > 0 && (
+        <div style={{ marginTop: "var(--sp-4)" }}>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "var(--fs-meta)",
+              fontWeight: "var(--weight-display)",
+              textTransform: "uppercase",
+              letterSpacing: "var(--tracking-label)",
+              color: "var(--text-2)",
+              marginBottom: "var(--sp-2)",
+            }}
+          >
+            Risk of drawdown (approximate — never zero)
+          </div>
+          <StatGroup min="130px">
+            {res.drawdown.map((d) => (
+              <StatCell
+                key={d.floor}
+                label={`Touch ${fmtFrac(d.floor)} of roll`}
+                value={fmtProb(d.prob)}
+                color="var(--hold)"
+                emphasis="data"
+              />
+            ))}
+          </StatGroup>
+        </div>
+      )}
+
+      {/* Edge sensitivity. */}
+      {res.edge_sensitivity.length > 0 && (
+        <div style={{ marginTop: "var(--sp-4)" }}>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "var(--fs-meta)",
+              fontWeight: "var(--weight-display)",
+              textTransform: "uppercase",
+              letterSpacing: "var(--tracking-label)",
+              color: "var(--text-2)",
+              marginBottom: "var(--sp-2)",
+            }}
+          >
+            Edge sensitivity — what if the true edge is lower?
+          </div>
+          <DataTable
+            columns={sensColumns}
+            rows={res.edge_sensitivity}
+            rowKey={(_, i) => i}
+            caption="Stake + growth if the true edge is over-estimated"
+          />
+        </div>
+      )}
+
+      {/* Honesty caveats — verbatim from the backend, surfaced prominently. */}
+      {res.caveats.length > 0 && (
+        <Card
+          variant="inset"
+          style={{
+            borderLeft: "3px solid var(--hold)",
+            marginTop: "var(--sp-4)",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: "var(--weight-display)",
+              fontSize: "var(--fs-meta)",
+              textTransform: "uppercase",
+              letterSpacing: "var(--tracking-label)",
+              color: "var(--hold)",
+              marginBottom: "var(--sp-2)",
+            }}
+          >
+            Read this before sizing
+          </div>
+          <ul
+            style={{
+              margin: 0,
+              paddingLeft: "var(--sp-4)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--sp-2)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-meta)",
+              color: "var(--text)",
+              lineHeight: "var(--lh-prose)",
+            }}
+          >
+            {res.caveats.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function ToolsPage() {
@@ -765,6 +1235,7 @@ export default function ToolsPage() {
       >
         <BoostCard />
         <ParlayCard />
+        <BankrollCard />
       </div>
     </div>
   );

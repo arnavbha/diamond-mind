@@ -1332,6 +1332,50 @@ def tools_parlay_ev(body: ParlayEvBody):
         raise HTTPException(422, str(exc))
 
 
+class BankrollRiskBody(_BoostBaseModel):
+    bankroll: float                                   # > 0 (currency)
+    american_odds: int                                # != 0 (0 = missing-price sentinel)
+    fair_prob: float                                  # vig-free fair win prob in (0,1)
+    kelly_multiplier: float = 0.5                     # quarter=0.25, half=0.5, full=1.0
+    unit_size: Optional[float] = None                 # currency/unit; default bankroll*0.01
+    drawdown_floors: Optional[List[float]] = None     # each in (0,1); default [0.5,0.25,0.10]
+    edge_sensitivity_deltas: Optional[List[float]] = None  # each >= 0; default [0.0,0.02,0.04]
+
+
+@app.post("/tools/bankroll", tags=["analysis"])
+def tools_bankroll(body: BankrollRiskBody):
+    """Stateless bankroll / risk sizing calculator. Public, no DB writes.
+
+    Given a bankroll, an American price, and a VIG-FREE fair win probability
+    (seedable from the model's p_shrunk — NOT the price's vig-loaded implied
+    prob), returns the full-Kelly fraction, the recommended stake at a chosen
+    Kelly multiplier (in currency + units), the expected per-bet log-growth and
+    doubling time, an honest drawdown-to-α probability (a clearly-labeled
+    continuous-diffusion APPROXIMATION, never 0%), a quarter/half/full Kelly
+    comparison, and an edge-sensitivity table that re-derives sizing at lower
+    true edges to show that over-betting an over-estimated edge is the real
+    danger. Every output is illustrative given the ASSUMED edge — verification,
+    not a pick. f* <= 0 clamps the stake to 0 with verdict "no bet / -EV".
+
+    422 on: bankroll <= 0, american_odds == 0 (missing-price sentinel), fair_prob
+    outside (0,1), kelly_multiplier outside (0,1], unit_size <= 0, any drawdown
+    floor outside (0,1), or any edge-sensitivity delta < 0.
+    """
+    from app.betting.bankroll import bankroll_risk
+    try:
+        return bankroll_risk(
+            bankroll=body.bankroll,
+            american_odds=body.american_odds,
+            fair_prob=body.fair_prob,
+            kelly_multiplier=body.kelly_multiplier,
+            unit_size=body.unit_size,
+            drawdown_floors=body.drawdown_floors,
+            edge_sensitivity_deltas=body.edge_sensitivity_deltas,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @app.get("/backtest", tags=["analysis"])
 def backtest_range(
     response: Response,
