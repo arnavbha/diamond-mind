@@ -1270,6 +1270,51 @@ def tools_boost_ev(body: BoostEvBody):
         raise HTTPException(422, str(exc))
 
 
+class ParlayLegBody(_BoostBaseModel):
+    american: int
+    opposite_american: Optional[int] = None  # other side of the same market (enables Shin devig)
+    fair_prob: Optional[float] = None         # trusted no-vig fair prob, overrides devig
+    game_tag: Optional[str] = None            # label for same-game correlation detection
+    label: Optional[str] = None               # human description of the leg
+
+
+class ParlayEvBody(_BoostBaseModel):
+    legs: List[ParlayLegBody]                 # min 2 (enforced in parlay_ev -> 422)
+    offered_american: int                     # actual combined parlay price the book offers
+    stake: float = 1.0
+
+
+@app.post("/tools/parlay-ev", tags=["analysis"])
+def tools_parlay_ev(body: ParlayEvBody):
+    """Stateless parlay / same-game-parlay (SGP) checker. Public, no DB writes.
+
+    Exposes how multiplicatively a book stacks its vig across parlay legs. Each
+    leg is devigged independently (Shin two-sided when both sides are supplied,
+    a trusted fair_prob override, or a flagged vig-loaded raw implied as a last
+    resort). The legs' vig-free probs are multiplied UNDER AN INDEPENDENCE
+    ASSUMPTION to get the fair parlay decimal, which is compared to the user's
+    offered price to surface (1) the structural book compounded hold
+    Π(booksum_i)-1 and (2) the EV of the offered parlay (+EV / marginal / -EV).
+
+    Same-game legs (>= 2 sharing a game_tag) are flagged: the independence
+    product is invalid for correlated legs, so a verbatim warning is attached and
+    every derived number is labeled an INDEPENDENCE ESTIMATE. No correlation
+    coefficient or "corrected" price is ever fabricated.
+
+    422 on: < 2 legs, offered_american == 0, any leg american == 0, a leg whose
+    prob cannot be resolved to (0,1), fair_prob outside (0,1), or stake <= 0.
+    """
+    from app.betting.parlay import parlay_ev
+    try:
+        return parlay_ev(
+            legs=[leg.model_dump() for leg in body.legs],
+            offered_american=body.offered_american,
+            stake=body.stake,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @app.get("/backtest", tags=["analysis"])
 def backtest_range(
     response: Response,

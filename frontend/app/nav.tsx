@@ -20,6 +20,7 @@ const PRIMARY_LINKS: NavLink[] = [
 // popover on mobile (still accessible, just out of the way).
 const SECONDARY_LINKS: NavLink[] = [
   { href: "/verify", label: "Verifier" },
+  { href: "/tools", label: "Tools" },
   { href: "/admin", label: "Admin" },
 ];
 

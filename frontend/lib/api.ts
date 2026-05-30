@@ -339,6 +339,72 @@ export type BoostEv = {
   verdict: "+EV" | "marginal" | "-EV";
 };
 
+// ── /tools/parlay-ev — stateless parlay / same-game-parlay fair-value checker ─
+// Compares an OFFERED parlay price to the fair price under the INDEPENDENCE
+// assumption (product of each leg's vig-free fair prob). The headline reveal is
+// the COMPOUNDED HOLD the book takes on the parlay — far larger than on a single
+// bet. When 2+ legs share a game_tag the independence product is NOT valid;
+// the backend returns a verbatim correlation_warning and we surface it without
+// inventing any correlation-adjusted number. Verification framing only.
+export type ParlayLegBody = {
+  american: number;            // required, != 0
+  opposite_american?: number | null;
+  fair_prob?: number | null;   // in (0,1) if supplied
+  game_tag?: string | null;
+  label?: string | null;
+};
+
+export type ParlayEvBody = {
+  legs: ParlayLegBody[];       // >= 2
+  offered_american: number;    // != 0
+  stake?: number;              // default 1.0
+};
+
+export type ParlayLegResult = {
+  label: string | null;
+  american: number;
+  opposite_american: number | null;
+  game_tag: string | null;
+  fair_prob: number;
+  prob_source: "supplied" | "devig" | "raw_implied";
+  vig_loaded: boolean;
+  leg_hold_pct: number | null;
+  fair_american: number | null;
+};
+
+export type ParlayCorrelatedGroup = {
+  game_tag: string;
+  leg_count: number;
+  leg_indices: number[];
+};
+
+export type ParlayEv = {
+  n_legs: number;
+  legs: ParlayLegResult[];
+  fair_parlay_prob: number;
+  fair_parlay_decimal: number;
+  fair_parlay_american: number | null;
+  offered_american: number;
+  offered_decimal: number;
+  offered_implied_parlay_prob: number;
+  parlay_hold_pct: number;          // headline; offered_implied / fair_prob − 1, %
+  parlay_hold_pct_raw: number;      // unclamped, may be negative on a boosted/stale offer
+  book_compounded_hold_pct: number | null; // structural Π(booksum_i)−1, %; null if any leg one-sided
+  single_leg_hold_avg_pct: number | null;
+  ev_units: number;
+  ev_pct: number;
+  stake: number;
+  breakeven_prob: number;
+  edge_vs_breakeven: number;
+  verdict: "+EV" | "marginal" | "-EV";
+  verdict_caveat: string | null;
+  fair_basis: "independence";
+  any_vig_loaded: boolean;
+  correlated: boolean;
+  correlated_groups: ParlayCorrelatedGroup[];
+  correlation_warning: string | null;
+};
+
 /** Live monitoring alert payload — surfaced on slate cards / detail panel.
  *  Verification language only; never a "pick". */
 export type LiveAlertPayload = {
@@ -589,6 +655,9 @@ export const api = {
       boost_pct: boostPct,
       fair_prob: fairProb,
     }),
+  // Stateless parlay / SGP checker. >=2 legs (each american != 0); offered != 0.
+  // Returns the compounded book hold + independence-basis EV. Never a pick.
+  parlayEv: (params: ParlayEvBody) => post<ParlayEv>("/tools/parlay-ev", params),
   // ── Tracker ──────────────────────────────────────────────────────────────
   trackerBets: (params?: { date_from?: string; date_to?: string; market?: string; game_date?: string }) => {
     const qs = new URLSearchParams();
