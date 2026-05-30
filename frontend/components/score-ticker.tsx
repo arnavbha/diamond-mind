@@ -8,7 +8,19 @@
  * Pinned just below the nav, visible on every page.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+
+// Hydration-safe mount flag. Server snapshot is always false; the client
+// snapshot is true, so the first client render after hydration flips it
+// without a synchronous setState-in-effect.
+const emptySubscribe = () => () => {};
+function useMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -256,7 +268,7 @@ function Dot() {
 
 export function ScoreTicker() {
   const [games, setGames] = useState<TickerGame[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
   // The horizontal scroll is a decorative infinite animation. Gate it on the
   // motion budget (reduced-motion / Save-Data / coarse pointer) and pause it
   // when the tab is hidden. When paused, the strip is fully readable (it just
@@ -264,16 +276,20 @@ export function ScoreTicker() {
   const [scrolling, setScrolling] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function refresh() {
-    const result = await loadGames(todayET());
-    setGames(result);
-  }
-
   useEffect(() => {
-    setMounted(true);
+    let active = true;
+    // Async fetch — setState only runs after the await resolves (and only while
+    // still mounted), so it is not a synchronous setState-in-effect.
+    async function refresh() {
+      const result = await loadGames(todayET());
+      if (active) setGames(result);
+    }
     void refresh();
     intervalRef.current = setInterval(() => void refresh(), 60_000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => {
+      active = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, []);
 
   // Decide whether the scroll animation may run, and pause on tab-hidden.

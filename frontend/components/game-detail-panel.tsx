@@ -874,41 +874,46 @@ const SECTION_TABS = [
 ];
 
 export function GameDetailPanel({ gameId, date }: { gameId: number; date: string }) {
-  const [ctx, setCtx] = useState<GameContext | null>(null);
-  const [homeBatting, setHomeBatting] = useState<TeamBatting | null>(null);
-  const [awayBatting, setAwayBatting] = useState<TeamBatting | null>(null);
-  const [live, setLive] = useState<LiveState | null>(null);
-  const [fairValue, setFairValue] = useState<FairValueResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [ctxFailed, setCtxFailed] = useState(false);
-  // Best-effort sub-resources arrive after ctx — track readiness for per-section skeletons.
-  const [fairLoading, setFairLoading] = useState(true);
+  // All loaded resources are stamped with the request key they belong to. When
+  // gameId/date changes, the key no longer matches and we treat everything as
+  // freshly-loading (and ignore any in-flight stale responses) during render —
+  // no synchronous setState-in-effect needed to clear the previous game.
+  const reqKey = `${gameId}|${date}`;
+  const [ctxState, setCtxState] = useState<{ key: string; ctx: GameContext | null; failed: boolean } | null>(null);
+  const [homeBattingState, setHomeBattingState] = useState<{ key: string; data: TeamBatting | null } | null>(null);
+  const [awayBattingState, setAwayBattingState] = useState<{ key: string; data: TeamBatting | null } | null>(null);
+  const [liveState, setLiveState] = useState<{ key: string; data: LiveState | null } | null>(null);
+  const [fairState, setFairState] = useState<{ key: string; data: FairValueResult | null; done: boolean } | null>(null);
   const [section, setSection] = useState<SectionKey>("matchup");
   const tabsId = "game-detail-tabs";
 
   useEffect(() => {
-    setLoading(true);
-    setCtxFailed(false);
-    setCtx(null);
-    setLive(null);
-    setFairValue(null);
-    setFairLoading(true);
-    setHomeBatting(null);
-    setAwayBatting(null);
+    const key = `${gameId}|${date}`;
     api.context(gameId, date).then((c) => {
-      setCtx(c);
-      setLoading(false);
-      if (!c) setCtxFailed(true);
+      setCtxState({ key, ctx: c, failed: !c });
       if (c) {
-        api.batting(c.home_team_id, date).then(d => setHomeBatting(d));
-        api.batting(c.away_team_id, date).then(d => setAwayBatting(d));
+        api.batting(c.home_team_id, date).then(d => setHomeBattingState({ key, data: d }));
+        api.batting(c.away_team_id, date).then(d => setAwayBattingState({ key, data: d }));
       }
     });
     // Live monitoring is best-effort; default to "No live signal" on failure.
-    api.live(gameId).then(setLive).catch(() => setLive(null));
+    api.live(gameId).then(d => setLiveState({ key, data: d })).catch(() => setLiveState({ key, data: null }));
     // Beat-the-Book fair value (no-vig + hold). Best-effort; null hides the panel.
-    api.fairValue(gameId).then(setFairValue).catch(() => setFairValue(null)).finally(() => setFairLoading(false));
+    api.fairValue(gameId)
+      .then(d => setFairState({ key, data: d, done: true }))
+      .catch(() => setFairState({ key, data: null, done: true }));
   }, [gameId, date]);
+
+  // Derive per-resource values, scoped to the current request key. A stale
+  // entry (key mismatch) reads as not-yet-loaded for this game.
+  const ctx = ctxState?.key === reqKey ? ctxState.ctx : null;
+  const ctxFailed = ctxState?.key === reqKey ? ctxState.failed : false;
+  const loading = !(ctxState?.key === reqKey);
+  const homeBatting = homeBattingState?.key === reqKey ? homeBattingState.data : null;
+  const awayBatting = awayBattingState?.key === reqKey ? awayBattingState.data : null;
+  const live = liveState?.key === reqKey ? liveState.data : null;
+  const fairValue = fairState?.key === reqKey ? fairState.data : null;
+  const fairLoading = !(fairState?.key === reqKey && fairState.done);
 
   if (loading) return (
     <Loading label="Loading game detail">

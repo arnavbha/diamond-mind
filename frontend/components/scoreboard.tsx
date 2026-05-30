@@ -303,27 +303,34 @@ function GameTile({ game }: { game: GameScore }) {
 // ---------------------------------------------------------------------------
 
 export function Scoreboard({ date }: { date: string }) {
-  const [games, setGames] = useState<GameScore[] | null>(null);
+  // Loaded games are tagged with the date they belong to. When `date` changes,
+  // the tag no longer matches and we treat the slate as still-loading (skeleton)
+  // during render — no synchronous setState-in-effect needed to clear it.
+  const [loaded, setLoaded] = useState<{ date: string; games: GameScore[] } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function load() {
-    const scores = await fetchScores(date);
-    setGames(scores);
-    setLastUpdated(new Date());
-  }
-
   useEffect(() => {
-    setGames(null);
+    let active = true;
+    // Async fetch — setState only runs after the await resolves (and only while
+    // still mounted), so it is not a synchronous setState-in-effect.
+    async function load() {
+      const scores = await fetchScores(date);
+      if (!active) return;
+      setLoaded({ date, games: scores });
+      setLastUpdated(new Date());
+    }
     void load();
 
     // Refresh every 30s so live scores stay reasonably current
     timerRef.current = setInterval(() => void load(), 30_000);
     return () => {
+      active = false;
       if (timerRef.current) clearInterval(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
+
+  const games = loaded && loaded.date === date ? loaded.games : null;
 
   if (games === null) {
     return (

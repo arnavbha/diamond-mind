@@ -81,10 +81,14 @@ function NavOverflow({ path }: { path: string }) {
   }, [open]);
 
   // Close on route change too — the click handler on each link sets open=false
-  // proactively, but this catches navigations from elsewhere.
-  useEffect(() => {
+  // proactively, but this catches navigations from elsewhere. Adjusting state
+  // during render (React's recommended pattern) instead of in an effect avoids
+  // a wasted render and the setState-in-effect cascade.
+  const [prevPath, setPrevPath] = useState(path);
+  if (path !== prevPath) {
+    setPrevPath(path);
     setOpen(false);
-  }, [path]);
+  }
 
   // Focus management: when the menu opens, move focus to the first item. When
   // it closes, restore focus to the trigger so keyboard users aren't stranded.
