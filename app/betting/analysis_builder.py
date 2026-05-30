@@ -204,6 +204,80 @@ def _starter_form_or_announced(
     )
 
 
+def _latest_ml_odds_for_abbr(
+    db: Session,
+    game_id: int,
+    target_abbr: Optional[str],
+    preferred_bookmaker: Optional[str],
+) -> Optional[int]:
+    """Most-recent captured moneyline american price for `target_abbr`, or None.
+
+    Resolves each candidate snapshot's `selection` to a normalized abbr instead
+    of substring-matching the team's DB nickname. This is required because
+    `odds_snapshots.selection` is provider-dependent (writers:
+    app/ingestion/espn_odds.py, app/ingestion/odds_api.py):
+      - ESPN writes the lowercase ABBREVIATION ('ari'), so a substring ilike on
+        the nickname ('Diamondbacks' / 'D-backs') matches ZERO ESPN rows.
+      - the-odds-api writes the lowercase FULL team name ('arizona diamondbacks').
+    Same abbr-resolution approach as routes._latest_away_ml_odds /
+    clv._resolve_ml. `market` is the canonical singular 'moneyline'.
+
+    Bookmaker precedence: prefer `preferred_bookmaker`, then any book.
+    """
+    if target_abbr is None:
+        return None
+
+    from sqlalchemy import desc as _desc
+    from app.models.odds import OddsSnapshotRow
+    from app.chat.classifier import TEAM_NAMES, ALL_ABBRS, ABBR_NORM
+
+    target = ABBR_NORM.get(target_abbr, target_abbr)
+
+    def _resolve_to_abbr(selection: str) -> Optional[str]:
+        if not selection:
+            return None
+        s = selection.strip()
+        up = s.upper()
+        if up in ALL_ABBRS:
+            return ABBR_NORM.get(up, up)
+        low = s.lower()
+        if low in TEAM_NAMES:
+            return TEAM_NAMES[low]
+        for name, abbr in TEAM_NAMES.items():
+            if name in low or low in name:
+                return abbr
+        return None
+
+    base_where = [
+        OddsSnapshotRow.game_id == game_id,
+        OddsSnapshotRow.market == "moneyline",
+    ]
+
+    def _scan(rows) -> Optional[int]:
+        for row in rows:
+            abbr = _resolve_to_abbr(row.selection)
+            if abbr is None:
+                continue
+            if ABBR_NORM.get(abbr, abbr) == target:
+                return row.american_odds
+        return None
+
+    preferred_rows = db.execute(
+        select(OddsSnapshotRow)
+        .where(*base_where, OddsSnapshotRow.bookmaker == preferred_bookmaker)
+        .order_by(_desc(OddsSnapshotRow.captured_at))
+    ).scalars().all()
+    hit = _scan(preferred_rows)
+    if hit is not None:
+        return hit
+    any_rows = db.execute(
+        select(OddsSnapshotRow)
+        .where(*base_where)
+        .order_by(_desc(OddsSnapshotRow.captured_at))
+    ).scalars().all()
+    return _scan(any_rows)
+
+
 def build_game_analysis(game_id: int, as_of: date, db: Session):
     """Load all data for a game and return a GameAnalysis dataclass (or None).
 
@@ -368,38 +442,34 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
         return (as_of - last).days
 
     # Fetch actual odds if available — prefer DraftKings, fall back to any bookmaker.
-    # Selections are stored as lowercased team names from The Odds API (e.g. "new york mets"),
-    # so we match by substring against the team's DB name rather than "home"/"away".
+    #
+    # Moneyline `selection` is provider-dependent and CANNOT be matched by a
+    # substring of the team's DB nickname:
+    #   - ESPN (app/ingestion/espn_odds.py) writes the lowercase ABBREVIATION
+    #     ('ari'), so ilike('%diamondbacks%') / ilike('%d-backs%') matches ZERO rows.
+    #   - The Odds API (app/ingestion/odds_api.py) writes the lowercase FULL team
+    #     name ('arizona diamondbacks'), which the DB nickname ('Diamondbacks')
+    #     is not always a clean substring of either.
+    # So we resolve each candidate snapshot's selection to a normalized abbr (the
+    # same approach as routes._latest_away_ml_odds / clv._resolve_ml) and match it
+    # against the team's own abbr. Totals are encoded canonically as 'over'/'under'.
     from app.models.odds import OddsSnapshotRow
+    from app.chat.classifier import ABBR_NORM
     from sqlalchemy import desc as _desc
     _preferred = get_settings().preferred_bookmaker
 
-    def _team_name_fragment(team_id: int) -> str:
+    def _team_abbr(team_id: int) -> Optional[str]:
         t = db.get(Team, team_id)
-        return t.name.lower() if t else ""
+        if t is None:
+            return None
+        return ABBR_NORM.get(t.abbr, t.abbr)
 
-    _home_frag = _team_name_fragment(home_id)
-    _away_frag = _team_name_fragment(away_id)
+    _home_abbr = _team_abbr(home_id)
+    _away_abbr = _team_abbr(away_id)
 
     def _get_ml_odds(side: str) -> Optional[int]:
-        frag = _home_frag if side == "home" else _away_frag
-        if not frag:
-            return None
-        base_where = [
-            OddsSnapshotRow.game_id == game_id,
-            OddsSnapshotRow.market == "moneyline",
-            OddsSnapshotRow.selection.ilike(f"%{frag}%"),
-        ]
-        row = db.execute(
-            select(OddsSnapshotRow).where(*base_where, OddsSnapshotRow.bookmaker == _preferred)
-            .order_by(_desc(OddsSnapshotRow.captured_at)).limit(1)
-        ).scalar_one_or_none()
-        if row is None:
-            row = db.execute(
-                select(OddsSnapshotRow).where(*base_where)
-                .order_by(_desc(OddsSnapshotRow.captured_at)).limit(1)
-            ).scalar_one_or_none()
-        return row.american_odds if row else None
+        target = _home_abbr if side == "home" else _away_abbr
+        return _latest_ml_odds_for_abbr(db, game_id, target, _preferred)
 
     def _get_total_odds(selection: str) -> tuple[Optional[float], Optional[int]]:
         """Return (line, american_odds) for the given total selection ('over'/'under')."""

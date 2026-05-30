@@ -1800,6 +1800,61 @@ def slate(
     return [output_map[m["game_id"]] for m in game_meta if m["game_id"] in output_map]
 
 
+def _latest_away_ml_odds(db: Session, game_id: int, away_abbr: str) -> Optional[int]:
+    """Most-recent captured AWAY moneyline american price for a game, or None.
+
+    Used by auto-track to tag the away-side BetRecord with the real captured
+    market price instead of the analyzer's modeled ml_american_odds.
+
+    Canonical odds_snapshots encoding (writers: app/ingestion/espn_odds.py,
+    app/ingestion/odds_api.py):
+      - market == 'moneyline'  (NOT 'h2h' — that is a provider input key that is
+        normalized to 'moneyline' before any write)
+      - ML selection is a team token that is provider-dependent: ESPN writes the
+        lowercase ABBREVIATION ('ari'); the-odds-api writes the lowercase FULL
+        team name ('arizona diamondbacks').
+
+    We therefore resolve each candidate snapshot's selection to a normalized abbr
+    (the same approach as _latest_odds_by_game / clv._resolve_ml) and pick the most
+    recent row whose resolved abbr equals the away team. A naive substring ilike on
+    Team.name (the nickname) would silently miss the ESPN abbreviation encoding.
+    """
+    from app.models.odds import OddsSnapshotRow
+    from app.chat.classifier import TEAM_NAMES, ALL_ABBRS, ABBR_NORM
+
+    def _resolve_to_abbr(selection: str) -> Optional[str]:
+        if not selection:
+            return None
+        s = selection.strip()
+        up = s.upper()
+        if up in ALL_ABBRS:
+            return up
+        low = s.lower()
+        if low in TEAM_NAMES:
+            return TEAM_NAMES[low]
+        for name, abbr in TEAM_NAMES.items():
+            if name in low or low in name:
+                return abbr
+        return None
+
+    target = ABBR_NORM.get(away_abbr, away_abbr)
+    rows = db.execute(
+        select(OddsSnapshotRow.selection, OddsSnapshotRow.american_odds)
+        .where(
+            OddsSnapshotRow.game_id == game_id,
+            OddsSnapshotRow.market == "moneyline",
+        )
+        .order_by(OddsSnapshotRow.captured_at.desc())
+    ).all()
+    for selection, odds in rows:
+        abbr = _resolve_to_abbr(selection)
+        if abbr is None:
+            continue
+        if ABBR_NORM.get(abbr, abbr) == target:
+            return odds
+    return None
+
+
 def _latest_odds_by_game(
     db: Session,
     game_ids: list[int],
@@ -2939,18 +2994,18 @@ def auto_track(
                     odds = analysis.get("ml_american_odds", 0)
                 else:
                     selection = away_abbr
-                    away_team = db.get(Team, game.away_team_id)
-                    away_frag = away_team.name.lower() if away_team else away_abbr.lower()
-                    away_odds_row = db.execute(
-                        select(OddsSnapshotRow.american_odds)
-                        .where(
-                            OddsSnapshotRow.game_id == game.id,
-                            OddsSnapshotRow.market == "h2h",
-                            OddsSnapshotRow.selection.ilike(f"%{away_frag}%"),
-                        )
-                        .order_by(OddsSnapshotRow.captured_at.desc())
-                        .limit(1)
-                    ).scalar_one_or_none()
+                    # Resolve the away moneyline price from captured odds_snapshots.
+                    # Canonical market string is 'moneyline' (writers: espn_odds.py /
+                    # odds_api._normalize_market). 'h2h' is a PROVIDER input key that is
+                    # normalized to 'moneyline' before any write, so it matches ZERO
+                    # rows in odds_snapshots. Resolve the away selection the same robust
+                    # way _latest_odds_by_game does (abbr-normalized), because ESPN writes
+                    # selection as a lowercase abbreviation ('ari') while odds_api writes
+                    # the lowercase full team name — a substring ilike on Team.name (the
+                    # nickname) would miss the ESPN encoding entirely.
+                    away_odds_row = _latest_away_ml_odds(
+                        db, game.id, away_abbr,
+                    )
                     odds = away_odds_row if away_odds_row is not None else analysis.get("ml_american_odds", 0)
 
                 units = _kelly_units(analysis.get("q_kelly_sized", 0.01))
