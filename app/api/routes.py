@@ -3609,6 +3609,23 @@ def live_tick(
         db.rollback()
         summary["live_error"] = str(exc)[:200]
 
+    # 4d. Closing-odds capture — land a real snapshot in the final <=15 min
+    # before first pitch so it BECOMES the close (clv.py selects the latest
+    # pre-pitch row). Fully isolated: own try/except + rollback + single commit,
+    # so an ESPN hiccup here can never redden schedule refresh, live monitoring,
+    # or settle. Bounded + per-game dedup so 60s ticks don't pile up rows.
+    try:
+        from app.ingestion.closing_odds import capture_closing_odds
+
+        cov = capture_closing_odds(db, datetime.now(timezone.utc), today=today)
+        db.commit()
+        summary["close_capture"] = cov
+        if cov.get("snapshots_written", 0) > 0:
+            _cache_invalidate_all()
+    except Exception as exc:
+        db.rollback()
+        summary["close_capture_error"] = str(exc)[:200]
+
     # 2. Settle today's bets that just reached terminal
     try:
         settle_result = _auto_settle_impl(db, today)
@@ -3648,6 +3665,38 @@ def live_tick(
                 summary["post_final_kicked_off"] = "already_done_today"
 
     return summary
+
+
+@app.post("/admin/capture-closing-odds", tags=["admin"])
+def capture_closing_odds_endpoint(
+    game_date: str | None = None,
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Manually trigger the closing-odds capture (same routine as tick step 4d).
+
+    For out-of-band / cron-out-of-band triggering and for backfilling a near-
+    pitch slate. Optionally target a specific slate via ?game_date=YYYY-MM-DD
+    (defaults to today ET). Returns the coverage counts dict.
+    """
+    from app.ingestion.closing_odds import capture_closing_odds
+
+    target = _today_et()
+    if game_date:
+        try:
+            target = date.fromisoformat(game_date)
+        except ValueError:
+            raise HTTPException(400, f"Invalid game_date: {game_date}")
+
+    try:
+        cov = capture_closing_odds(db, datetime.now(timezone.utc), today=target)
+        db.commit()
+        if cov.get("snapshots_written", 0) > 0:
+            _cache_invalidate_all()
+        return cov
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(500, f"Closing capture failed: {str(exc)[:200]}")
 
 
 # ---------------------------------------------------------------------------
