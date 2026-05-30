@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState, type FairValueResult, type BoostEv } from "@/lib/api";
+import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState, type FairValueResult, type BoostEv, type Movement } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
@@ -680,6 +680,164 @@ function BoostEvWidget({ fv }: { fv: FairValueResult }) {
   );
 }
 
+// ── Line movement (single-book net move, open → close) ──────────────────────
+// Verification readout, NOT cross-book "steam". Reports one bookmaker's net move
+// between the opening and latest pre-first-pitch snapshots, and whether the
+// market moved toward or away from the model's leaned side. Honest empty state
+// when fewer than two pre-pitch snapshots exist. No fabricated numbers.
+
+function movementLabelColor(label: Movement["label"]): string {
+  if (label === "confirmation") return "var(--green)";
+  if (label === "fade") return "var(--red)";
+  return "var(--text-3)"; // flat / null
+}
+
+function movementSideTag(m: Movement, homeAbbr: string, awayAbbr: string): string | null {
+  switch (m.side) {
+    case "home": return homeAbbr;
+    case "away": return awayAbbr;
+    case "over": return "Over";
+    case "under": return "Under";
+    default: return null;
+  }
+}
+
+function fmtSignedPct(v: number | null | undefined, digits = 1): string {
+  if (v == null) return "—";
+  const pct = v * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(digits)} pts`;
+}
+
+function fmtSignedNum(v: number | null | undefined, digits = 1): string {
+  if (v == null) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}`;
+}
+
+/** One market's net open → close move with toward/away + confirmation/fade. */
+function MovementMarketRow({ label, m, homeAbbr, awayAbbr }: {
+  label: string;
+  m: Movement | null | undefined;
+  homeAbbr: string;
+  awayAbbr: string;
+}) {
+  const usable = m && (m.source === "live" || m.source === "one_sided")
+    && m.open?.american != null && m.close?.american != null;
+
+  if (!m || !usable) {
+    const why = !m ? "not available"
+      : m.source === "single_snapshot" ? "only one pre-first-pitch snapshot captured — no movement to measure"
+      : m.source === "no_first_pitch" ? "first-pitch time unknown — cannot bound pre-pitch snapshots"
+      : m.source === "no_book_snapshots" ? "no snapshots captured for this book"
+      : "no movement data";
+    return (
+      <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500, marginBottom: "2px" }}>{label}</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>{why}</div>
+      </div>
+    );
+  }
+
+  const color = movementLabelColor(m.label);
+  const sideTag = movementSideTag(m, homeAbbr, awayAbbr);
+  const dirWord = m.agreement === "toward" ? "toward"
+    : m.agreement === "away" ? "away from"
+    : "flat";
+  const lineMoved = m.line_delta != null && m.line_delta !== 0
+    && m.open?.line != null && m.close?.line != null;
+  // one_sided means we could not devig; the prob delta is a raw price-implied
+  // approximation, so we say so rather than implying a clean no-vig number.
+  const probApprox = m.source === "one_sided";
+
+  return (
+    <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
+        <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>{label}</span>
+        {m.label && (
+          <span
+            title="Whether the book's net move went toward or away from the model's leaned side"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em" }}
+          >
+            {m.label}
+          </span>
+        )}
+      </div>
+
+      {/* Open → close prices (and total line when it moved) */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "14px", marginTop: "6px", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ color: "var(--text-3)", fontSize: "10px" }}>price</span>
+          <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtAmerican(m.open.american)}</span>
+          <span style={{ color: "var(--text-3)" }}>→</span>
+          <span style={{ color: "var(--text)", fontWeight: 700 }}>{fmtAmerican(m.close.american)}</span>
+          <span style={{ color: "var(--text-3)", fontSize: "10px" }}>({fmtSignedNum(m.american_delta, 0)})</span>
+        </span>
+        {lineMoved && (
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>total</span>
+            <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{m.open.line}</span>
+            <span style={{ color: "var(--text-3)" }}>→</span>
+            <span style={{ color: "var(--text)", fontWeight: 700 }}>{m.close.line}</span>
+            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>({fmtSignedNum(m.line_delta, 1)})</span>
+          </span>
+        )}
+      </div>
+
+      {/* Vig-free implied-prob delta for the measured side */}
+      <div style={{ marginTop: "5px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)" }}>
+        <span style={{ color: "var(--text-3)" }}>
+          {probApprox ? "implied-prob Δ (price-implied)" : "vig-free implied-prob Δ"}
+          {sideTag ? ` · ${sideTag}` : ""}
+        </span>{" "}
+        <span style={{ color: "var(--text)", fontWeight: 600 }}>
+          {m.devig_prob_delta != null ? fmtSignedPct(m.devig_prob_delta) : (lineMoved ? "see line move" : "—")}
+        </span>
+      </div>
+
+      {/* Direction vs model side */}
+      {sideTag && m.agreement && (
+        <div style={{ marginTop: "4px", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+          <span style={{ color: "var(--text-3)" }}>market moved</span>{" "}
+          <span style={{ color, fontWeight: 600 }}>{dirWord} {sideTag}</span>
+        </div>
+      )}
+
+      {m.bookmaker && (
+        <div style={{ marginTop: "4px", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)" }}>
+          {m.bookmaker}
+          {m.open.captured_at && m.close.captured_at ? " · open → latest pre-first-pitch" : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Single-book net line movement (open → close) across both markets. */
+function MovementPanel({ fv }: { fv: FairValueResult }) {
+  const mlMove = fv.moneyline.movement ?? null;
+  const totMove = fv.total.movement ?? null;
+  // Nothing to render if neither market carries a movement object at all.
+  if (!mlMove && !totMove) return null;
+
+  const homeAbbr = fv.home_team_abbr ?? "HOME";
+  const awayAbbr = fv.away_team_abbr ?? "AWAY";
+  const totLine = fv.total.offered?.line;
+
+  return (
+    <div style={{ marginBottom: "24px" }}>
+      <div className="section-label">Line movement — open → close (single book)</div>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", margin: "4px 0 12px", lineHeight: 1.45 }}>
+        Net move for one bookmaker between the opening and the latest pre-first-pitch snapshot —
+        and whether it went toward or away from the model&apos;s leaned side. This is single-book
+        line movement, not a cross-book market read; the price delta is for context only.
+      </div>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+        <MovementMarketRow label="Moneyline" m={mlMove} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
+        <MovementMarketRow label={`Total${totLine != null ? ` (${totLine})` : ""}`} m={totMove} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
+      </div>
+    </div>
+  );
+}
+
 /** Fair value (no-vig) + book hold per market, plus the boost-EV widget. */
 function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
   const ml = fv.moneyline;
@@ -842,6 +1000,9 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
 
       {/* Beat the Book — no-vig fair value, book hold, profit-boost EV calculator */}
       {fairValue && <BeatTheBookPanel fv={fairValue} />}
+
+      {/* Line movement — single-book net move (open → close) toward/away the model side */}
+      {fairValue && <MovementPanel fv={fairValue} />}
     </div>
   );
 }

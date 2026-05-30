@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis } from "@/lib/api";
+import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis, type Movement } from "@/lib/api";
 import { teamLogoUrl } from "@/lib/team-logos";
 import { DitherHeader } from "@/components/dither-header";
 import { GameDetailPanel } from "@/components/game-detail-panel";
@@ -289,6 +289,92 @@ function FairChip({ label, fairAway, fairHome, awayTag, homeTag, holdPct }: {
   );
 }
 
+// Resolve the side the movement deltas are measured FOR into a display tag.
+function movementSideTag(m: Movement, homeAbbr: string, awayAbbr: string): string | null {
+  switch (m.side) {
+    case "home": return homeAbbr;
+    case "away": return awayAbbr;
+    case "over": return "Over";
+    case "under": return "Under";
+    default: return null; // "market" or null → no directional side
+  }
+}
+
+// Compact net line-movement chip (single-book, open → close). NOT cross-book
+// "steam" — this is one bookmaker's net move between the opening and latest
+// pre-first-pitch snapshots. Green = market moved TOWARD the model side
+// (confirmation), red = AWAY (fade), muted = neutral / no usable movement.
+// Honest empty state: renders a muted note when fewer than two pre-pitch
+// snapshots exist. american_delta is display only; never fabricates numbers.
+function MovementChip({ label, m, homeAbbr, awayAbbr }: {
+  label: string;
+  m: Movement | null | undefined;
+  homeAbbr: string;
+  awayAbbr: string;
+}) {
+  if (!m) return null;
+
+  const hasMove = m.source === "live" || m.source === "one_sided";
+  const openA = m.open?.american;
+  const closeA = m.close?.american;
+  const haveEndpoints = openA != null && closeA != null;
+
+  // Honest empty state when there is no usable two-snapshot movement.
+  if (!hasMove || !haveEndpoints) {
+    const why =
+      m.source === "single_snapshot" ? "one snapshot only"
+      : m.source === "no_first_pitch" ? "no first-pitch time"
+      : "no movement data";
+    return (
+      <span style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--text-3)" }}>
+        <span style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label} line</span>
+        <span style={{ color: "var(--text-3)" }}>{why}</span>
+      </span>
+    );
+  }
+
+  const color =
+    m.agreement === "toward" ? "var(--green)"
+    : m.agreement === "away" ? "var(--red)"
+    : "var(--text-3)"; // neutral / no lean
+
+  const sideTag = movementSideTag(m, homeAbbr, awayAbbr);
+  const dirWord =
+    m.agreement === "toward" ? "toward"
+    : m.agreement === "away" ? "away from"
+    : null;
+
+  // Totals: prefer the line move (e.g. 8.5 → 9.0) when present.
+  const lineMoved = m.line_delta != null && m.line_delta !== 0
+    && m.open?.line != null && m.close?.line != null;
+
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--text-3)" }}>
+      <span style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label} line</span>
+      {lineMoved ? (
+        <span style={{ color: "var(--text-2)", fontWeight: 600 }}>
+          {m.open!.line} → {m.close!.line}
+        </span>
+      ) : (
+        <span style={{ color: "var(--text-2)", fontWeight: 600 }}>
+          {fmtOdds(openA)} → {fmtOdds(closeA)}
+        </span>
+      )}
+      {dirWord && sideTag ? (
+        <>
+          <span style={{ color: "var(--border-2)" }}>·</span>
+          <span style={{ color, fontWeight: 600 }}>{dirWord} {sideTag}</span>
+        </>
+      ) : (
+        <>
+          <span style={{ color: "var(--border-2)" }}>·</span>
+          <span style={{ color: "var(--text-3)", fontWeight: 600 }}>flat</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 function LiveOddsRow({ game }: { game: SlateGame }) {
   const odds = game.live_odds;
   if (!odds) return null;
@@ -297,6 +383,12 @@ function LiveOddsRow({ game }: { game: SlateGame }) {
   const tot = odds.total;
   const mlFair = odds.moneyline?.fair ?? null;
   const totFair = tot?.fair ?? null;
+  const mlMove = odds.moneyline?.movement ?? null;
+  const totMove = tot?.movement ?? null;
+  // Only surface a movement row when there's a real net move to show (avoid a
+  // wall of "no movement data" notes on every card pre-open).
+  const mlMoveShow = mlMove && (mlMove.source === "live" || mlMove.source === "one_sided");
+  const totMoveShow = totMove && (totMove.source === "live" || totMove.source === "one_sided");
   const hasAnything = awayML != null || homeML != null || tot;
   if (!hasAnything) return null;
   return (
@@ -369,6 +461,19 @@ function LiveOddsRow({ game }: { game: SlateGame }) {
               fairHome={totFair.under_odds}
               holdPct={totFair.hold_pct}
             />
+          )}
+        </div>
+      )}
+      {/* Net line movement (single-book, open → close). Only shown when a real
+          two-snapshot move exists; toward/away is the server's call vs the
+          model side. NOT cross-book steam. */}
+      {(mlMoveShow || totMoveShow) && (
+        <div style={{ flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "center" }}>
+          {mlMoveShow && (
+            <MovementChip label="ML" m={mlMove} homeAbbr={game.home_team_abbr} awayAbbr={game.away_team_abbr} />
+          )}
+          {totMoveShow && (
+            <MovementChip label="O/U" m={totMove} homeAbbr={game.home_team_abbr} awayAbbr={game.away_team_abbr} />
           )}
         </div>
       )}

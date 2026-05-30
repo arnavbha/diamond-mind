@@ -277,6 +277,41 @@ export type FairTotal = {
   shin_z?: number;
 };
 
+// ── Line movement (single-book net move, open → close) ──────────────────────
+// NOT cross-book "steam": our odds are effectively single-book (DraftKings), so
+// this is the NET move for one bookmaker between the opening pre-first-pitch
+// snapshot and the latest pre-first-pitch snapshot. `american_delta` is DISPLAY
+// ONLY; the toward/away decision is made server-side on `devig_prob_delta`
+// (or `line_delta` for totals). Additive — older payloads omit `movement`.
+//   source: "live"               → two real pre-pitch snapshots, deltas valid
+//           "single_snapshot"    → only one pre-pitch snapshot (no movement)
+//           "one_sided"          → could not devig (raw price-implied delta only)
+//           "no_book_snapshots"  → no snapshots for this book/market
+//           "no_first_pitch"     → game time unknown, cannot bound pre-pitch
+export type MovementEndpoint = {
+  american: number | null;
+  line: number | null;
+  captured_at: string | null;
+};
+
+export type Movement = {
+  source: "live" | "single_snapshot" | "one_sided" | "no_book_snapshots" | "no_first_pitch";
+  bookmaker: string | null;
+  open: MovementEndpoint;
+  close: MovementEndpoint;
+  // The leaned side the deltas are measured FOR. "market" when the lean is
+  // PASS/None (deltas reported for the home/over reference side, no agreement).
+  side: "home" | "away" | "over" | "under" | "market" | null;
+  american_delta: number | null;   // close − open. DISPLAY ONLY — never the decision.
+  devig_prob_delta: number | null;  // leaned-side Shin vig-free close − open; raw price-implied when source=="one_sided"; null on a dominant totals line move
+  line_delta: number | null;        // totals only: line_close − line_open
+  // Classified SOLELY on devig_prob_delta (|.|>=0.015) except totals where
+  // |line_delta|>=0.5 dominates (line UP favors OVER). null when no lean or
+  // insufficient data.
+  agreement: "toward" | "away" | "neutral" | null;
+  label: "confirmation" | "fade" | "flat" | null;
+};
+
 /** Latest market odds per game — refreshed by /admin/tick. */
 export type LiveOdds = {
   moneyline: {
@@ -284,6 +319,7 @@ export type LiveOdds = {
     away: number | null;
     bookmaker?: string | null;
     fair?: FairMoneyline | null;
+    movement?: Movement | null;
   };
   total: {
     line: number;
@@ -291,6 +327,7 @@ export type LiveOdds = {
     under: number | null;
     bookmaker: string;
     fair?: FairTotal | null;
+    movement?: Movement | null;
   } | null;
   captured_at: string | null;
 };
@@ -310,12 +347,14 @@ export type FairValueResult = {
     // against real odds). A disagreement readout vs the book's no-vig prob — not a pick.
     model_fair_prob: number | null;
     model_fair_side: "home" | "away" | null;
+    movement?: Movement | null;
   };
   total: {
     offered: { line: number | null; over: number | null; under: number | null } | null;
     bookmaker: string | null;
     fair: FairTotal | null;
     hold_pct: number | null;
+    movement?: Movement | null;
   };
 };
 
@@ -461,6 +500,8 @@ export type SlateGame = {
   analysis: GameAnalysis | null;
   live_odds: LiveOdds | null;
   live?: LiveState | null;
+  // First-pitch time (UTC, ISO8601). Additive — older payloads may omit it.
+  game_time_utc?: string | null;
 };
 
 export type CalibrationBucket = {

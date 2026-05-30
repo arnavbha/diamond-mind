@@ -973,6 +973,21 @@ def game_fair_value(
     ml = (live or {}).get("moneyline") or {}
     total = (live or {}).get("total")
 
+    # Net pre-first-pitch line movement (single book) per market — same builder as
+    # the slate, additive on each market block. toward/away vs the model's lean.
+    movement = _movement_by_game(
+        db,
+        [game_id],
+        team_abbr_by_game=team_map,
+        first_pitch_by_game={game_id: game.game_time_utc},
+        leans_by_game={
+            game_id: {
+                "ml_lean": (analysis or {}).get("ml_lean"),
+                "total_lean": (analysis or {}).get("total_lean"),
+            }
+        },
+    ).get(game_id) or {}
+
     ml_fair = ml.get("fair")
     moneyline_block = {
         "offered": (
@@ -985,6 +1000,7 @@ def game_fair_value(
         "hold_pct": (ml_fair or {}).get("hold_pct"),
         "model_fair_prob": model_fair_prob,
         "model_fair_side": model_fair_side,
+        "movement": movement.get("moneyline"),
     }
 
     total_fair = (total or {}).get("fair") if total else None
@@ -997,6 +1013,7 @@ def game_fair_value(
         "bookmaker": (total or {}).get("bookmaker") if total else None,
         "fair": total_fair,
         "hold_pct": (total_fair or {}).get("hold_pct"),
+        "movement": movement.get("total"),
     }
 
     return {
@@ -1619,6 +1636,7 @@ def slate(
         {
             "game_id": game.id,
             "game_date": game.game_date.isoformat(),
+            "game_time_utc": game.game_time_utc,
             "status": game.status,
             "venue": game.venue,
             "home_team_id": game.home_team_id,
@@ -1661,6 +1679,34 @@ def slate(
     live_odds_map = _latest_odds_by_game(db, game_ids, team_abbr_by_game=team_map)
     for gid, payload in output_map.items():
         payload["live_odds"] = live_odds_map.get(gid)
+
+    # Net pre-first-pitch line movement (single book) per game/market, inlined on
+    # the live_odds block (additive — older clients ignore it). toward/away is
+    # measured against the model's lean; PASS/None → raw movement, no verdict.
+    first_pitch_map = {m["game_id"]: m.get("game_time_utc") for m in game_meta}
+    leans_map = {
+        gid: {
+            "ml_lean": (payload.get("analysis") or {}).get("ml_lean"),
+            "total_lean": (payload.get("analysis") or {}).get("total_lean"),
+        }
+        for gid, payload in output_map.items()
+    }
+    movement_map = _movement_by_game(
+        db,
+        game_ids,
+        team_abbr_by_game=team_map,
+        first_pitch_by_game=first_pitch_map,
+        leans_by_game=leans_map,
+    )
+    for gid, payload in output_map.items():
+        live = payload.get("live_odds")
+        mv = movement_map.get(gid)
+        if live is None or mv is None:
+            continue
+        if isinstance(live.get("moneyline"), dict):
+            live["moneyline"]["movement"] = mv["moneyline"]
+        if isinstance(live.get("total"), dict):
+            live["total"]["movement"] = mv["total"]
 
     # Live monitoring: for in-progress games, (a) fall back to the captured live
     # score/inning when the terminal-score gate leaves games.home/away_score
@@ -1830,6 +1876,87 @@ def _latest_odds_by_game(
                     "hold_pct": tfv["hold_pct"],
                     "shin_z": tfv["shin_z"],
                 }
+    return out
+
+
+def _movement_by_game(
+    db: Session,
+    game_ids: list[int],
+    *,
+    team_abbr_by_game: dict[int, tuple[str, str]],
+    first_pitch_by_game: dict[int, Optional[datetime]],
+    leans_by_game: dict[int, dict],
+) -> dict[int, dict]:
+    """Net pre-first-pitch line movement per game, per market (single book).
+
+    For each game returns ``{"moneyline": <movement>, "total": <movement>}`` where
+    each value is the dict from ``app.betting.line_movement.compute_movement`` —
+    open/close snapshots, american_delta, Shin vig-free devig_prob_delta, totals
+    line_delta, and the toward/away/neutral agreement vs the model's lean.
+
+    Honesty: pinned to ``preferred_bookmaker`` (same C1 pin as _latest_odds_by_game)
+    and strictly pre-first-pitch (the gate is applied in compute_movement on
+    UTC-coerced timestamps, mirroring clv.py). This is single-book NET LINE
+    MOVEMENT, NOT cross-book steam.
+
+    ``leans_by_game[gid]`` = {"ml_lean": "HOME"|"AWAY"|"PASS"|None,
+    "total_lean": "OVER"|"UNDER"|"PASS"|None}. PASS/None → raw movement with no
+    toward/away verdict.
+    """
+    from app.betting.line_movement import compute_movement
+    from app.models.odds import OddsSnapshotRow
+
+    out: dict[int, dict] = {}
+    if not game_ids:
+        return out
+
+    book = get_settings().preferred_bookmaker
+    rows = (
+        db.execute(
+            select(OddsSnapshotRow).where(
+                OddsSnapshotRow.game_id.in_(game_ids),
+                OddsSnapshotRow.bookmaker == book,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_game: dict[int, list] = {}
+    for r in rows:
+        by_game.setdefault(r.game_id, []).append(r)
+
+    for gid in game_ids:
+        snaps = by_game.get(gid, [])
+        home_abbr, away_abbr = team_abbr_by_game.get(gid, (None, None))
+        first_pitch = first_pitch_by_game.get(gid)
+        leans = leans_by_game.get(gid) or {}
+
+        def _norm_lean(v):
+            return v if v in ("HOME", "AWAY", "OVER", "UNDER") else None
+
+        ml_lean = _norm_lean(leans.get("ml_lean"))
+        total_lean = _norm_lean(leans.get("total_lean"))
+
+        out[gid] = {
+            "moneyline": compute_movement(
+                market="moneyline",
+                snapshots=snaps,
+                game_start=first_pitch,
+                leaned_side=ml_lean,
+                home_abbr=home_abbr,
+                away_abbr=away_abbr,
+                bookmaker=book,
+            ),
+            "total": compute_movement(
+                market="total",
+                snapshots=snaps,
+                game_start=first_pitch,
+                leaned_side=total_lean,
+                home_abbr=home_abbr,
+                away_abbr=away_abbr,
+                bookmaker=book,
+            ),
+        }
     return out
 
 
