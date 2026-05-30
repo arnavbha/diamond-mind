@@ -50,6 +50,25 @@ class BetRecord(Base):
     # code may have drifted since the pick was originally made).
     snapshot_source: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
+    # ── Closing Line Value (CLV) ──────────────────────────────────────────────
+    # Computed deterministically at settle time (and via POST /admin/backfill-clv)
+    # from the LAST odds_snapshots row for this bet's (game_id, market, selection)
+    # whose captured_at is STRICTLY BEFORE first pitch (games.game_time_utc).
+    # All nullable: if no pre-first-pitch snapshot was ever captured, every field
+    # stays null and clv_source records the honest reason — we NEVER fabricate a
+    # close. See app/betting/clv.py for the resolver + math.
+    closing_odds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    closing_line: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    closing_implied_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    closing_captured_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    clv_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    beat_close: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # 'live' (settle) | 'no_close_captured' | 'one_sided_close'
+    # | 'total-line-mismatch' | 'no_first_pitch' | 'backfill-<YYYY-MM-DD>'
+    clv_source: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
 
 class ExcludedPick(Base):
     """Tombstone for manually-deleted auto-track picks.

@@ -48,6 +48,8 @@ from app.models.entities import Player, Team
 from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
 from app.models.live import LiveGameState
 from app.models.tracker import BetRecord, ExcludedPick, compute_units_returned
+from app.betting.clv import apply_clv_to_bet, compute_clv_for_bet
+from app.betting.implied_probability import implied_probability
 from app.live.alerts import derive_live_alert
 
 # Import all models so Base.metadata knows about every table, then create
@@ -1743,6 +1745,16 @@ def _bet_to_dict(b: BetRecord) -> dict:
         "kelly_fraction_raw": b.kelly_fraction_raw,
         "evidence_quality": b.evidence_quality,
         "snapshot_source": b.snapshot_source,
+        # ── Closing Line Value ──
+        "closing_odds": b.closing_odds,
+        "closing_line": b.closing_line,
+        "closing_implied_prob": b.closing_implied_prob,
+        "clv_pct": b.clv_pct,
+        "beat_close": b.beat_close,
+        "clv_source": b.clv_source,
+        "closing_captured_at": (
+            b.closing_captured_at.isoformat() if b.closing_captured_at else None
+        ),
     }
 
 
@@ -2243,6 +2255,8 @@ def tracker_track_record(
             "realized_outperformance": None,
         }
 
+    clv_block = _clv_aggregates(rows)
+
     return {
         "start": (start.isoformat() if start else None),
         "end":   (end.isoformat()   if end   else None),
@@ -2257,6 +2271,108 @@ def tracker_track_record(
         "brier_score": brier,
         "edge_realization": edge_realization,
         "snapshot_coverage": snapshot_coverage,
+        "clv": clv_block,
+    }
+
+
+def _clv_aggregates(rows: list) -> dict:
+    """CLV summary over settled bets. Honest denominators — never imputed.
+
+    A bet is "CLV-eligible" when closing_implied_prob is not null AND clv_pct is
+    not null (i.e. a two-sided pre-pitch close was captured AND the pick had a
+    vig-free anchor). Coverage is reported against settled bets so the UI can
+    say "CLV computed on X of Y settled bets".
+    """
+    import statistics as _stats
+
+    settled = [b for b in rows if b.result is not None]
+    n_settled = len(settled)
+
+    eligible = [
+        b for b in settled
+        if b.clv_pct is not None and b.beat_close is not None
+    ]
+    n_eligible = len(eligible)
+
+    n_no_close = sum(
+        1 for b in settled
+        if b.clv_source in ("no_close_captured", "no_first_pitch")
+        or b.clv_source is None
+    )
+    n_one_sided = sum(1 for b in settled if b.clv_source == "one_sided_close")
+    n_line_mismatch = sum(1 for b in settled if b.clv_source == "total-line-mismatch")
+
+    beat_n = sum(1 for b in eligible if b.beat_close)
+    pct_beat = (beat_n / n_eligible) if n_eligible > 0 else None
+    bc_low, bc_high = _wilson_ci(beat_n, n_eligible)
+
+    clv_vals = [b.clv_pct for b in eligible]
+    avg_clv = round(sum(clv_vals) / n_eligible, 4) if n_eligible > 0 else None
+    median_clv = round(_stats.median(clv_vals), 4) if clv_vals else None
+
+    # Price CLV (secondary): derive from stored odds for any bet with a close.
+    price_clv_vals: list[float] = []
+    for b in settled:
+        if b.closing_odds is not None and b.american_odds:
+            raw_pick = implied_probability(b.american_odds)
+            raw_close = implied_probability(b.closing_odds)
+            price_clv_vals.append(raw_close - raw_pick)
+    avg_price_clv = (
+        round(sum(price_clv_vals) / len(price_clv_vals), 4) if price_clv_vals else None
+    )
+
+    def _slice(bets: list) -> dict:
+        elig = [b for b in bets if b.clv_pct is not None and b.beat_close is not None]
+        n = len(elig)
+        bn = sum(1 for b in elig if b.beat_close)
+        lo, hi = _wilson_ci(bn, n)
+        vals = [b.clv_pct for b in elig]
+        return {
+            "n_eligible": n,
+            "pct_beat_close": (round(bn / n, 4) if n > 0 else None),
+            "avg_clv_pct": (round(sum(vals) / n, 4) if n > 0 else None),
+            "ci_low": (None if lo is None else round(lo, 4)),
+            "ci_high": (None if hi is None else round(hi, 4)),
+        }
+
+    clv_by_tier = [
+        {"tier": t, **_slice([b for b in settled if b.tier == t])}
+        for t in ("STRONG LEAN", "LEAN")
+    ]
+    clv_by_market = [
+        {"market": m, **_slice([b for b in settled if b.market == m])}
+        for m in ("moneyline", "total")
+    ]
+
+    # 2x2 of beat_close × (WIN/LOSS) on graded eligible bets — CLV vs result.
+    graded_elig = [b for b in eligible if b.result in ("WIN", "LOSS")]
+    clv_vs_result = {
+        "beat_and_won":   sum(1 for b in graded_elig if b.beat_close and b.result == "WIN"),
+        "beat_and_lost":  sum(1 for b in graded_elig if b.beat_close and b.result == "LOSS"),
+        "missed_and_won": sum(1 for b in graded_elig if not b.beat_close and b.result == "WIN"),
+        "missed_and_lost": sum(1 for b in graded_elig if not b.beat_close and b.result == "LOSS"),
+    }
+
+    return {
+        "clv_coverage": {
+            "n_settled": n_settled,
+            "n_with_clv": n_eligible,
+            "n_no_close_captured": n_no_close,
+            "n_one_sided": n_one_sided,
+            "n_total_line_mismatch": n_line_mismatch,
+            "coverage_pct": (round(n_eligible / n_settled, 4) if n_settled > 0 else None),
+        },
+        "pct_beat_close": (None if pct_beat is None else round(pct_beat, 4)),
+        "beat_close_n": beat_n,
+        "n_eligible": n_eligible,
+        "pct_beat_close_ci_low":  (None if bc_low  is None else round(bc_low,  4)),
+        "pct_beat_close_ci_high": (None if bc_high is None else round(bc_high, 4)),
+        "avg_clv_pct": avg_clv,
+        "median_clv_pct": median_clv,
+        "avg_price_clv": avg_price_clv,
+        "clv_by_tier": clv_by_tier,
+        "clv_by_market": clv_by_market,
+        "clv_vs_result": clv_vs_result,
     }
 
 
@@ -2703,6 +2819,19 @@ def _auto_settle_impl(db: Session, game_date: date) -> dict:
 
         bet.result = result
         bet.units_returned = compute_units_returned(result, bet.units, bet.american_odds)
+
+        # CLV is fully determined the instant first pitch passes, so by
+        # settlement it is final and immutable. Compute + persist here in the
+        # same transaction so it lands for every newly-settled bet. Idempotent:
+        # re-settle recomputes identically (the close predicate is immutable).
+        try:
+            clv_cols = compute_clv_for_bet(db, bet, game)
+            apply_clv_to_bet(bet, clv_cols)
+        except Exception:
+            logging.getLogger("tracker.clv").exception(
+                "CLV compute failed for bet %s (game %s)", bet.id, bet.game_id
+            )
+
         settled_count += 1
         results.append({
             "bet_id": bet.id,
@@ -2735,6 +2864,115 @@ def auto_settle(
     Admin-gated wrapper around _auto_settle_impl. Idempotent.
     """
     return _auto_settle_impl(db, game_date)
+
+
+@app.post("/admin/backfill-clv", tags=["admin"])
+def backfill_clv(
+    start: Optional[date] = Query(None, description="YYYY-MM-DD (inclusive, by game_date)"),
+    end: Optional[date] = Query(None, description="YYYY-MM-DD (inclusive, by game_date)"),
+    recompute: bool = Query(
+        False,
+        description="If true, recompute ALL selected rows (incl. already-computed "
+        "and no_close_captured) to pick up late-arriving pre-pitch snapshots.",
+    ),
+    db: Session = Depends(_get_db),
+    _: None = Depends(_require_admin),
+):
+    """Populate CLV columns on existing BetRecord rows from odds_snapshots.
+
+    Uses the SAME `compute_clv_for_bet` helper as the settle path, so values are
+    identical and idempotent: the close is an immutable predicate
+    (captured_at < game_time_utc), so recompute yields the same numbers whenever
+    a bet's snapshot history is unchanged.
+
+    By default only computes rows never computed before
+    (clv_source IS NULL) — pass recompute=true to recompute everything in range.
+
+    IMPORTANT CAVEAT: backfill can only see snapshots that were actually
+    captured BEFORE first pitch. If live odds polling started later than some
+    historical games, those games legitimately have ZERO pre-pitch rows and stay
+    null (no_close_captured) — backfill cannot and must not invent a close. The
+    no_close_captured count in the response is the truthful coverage gap.
+    """
+    today_tag = f"backfill-{date.today().isoformat()}"
+
+    stmt = select(BetRecord)
+    if start:
+        stmt = stmt.where(BetRecord.game_date >= start)
+    if end:
+        stmt = stmt.where(BetRecord.game_date <= end)
+    if not recompute:
+        stmt = stmt.where(BetRecord.clv_source.is_(None))
+    stmt = stmt.order_by(BetRecord.game_date.asc(), BetRecord.id.asc())
+    bets = list(db.execute(stmt).scalars().all())
+
+    game_ids = list({b.game_id for b in bets})
+    games_by_id: dict[int, Game] = {}
+    if game_ids:
+        games_by_id = {
+            g.id: g
+            for g in db.execute(select(Game).where(Game.id.in_(game_ids))).scalars().all()
+        }
+
+    scanned = computed = beat_n = no_close_n = one_sided_n = mismatch_n = null_game_n = 0
+
+    for bet in bets:
+        scanned += 1
+        game = games_by_id.get(bet.game_id)
+        if game is None or game.game_time_utc is None:
+            # No first pitch reference → cannot define a close. Tag honestly.
+            apply_clv_to_bet(
+                bet,
+                {
+                    "closing_odds": None, "closing_line": None,
+                    "closing_implied_prob": None, "closing_captured_at": None,
+                    "clv_pct": None, "beat_close": None,
+                },
+                clv_source_override="no_first_pitch",
+            )
+            null_game_n += 1
+            continue
+
+        try:
+            cols = compute_clv_for_bet(db, bet, game)
+        except Exception:
+            logging.getLogger("admin.clv").exception(
+                "CLV backfill failed for bet %s (game %s)", bet.id, bet.game_id
+            )
+            continue
+
+        # Preserve the resolver's source, but mark provenance as backfill when a
+        # real close was found (so the UI can distinguish settle-time vs backfill).
+        src = cols.get("clv_source")
+        override = None
+        if src in ("live", "no_pick_anchor"):
+            override = today_tag
+        apply_clv_to_bet(bet, cols, clv_source_override=override)
+
+        if bet.beat_close is not None:
+            computed += 1
+            if bet.beat_close:
+                beat_n += 1
+        if cols.get("clv_source") == "no_close_captured":
+            no_close_n += 1
+        elif cols.get("clv_source") == "one_sided_close":
+            one_sided_n += 1
+        elif cols.get("clv_source") == "total-line-mismatch":
+            mismatch_n += 1
+
+    db.commit()
+    return {
+        "scanned": scanned,
+        "computed": computed,
+        "beat_close_n": beat_n,
+        "no_close_captured_n": no_close_n,
+        "one_sided_n": one_sided_n,
+        "total_line_mismatch_n": mismatch_n,
+        "null_game_time_n": null_game_n,
+        "recompute": recompute,
+        "start": (start.isoformat() if start else None),
+        "end": (end.isoformat() if end else None),
+    }
 
 
 @app.post("/tracker/normalize-units", tags=["tracker"])

@@ -36,6 +36,14 @@ _COLUMN_ADDITIONS: List[Tuple[str, str, str]] = [
     ("bet_records", "kelly_fraction_raw",    "DOUBLE PRECISION"),
     ("bet_records", "evidence_quality",      "DOUBLE PRECISION"),
     ("bet_records", "snapshot_source",       "VARCHAR(32)"),
+    # Closing Line Value (CLV) — see app/models/tracker.py / app/betting/clv.py.
+    ("bet_records", "closing_odds",          "INTEGER"),
+    ("bet_records", "closing_line",          "DOUBLE PRECISION"),
+    ("bet_records", "closing_implied_prob",  "DOUBLE PRECISION"),
+    ("bet_records", "closing_captured_at",   "TIMESTAMPTZ"),
+    ("bet_records", "clv_pct",               "DOUBLE PRECISION"),
+    ("bet_records", "beat_close",            "BOOLEAN"),
+    ("bet_records", "clv_source",            "VARCHAR(32)"),
     # Live monitoring (one row per game, upserted by PK). The CREATE TABLE in
     # _TABLE_CREATIONS handles fresh prod databases; these ADD COLUMN entries
     # cover databases where the table already exists from an earlier deploy.

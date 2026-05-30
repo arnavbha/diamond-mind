@@ -396,6 +396,59 @@ export type TrackRecordSnapshotCoverage = {
   n: number;
 };
 
+// ── CLV (closing-line value) aggregates ─────────────────────────────────────
+// The sharpest available evidence of genuine edge: did the model's pick price
+// beat the market's closing price? All percentages are prob-points (closing
+// vig-free implied prob − price-taken vig-free implied prob).
+export type TrackRecordClvCoverage = {
+  n_settled: number;
+  n_with_clv: number;
+  n_no_close_captured: number;
+  n_one_sided: number;
+  n_total_line_mismatch: number;
+  coverage_pct: number | null;
+};
+
+export type TrackRecordClvTierSlice = {
+  tier: "STRONG LEAN" | "LEAN" | string;
+  n_eligible: number;
+  pct_beat_close: number | null;
+  avg_clv_pct: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+};
+
+export type TrackRecordClvMarketSlice = {
+  market: "moneyline" | "total" | string;
+  n_eligible: number;
+  pct_beat_close: number | null;
+  avg_clv_pct: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+};
+
+export type TrackRecordClvVsResult = {
+  beat_and_won: number;
+  beat_and_lost: number;
+  missed_and_won: number;
+  missed_and_lost: number;
+};
+
+export type TrackRecordClv = {
+  clv_coverage: TrackRecordClvCoverage;
+  pct_beat_close: number | null;
+  beat_close_n: number;
+  n_eligible: number;
+  pct_beat_close_ci_low: number | null;
+  pct_beat_close_ci_high: number | null;
+  avg_clv_pct: number | null;
+  median_clv_pct: number | null;
+  avg_price_clv: number | null;
+  clv_by_tier: TrackRecordClvTierSlice[];
+  clv_by_market: TrackRecordClvMarketSlice[];
+  clv_vs_result: TrackRecordClvVsResult;
+};
+
 export type TrackRecordResult = {
   start: string | null;
   end: string | null;
@@ -410,6 +463,8 @@ export type TrackRecordResult = {
   brier_score: number | null;
   edge_realization: TrackRecordEdgeRealization;
   snapshot_coverage: TrackRecordSnapshotCoverage[];
+  // Additive — older payloads may omit this entirely.
+  clv?: TrackRecordClv | null;
 };
 
 export const api = {
@@ -563,6 +618,26 @@ export type BetRecord = {
   created_at: string | null;
   game_time_utc: string | null;
   game_status: string | null;
+  // ── Closing-line value (CLV) — additive, may be absent on older payloads ──
+  // The closing line is the last pre-first-pitch market snapshot for the
+  // picked side. When no honest close exists, every field is null and
+  // clv_source explains why; the UI must render "no close captured" — never a
+  // fabricated number.
+  closing_odds?: number | null;          // american odds of picked-side close
+  closing_line?: number | null;          // total line; null for moneyline
+  closing_implied_prob?: number | null;  // Shin vig-free closing prob, 4dp
+  clv_pct?: number | null;               // closing_implied_prob − market_implied_prob; + = beat close
+  beat_close?: boolean | null;
+  clv_source?:
+    | "live"
+    | "no_close_captured"
+    | "no_first_pitch"
+    | "one_sided_close"
+    | "total-line-mismatch"
+    | "no_pick_anchor"
+    | string                              // backfill-YYYY-MM-DD
+    | null;
+  closing_captured_at?: string | null;   // ISO8601
 };
 
 export type BetCreatePayload = {

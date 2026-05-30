@@ -36,6 +36,73 @@ function tierColor(tier: string): string {
   return "var(--text-3)";
 }
 
+// ── CLV chip ───────────────────────────────────────────────────────────────
+// Closing-line value = did the picked-side price beat the market's close?
+// Honest by construction: if no pre-first-pitch close was captured, we show
+// "no close" — never a fabricated number. clv_pct is in prob-points.
+const CLV_NO_CLOSE: ReadonlySet<string> = new Set([
+  "no_close_captured",
+  "no_first_pitch",
+]);
+
+function ClvChip({ bet }: { bet: BetRecord }) {
+  // No close captured (or backend predates CLV) → honest placeholder.
+  if (
+    bet.clv_source == null ||
+    bet.beat_close == null ||
+    bet.clv_pct == null ||
+    CLV_NO_CLOSE.has(bet.clv_source)
+  ) {
+    return (
+      <span
+        title={
+          bet.clv_source === "no_first_pitch"
+            ? "No scheduled first pitch on record — cannot define a closing line"
+            : "No pre-first-pitch closing snapshot was captured for this market"
+        }
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
+          color: "var(--text-3)",
+          letterSpacing: "0.03em",
+        }}
+      >
+        no close
+      </span>
+    );
+  }
+
+  const beat = bet.beat_close === true;
+  const col = beat ? "var(--green)" : "var(--red)";
+  const pct = (bet.clv_pct * 100).toFixed(1);
+  const sign = bet.clv_pct >= 0 ? "+" : "";
+  return (
+    <span
+      title={
+        `${beat ? "Beat" : "Missed"} the close by ${sign}${pct} prob-points` +
+        (bet.closing_odds != null ? ` · close ${fmtOdds(bet.closing_odds)}` : "")
+      }
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "4px",
+        fontFamily: "var(--font-mono)",
+        fontSize: "10px",
+        fontWeight: 700,
+        lineHeight: 1,
+        padding: "3px 6px",
+        borderRadius: "3px",
+        color: col,
+        border: `1px solid ${col}`,
+        background: "transparent",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {beat ? "beat" : "miss"} {sign}{pct}%
+    </span>
+  );
+}
+
 // ── Summary stat block ────────────────────────────────────────────────────────
 
 function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
@@ -136,7 +203,7 @@ function BetRow({
   return (
     <div className={`${resultClass} tracker-row`} style={{
       display: "grid",
-      gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 80px",
+      gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 96px 80px",
       alignItems: "center",
       gap: "10px",
       padding: "8px 12px",
@@ -228,6 +295,11 @@ function BetRow({
         {fmtUnits(bet.units_returned)}
       </span>
 
+      {/* CLV — did the picked price beat the close? */}
+      <span className="tracker-cell" data-label="CLV" style={{ minWidth: 0 }}>
+        <ClvChip bet={bet} />
+      </span>
+
       {/* actions — only shown when admin is unlocked */}
       <div className="tracker-cell" data-label="Actions" style={{ display: "flex", gap: "4px", alignItems: "center" }}>
         {unlocked && isPending && (
@@ -275,7 +347,7 @@ function TableHeader() {
   return (
     <div className="tracker-header" style={{
       display: "grid",
-      gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 80px",
+      gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 96px 80px",
       alignItems: "center",
       gap: "10px",
       padding: "6px 12px 6px",
@@ -289,6 +361,7 @@ function TableHeader() {
       <span style={cell}>Tier</span>
       <span style={cell}>Result</span>
       <span style={cell}>+/- Units</span>
+      <span style={cell}>CLV</span>
       <span style={cell}>Actions</span>
     </div>
   );

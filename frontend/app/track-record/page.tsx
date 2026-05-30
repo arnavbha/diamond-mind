@@ -6,6 +6,7 @@ import {
   type CalibrationBucket,
   type TierHitRate,
   type TrackRecordResult,
+  type TrackRecordClv,
 } from "@/lib/api";
 import { ExplainTooltip } from "@/components/explain";
 
@@ -501,6 +502,275 @@ function CalibrationCoverageNote({
   );
 }
 
+/* ── CLV (closing-line value) — the strongest evidence of genuine edge ───────
+ *
+ * Beating the closing line is the sharpest, least-luck-dependent signal that a
+ * model has real edge: it says the price we took was better than where the
+ * market ultimately settled, independent of whether any single bet won. We
+ * lead with "% beat close" and pair every number with an honest coverage line.
+ * When no pre-first-pitch close was captured, that bet is simply excluded —
+ * nothing is fabricated.
+ */
+function fmtPct1(v: number | null | undefined, withSign = false): string {
+  if (v == null) return "—";
+  const pct = v * 100;
+  const sign = withSign && pct >= 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
+function ClvSliceBars({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { key: string; n_eligible: number; pct_beat_close: number | null; avg_clv_pct: number | null }[];
+}) {
+  const live = rows.filter((r) => r.n_eligible > 0);
+  if (live.length === 0) return null;
+  return (
+    <div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "9px",
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--text-3)",
+          marginBottom: "8px",
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {live.map((r) => {
+          const pct = r.pct_beat_close;
+          const col = pct == null ? "var(--text-3)" : pct >= 0.5 ? "var(--green)" : "var(--red)";
+          const w = pct == null ? 0 : Math.max(0, Math.min(1, pct)) * 100;
+          return (
+            <div key={r.key} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "10px",
+                  color: "var(--text-2)",
+                  width: "92px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                {r.key}
+              </span>
+              <div className="stat-bar-track" style={{ flex: 1, height: "6px" }}>
+                <div
+                  className="stat-bar-fill"
+                  style={{ "--fill": `${w}%`, background: col } as React.CSSProperties}
+                />
+              </div>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  color: col,
+                  fontWeight: 700,
+                  width: "48px",
+                  textAlign: "right",
+                }}
+              >
+                {fmtPct1(pct)}
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "10px",
+                  color: "var(--text-3)",
+                  width: "70px",
+                  textAlign: "right",
+                }}
+                title="Average CLV in prob-points for this slice"
+              >
+                {fmtPct1(r.avg_clv_pct, true)} avg
+              </span>
+              <span
+                style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", width: "34px", textAlign: "right" }}
+              >
+                [{r.n_eligible}]
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ClvBlock({ clv }: { clv: TrackRecordClv | null | undefined }) {
+  const cov = clv?.clv_coverage;
+  const nWith = cov?.n_with_clv ?? clv?.n_eligible ?? 0;
+  const nSettled = cov?.n_settled ?? 0;
+
+  // No eligible bets with a captured close → be honest, render nothing fake.
+  if (!clv || nWith === 0) {
+    return (
+      <ChartFrame title="Closing-line value (beat the close)">
+        <Accruing
+          label="CLV accruing"
+          sub={
+            nSettled > 0
+              ? `No pre-first-pitch closing line captured for any of the ${nSettled} settled pick${nSettled === 1 ? "" : "s"} yet. CLV appears once a close is recorded; nothing is fabricated.`
+              : "Closing-line value populates once settled picks have a captured pre-first-pitch close."
+          }
+        />
+      </ChartFrame>
+    );
+  }
+
+  const pctBeat = clv.pct_beat_close;
+  const headlineCol =
+    pctBeat == null ? "var(--text-3)" : pctBeat >= 0.5 ? "var(--green)" : "var(--red)";
+
+  const tierRows = (clv.clv_by_tier ?? []).map((t) => ({
+    key: t.tier,
+    n_eligible: t.n_eligible,
+    pct_beat_close: t.pct_beat_close,
+    avg_clv_pct: t.avg_clv_pct,
+  }));
+  const marketRows = (clv.clv_by_market ?? []).map((m) => ({
+    key: m.market === "moneyline" ? "Moneyline" : m.market === "total" ? "Over/Under" : m.market,
+    n_eligible: m.n_eligible,
+    pct_beat_close: m.pct_beat_close,
+    avg_clv_pct: m.avg_clv_pct,
+  }));
+
+  return (
+    <ChartFrame title="Closing-line value (beat the close)">
+      {/* Honest framing: CLV is the strongest edge signal, but only over the
+          subset of bets with a captured close. */}
+      <div
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: "12px",
+          color: "var(--text-2)",
+          lineHeight: 1.55,
+          marginBottom: "16px",
+        }}
+      >
+        Beating the closing line is the strongest evidence of genuine edge —
+        it shows the price taken was better than where the market settled,
+        independent of any single result.
+      </div>
+
+      {/* Headline metrics */}
+      <div
+        className="box-score-grid responsive-grid-4"
+        style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "14px" }}
+      >
+        <div className="bsg-row" style={{ display: "contents" }}>
+          <SummaryStat
+            label="% Beat close"
+            value={fmtPct1(pctBeat)}
+            color={headlineCol}
+          />
+          <SummaryStat
+            label="Avg CLV"
+            value={fmtPct1(clv.avg_clv_pct, true)}
+            color={
+              clv.avg_clv_pct == null
+                ? "var(--text-3)"
+                : clv.avg_clv_pct >= 0
+                ? "var(--green)"
+                : "var(--red)"
+            }
+          />
+          <SummaryStat
+            label="Median CLV"
+            value={fmtPct1(clv.median_clv_pct, true)}
+            color={
+              clv.median_clv_pct == null
+                ? "var(--text-3)"
+                : clv.median_clv_pct >= 0
+                ? "var(--green)"
+                : "var(--red)"
+            }
+          />
+          <SummaryStat label="Beat / eligible" value={`${clv.beat_close_n}/${clv.n_eligible}`} />
+        </div>
+      </div>
+
+      {/* % beat-close Wilson CI */}
+      {pctBeat != null &&
+        clv.pct_beat_close_ci_low != null &&
+        clv.pct_beat_close_ci_high != null && (
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "11px",
+              color: "var(--text-2)",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: "6px",
+              padding: "10px 14px",
+              display: "flex",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "6px",
+              marginBottom: "14px",
+            }}
+          >
+            <span>
+              95% CI on % beat close:{" "}
+              <strong style={{ color: "var(--text)" }}>
+                {fmtPct1(clv.pct_beat_close_ci_low)} – {fmtPct1(clv.pct_beat_close_ci_high)}
+              </strong>{" "}
+              (Wilson, n={clv.n_eligible})
+            </span>
+            <span style={{ color: "var(--text-3)" }}>
+              50% = no edge vs. the close
+            </span>
+          </div>
+        )}
+
+      {/* Per-tier and per-market slices */}
+      <div
+        className="responsive-grid-2"
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px", marginBottom: "14px" }}
+      >
+        <ClvSliceBars title="By tier" rows={tierRows} />
+        <ClvSliceBars title="By market" rows={marketRows} />
+      </div>
+
+      {/* Honest coverage line */}
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
+          color: "var(--text-3)",
+          lineHeight: 1.6,
+          paddingLeft: "8px",
+          borderLeft: "2px solid var(--clay)",
+        }}
+      >
+        CLV available for <strong style={{ color: "var(--text-2)" }}>{nWith}</strong> of{" "}
+        <strong style={{ color: "var(--text-2)" }}>{nSettled}</strong> settled tracked picks
+        {cov?.coverage_pct != null && (
+          <> ({(cov.coverage_pct * 100).toFixed(0)}% coverage)</>
+        )}
+        .
+        {cov && cov.n_no_close_captured > 0 && (
+          <> {cov.n_no_close_captured} had no pre-first-pitch close captured (excluded — never fabricated).</>
+        )}
+        {cov && cov.n_one_sided > 0 && (
+          <> {cov.n_one_sided} had a one-sided close.</>
+        )}
+        {cov && cov.n_total_line_mismatch > 0 && (
+          <> {cov.n_total_line_mismatch} had a total-line mismatch.</>
+        )}{" "}
+        The close is the last market snapshot strictly before first pitch; live
+        in-game prices are never used.
+      </div>
+    </ChartFrame>
+  );
+}
+
 function ChartSkeleton() {
   return (
     <div
@@ -739,6 +1009,9 @@ export default function TrackRecordPage() {
                 </span>
               </div>
             )}
+
+          {/* CLV — the sharpest edge signal, surfaced prominently */}
+          <ClvBlock clv={result.clv} />
 
           {/* Per-market split */}
           <div className="box-score-grid responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }}>
