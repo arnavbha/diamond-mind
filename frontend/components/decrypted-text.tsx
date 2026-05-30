@@ -9,6 +9,15 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion } from "motion/react";
 
+// Per-session guard so a given text only runs its reveal once per browser
+// session (keyed by the text content). The nav wordmark used to re-scramble on
+// every remount — page navigations in the App Router that remount the layout
+// subtree, IntersectionObserver re-fires, etc. Once revealed, stay revealed.
+const animatedThisSession =
+  typeof window !== "undefined"
+    ? ((window as Window & { __dmDecrypted?: Set<string> }).__dmDecrypted ??= new Set<string>())
+    : new Set<string>();
+
 const srOnly: React.CSSProperties = {
   position: "absolute",
   width: 1, height: 1,
@@ -50,10 +59,15 @@ export default function DecryptedText({
   animateOn = "hover",
   clickMode = "once",
 }: DecryptedTextProps) {
+  // If this text already revealed earlier in the session, treat it as done so a
+  // remount (e.g. layout subtree re-rendering on navigation) doesn't re-scramble.
+  const alreadyRevealed =
+    (animateOn === "view" || animateOn === "auto") && animatedThisSession.has(text);
+
   const [displayText, setDisplayText]     = useState(text);
   const [isAnimating, setIsAnimating]     = useState(false);
   const [revealedIndices, setRevealedIndices] = useState(new Set<number>());
-  const [hasAnimated, setHasAnimated]     = useState(false);
+  const [hasAnimated, setHasAnimated]     = useState(alreadyRevealed);
   const [isDecrypted, setIsDecrypted]     = useState(animateOn !== "click");
   const [direction, setDirection]         = useState<"forward" | "reverse">("forward");
 
@@ -146,27 +160,35 @@ export default function DecryptedText({
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isAnimating, text, speed, maxIterations, sequential, direction, shuffleText, getNextIndex]);
 
-  // View observer
+  // View observer. Skips entirely once the text has revealed this session.
   useEffect(() => {
     if (animateOn !== "view") return;
+    if (hasAnimated) return;
     const obs = new IntersectionObserver(entries => {
       entries.forEach(e => {
         if (e.isIntersecting && !hasAnimated) {
           triggerDecrypt();
           setHasAnimated(true);
+          animatedThisSession.add(text);
         }
       });
     }, { threshold: 0.1 });
     const el = containerRef.current;
     if (el) obs.observe(el);
     return () => { if (el) obs.unobserve(el); };
-  }, [animateOn, hasAnimated, triggerDecrypt]);
+  }, [animateOn, hasAnimated, triggerDecrypt, text]);
 
   // Auto mode
   useEffect(() => {
-    if (animateOn === "auto") { triggerDecrypt(); }
-    if (animateOn === "click") { encryptInstantly(); }
-    else { setDisplayText(text); setIsDecrypted(true); }
+    if (animateOn === "auto" && !alreadyRevealed) {
+      triggerDecrypt();
+      animatedThisSession.add(text);
+    } else if (animateOn === "click") {
+      encryptInstantly();
+    } else {
+      setDisplayText(text);
+      setIsDecrypted(true);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

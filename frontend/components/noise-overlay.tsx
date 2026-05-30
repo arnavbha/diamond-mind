@@ -41,11 +41,19 @@ export default function NoiseOverlay({
       ctx!.putImageData(imageData, 0, 0);
     }
 
-    // Respect reduced-motion: render a single static grain frame, no rAF loop.
+    // Decorative-motion budget: the grain only re-renders when motion is
+    // allowed AND the connection isn't Save-Data AND the pointer is fine.
+    // Otherwise paint one static grain frame and stop (no rAF loop).
+    const mm = (q: string) =>
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia(q).matches
+        : false;
+    const conn = (typeof navigator !== "undefined" &&
+      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection) || undefined;
+    const saveData = conn?.saveData === true;
+    const coarsePointer = mm("(pointer: coarse)");
     const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      mm("(prefers-reduced-motion: reduce)") || saveData || coarsePointer;
 
     drawGrain();
     if (reduceMotion) return;

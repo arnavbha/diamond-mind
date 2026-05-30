@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap');
+/* Fonts are loaded via next/font in app/layout.tsx (self-hosted, non-render-
+   blocking). The render-blocking @import that used to live here was removed in
+   bucket B2; the three families now wire into --font-mono/--font-display/
+   --font-body on <body> in layout.tsx. */
 @import "tailwindcss";
 
 :root {

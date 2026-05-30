@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { teamLogoUrl } from "@/lib/team-logos";
+import { Skeleton } from "@/components/ui";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -160,30 +161,23 @@ async function fetchScores(date: string): Promise<GameScore[]> {
 
 function StatusPip({ status }: { status: GameScore["status"] }) {
   const color =
-    status === "live"      ? "var(--green)"  :
-    status === "final"     ? "var(--text-3)" :
-    status === "postponed" ? "var(--orange)" :
-    status === "suspended" ? "var(--orange)" :
-    "var(--text-3)";
+    status === "live"      ? "var(--pos)"     :
+    status === "final"     ? "var(--text-2)"  :
+    status === "postponed" ? "var(--hold)"    :
+    status === "suspended" ? "var(--hold)"    :
+    "var(--text-2)";
 
+  // Live games use the shared .live-dot (the one allowed infinite animation,
+  // reduced-motion-aware). Non-live games render a static muted dot.
   return status === "live" ? (
-    <span
-      style={{
-        display: "inline-block",
-        width: 6, height: 6,
-        borderRadius: "50%",
-        background: "var(--green)",
-        boxShadow: "0 0 5px 1px var(--green)",
-        animation: "pulse 1.4s ease-in-out infinite",
-        flexShrink: 0,
-      }}
-    />
+    <span className="live-dot" aria-hidden="true" style={{ flexShrink: 0 }} />
   ) : (
     <span
+      aria-hidden="true"
       style={{
         display: "inline-block",
         width: 6, height: 6,
-        borderRadius: "50%",
+        borderRadius: "var(--r-full)",
         background: color,
         flexShrink: 0,
         opacity: 0.6,
@@ -217,10 +211,9 @@ function ScoreCell({
         style={{ objectFit: "contain", flexShrink: 0, opacity: 0.9 }}
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
       />
-      <span style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "12px",
-        fontWeight: isWinner && isFinal ? 700 : 500,
+      <span className="num" style={{
+        fontSize: "var(--fs-meta)",
+        fontWeight: isWinner && isFinal ? "var(--weight-bold)" : "var(--weight-medium)",
         color: "var(--text)",
         minWidth: 28,
       }}>
@@ -229,8 +222,8 @@ function ScoreCell({
       {showScore && (
         <span style={{
           fontFamily: "var(--font-display)",
-          fontSize: "16px",
-          fontWeight: 800,
+          fontSize: "var(--fs-stat)",
+          fontWeight: "var(--weight-display)",
           color: scoreColor,
           letterSpacing: "-0.01em",
           minWidth: 20,
@@ -253,12 +246,12 @@ function GameTile({ game }: { game: GameScore }) {
   const homeWins = isFinal && (game.home.score ?? 0) > (game.away.score ?? 0);
 
   const borderColor =
-    isLive  ? "var(--green)" :
+    isLive  ? "var(--pos)" :
     isFinal ? "var(--border)" :
-    "var(--border-2)";
+    "var(--border-subtle)";
 
   const bgColor =
-    isLive  ? "rgba(var(--green-rgb, 34,197,94), 0.04)" :
+    isLive  ? "var(--green-tint-soft)" :
     "var(--surface)";
 
   return (
@@ -267,11 +260,11 @@ function GameTile({ game }: { game: GameScore }) {
       width: 155,
       background: bgColor,
       border: `1px solid ${borderColor}`,
-      borderRadius: 6,
-      padding: "10px 12px",
+      borderRadius: "var(--r-md)",
+      padding: "var(--sp-2) var(--sp-3)",
       display: "flex",
       flexDirection: "column",
-      gap: 6,
+      gap: "var(--sp-1)",
     }}>
       {/* Away team */}
       <ScoreCell
@@ -292,12 +285,11 @@ function GameTile({ game }: { game: GameScore }) {
       {/* Status row */}
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
         <StatusPip status={game.status} />
-        <span style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "9px",
-          color: isLive ? "var(--green)" : isOther ? "var(--orange)" : "var(--text-3)",
-          letterSpacing: "0.05em",
-          fontWeight: isLive ? 700 : 500,
+        <span className="num" style={{
+          fontSize: "var(--fs-caption)",
+          color: isLive ? "var(--pos)" : isOther ? "var(--hold)" : "var(--text-2)",
+          letterSpacing: "var(--tracking-label)",
+          fontWeight: isLive ? "var(--weight-bold)" : "var(--weight-medium)",
         }}>
           {game.statusText}
         </span>
@@ -335,11 +327,10 @@ export function Scoreboard({ date }: { date: string }) {
 
   if (games === null) {
     return (
-      <div style={{
-        fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)",
-        padding: "12px 0",
-      }}>
-        Loading scores…
+      <div role="status" aria-live="polite" style={{ display: "flex", gap: "var(--sp-2)", padding: "var(--sp-3) 0" }}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} width={155} height={72} radius="var(--r-md)" />
+        ))}
       </div>
     );
   }
@@ -347,8 +338,8 @@ export function Scoreboard({ date }: { date: string }) {
   if (games.length === 0) {
     return (
       <div style={{
-        fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)",
-        padding: "12px 0",
+        fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)",
+        padding: "var(--sp-3) 0",
       }}>
         No games found for {date}.
       </div>
@@ -367,31 +358,31 @@ export function Scoreboard({ date }: { date: string }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
-            fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700,
-            textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-3)",
+            fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", fontWeight: "var(--weight-bold)",
+            textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-2)",
           }}>
             Scoreboard
           </span>
           {liveCount > 0 && (
-            <span style={{
-              fontFamily: "var(--font-mono)", fontSize: "9px", fontWeight: 700,
-              color: "var(--green)", letterSpacing: "0.06em",
+            <span className="num" style={{
+              fontSize: "var(--fs-caption)", fontWeight: "var(--weight-bold)",
+              color: "var(--pos)", letterSpacing: "var(--tracking-label)",
             }}>
               {liveCount} LIVE
             </span>
           )}
           {finalCount > 0 && liveCount === 0 && (
-            <span style={{
-              fontFamily: "var(--font-mono)", fontSize: "9px",
-              color: "var(--text-3)",
+            <span className="num" style={{
+              fontSize: "var(--fs-caption)",
+              color: "var(--text-2)",
             }}>
               {finalCount}/{games.length} final
             </span>
           )}
         </div>
         {lastUpdated && (
-          <span style={{
-            fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-3)",
+          <span className="num" style={{
+            fontSize: "var(--fs-caption)", color: "var(--text-2)",
           }}>
             {liveCount > 0 ? "live · " : ""}updated {lastUpdated.toLocaleTimeString("en-US", {
               timeZone: "America/New_York",

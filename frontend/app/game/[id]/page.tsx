@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { todayET } from "@/lib/api";
 import { GameDetailPanel } from "@/components/game-detail-panel";
+import { Loading, SkeletonCard } from "@/components/ui";
 
 function GamePageInner() {
   const { id } = useParams<{ id: string }>();
@@ -15,11 +16,22 @@ function GamePageInner() {
     <div>
       <Link
         href={`/?date=${asOf}`}
-        style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", textDecoration: "none", letterSpacing: "0.05em" }}
+        className="num"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          minHeight: "44px",
+          fontSize: "var(--fs-meta)",
+          color: "var(--text-2)",
+          textDecoration: "none",
+          letterSpacing: "var(--tracking-label)",
+          textTransform: "uppercase",
+        }}
       >
         ← Slate · {asOf}
       </Link>
-      <div style={{ marginTop: "16px" }}>
+      <div style={{ marginTop: "var(--sp-4)" }}>
         <GameDetailPanel gameId={Number(id)} date={asOf} />
       </div>
     </div>
@@ -28,7 +40,7 @@ function GamePageInner() {
 
 export default function GameDetailPage() {
   return (
-    <Suspense fallback={<div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>}>
+    <Suspense fallback={<Loading label="Loading game"><SkeletonCard lines={6} /></Loading>}>
       <GamePageInner />
     </Suspense>
   );

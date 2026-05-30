@@ -49,10 +49,10 @@ export function LiveAlert({ live, relTime = defaultRelTime }: LiveAlertProps) {
     return (
       <div
         style={{
-          marginTop: 8,
-          fontSize: 10,
+          marginTop: "var(--sp-2)",
+          fontSize: "var(--fs-caption)",
           fontFamily: "var(--font-mono)",
-          color: "var(--text-3)",
+          color: "var(--text-2)",
           opacity: stale ? 0.5 : 1,
         }}
       >
@@ -71,21 +71,21 @@ export function LiveAlert({ live, relTime = defaultRelTime }: LiveAlertProps) {
   return (
     <div
       style={{
-        marginTop: 8,
-        border: "1px solid var(--amber, #d29922)",
-        borderRadius: 4,
-        background: "rgba(210,153,34,0.06)",
-        padding: "8px 10px",
+        marginTop: "var(--sp-2)",
+        border: "1px solid var(--warn)",
+        borderRadius: "var(--r-sm)",
+        background: "var(--amber-tint)",
+        padding: "var(--sp-2) var(--sp-3)",
         opacity: stale ? 0.5 : 1,
       }}
     >
       {/* line 1 — bold headline */}
       <div
         style={{
-          fontSize: 12,
-          fontWeight: 700,
+          fontSize: "var(--fs-body)",
+          fontWeight: "var(--weight-bold)",
           color: "var(--text)",
-          lineHeight: 1.3,
+          lineHeight: "var(--lh-data)",
         }}
       >
         {a.headline}
@@ -94,10 +94,10 @@ export function LiveAlert({ live, relTime = defaultRelTime }: LiveAlertProps) {
       {/* line 2 — muted detail */}
       <div
         style={{
-          fontSize: 10.5,
+          fontSize: "var(--fs-caption)",
           color: "var(--text-2)",
-          marginTop: 3,
-          lineHeight: 1.4,
+          marginTop: "var(--sp-1)",
+          lineHeight: "var(--lh-data)",
         }}
       >
         {detailLine}
@@ -107,17 +107,17 @@ export function LiveAlert({ live, relTime = defaultRelTime }: LiveAlertProps) {
       <div
         style={{
           display: "inline-block",
-          marginTop: 6,
-          fontSize: 8.5,
+          marginTop: "var(--sp-1)",
+          fontSize: "var(--fs-micro)",
           fontFamily: "var(--font-mono)",
-          fontWeight: 600,
-          letterSpacing: "0.06em",
+          fontWeight: "var(--weight-semibold)",
+          letterSpacing: "var(--tracking-label)",
           textTransform: "uppercase",
-          color: "var(--text-3)",
-          background: "var(--surface-2, rgba(255,255,255,0.04))",
+          color: "var(--text-2)",
+          background: "var(--surface-2)",
           border: "1px solid var(--border)",
-          borderRadius: 3,
-          padding: "2px 6px",
+          borderRadius: "var(--r-sm)",
+          padding: "var(--sp-1) var(--sp-2)",
         }}
       >
         {a.label || "Monitoring alert — not a pick"}
@@ -126,11 +126,11 @@ export function LiveAlert({ live, relTime = defaultRelTime }: LiveAlertProps) {
       {/* line 4 — right-aligned freshness */}
       <div
         style={{
-          fontSize: 9,
+          fontSize: "var(--fs-micro)",
           fontFamily: "var(--font-mono)",
-          color: "var(--text-3)",
+          color: "var(--text-muted)",
           textAlign: "right",
-          marginTop: 4,
+          marginTop: "var(--sp-1)",
         }}
       >
         {freshness}
