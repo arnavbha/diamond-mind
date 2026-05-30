@@ -6,13 +6,14 @@
  * Usage:
  *   <AdminGate onUnlocked={() => setUnlocked(true)} />
  *
- * Shows a 🔒 button. Clicking it opens a password prompt; on success it
+ * Shows a lock button. Clicking it opens a password prompt; on success it
  * stores the token in localStorage via api.setAdminToken() and calls
  * onUnlocked(). While locked, mutating UI should be hidden or disabled.
  */
 
-import { useState } from "react";
+import { useState, useId } from "react";
 import { getAdminToken, setAdminToken } from "@/lib/api";
+import { Button, Dialog } from "@/components/ui";
 
 interface Props {
   onUnlocked?: () => void;
@@ -23,6 +24,7 @@ export default function AdminGate({ onUnlocked }: Props) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  const inputId = useId();
 
   function handleUnlock() {
     if (!input.trim()) {
@@ -42,54 +44,96 @@ export default function AdminGate({ onUnlocked }: Props) {
     setUnlocked(false);
   }
 
+  function closeDialog() {
+    setOpen(false);
+    setInput("");
+    setError("");
+  }
+
   return (
     <>
-      <button
+      <Button
+        variant={unlocked ? "track" : "ghost"}
+        active={unlocked}
+        size="sm"
         onClick={unlocked ? handleLock : () => setOpen(true)}
         title={unlocked ? "Lock admin actions" : "Unlock admin actions"}
-        className={`text-xs px-2 py-1 rounded border font-mono transition-colors ${
-          unlocked
-            ? "border-emerald-500 text-emerald-400 hover:bg-emerald-900/30"
-            : "border-zinc-600 text-zinc-400 hover:border-zinc-400 hover:text-zinc-200"
-        }`}
       >
         {unlocked ? "🔓 admin" : "🔒 locked"}
-      </button>
+      </Button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-80 shadow-xl">
-            <h2 className="text-sm font-semibold text-zinc-100 mb-1">Admin unlock</h2>
-            <p className="text-xs text-zinc-400 mb-4">
-              Enter the admin token to enable settle / delete actions.
-            </p>
-            <input
-              type="password"
-              autoFocus
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
-              placeholder="Token"
-              className="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-400 mb-2"
-            />
-            {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => { setOpen(false); setInput(""); setError(""); }}
-                className="text-xs px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 hover:text-zinc-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUnlock}
-                className="text-xs px-3 py-1.5 rounded bg-zinc-700 text-zinc-100 hover:bg-zinc-600 font-medium"
-              >
-                Unlock
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={open}
+        onClose={closeDialog}
+        title="Admin unlock"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={closeDialog}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleUnlock}>
+              Unlock
+            </Button>
+          </>
+        }
+      >
+        <p
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--fs-body)",
+            color: "var(--text-2)",
+            lineHeight: "var(--lh-prose)",
+            margin: "0 0 var(--sp-3)",
+          }}
+        >
+          Enter the admin token to enable settle / delete actions.
+        </p>
+        <label
+          htmlFor={inputId}
+          style={{
+            display: "block",
+            fontSize: "var(--fs-caption)",
+            letterSpacing: "var(--tracking-label)",
+            textTransform: "uppercase",
+            color: "var(--text-2)",
+            marginBottom: "var(--sp-1)",
+          }}
+        >
+          Token
+        </label>
+        <input
+          id={inputId}
+          type="password"
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
+          placeholder="Token"
+          style={{
+            width: "100%",
+            minHeight: "44px",
+            background: "var(--surface-inset)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r-sm)",
+            padding: "0 var(--sp-3)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-body)",
+            color: "var(--text)",
+          }}
+        />
+        {error && (
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-meta)",
+              color: "var(--neg)",
+              margin: "var(--sp-2) 0 0",
+            }}
+          >
+            {error}
+          </p>
+        )}
+      </Dialog>
     </>
   );
 }

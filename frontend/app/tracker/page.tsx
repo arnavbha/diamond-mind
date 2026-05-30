@@ -1,39 +1,32 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
 import CountUp from "@/components/count-up";
 import { DitherHeader } from "@/components/dither-header";
+import {
+  Card,
+  Button,
+  ConfirmButton,
+  TierBadge,
+  ResultBadge,
+  SemanticValue,
+  Accruing,
+  DataTable,
+  EmptyState,
+  ErrorBanner,
+  Loading,
+  Tabs,
+  type Column,
+  type TabItem,
+} from "@/components/ui";
+import { oddsColor } from "@/lib/visual-tokens";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtOdds(o: number): string {
   return o >= 0 ? `+${o}` : `${o}`;
-}
-
-function fmtUnits(u: number | null): string {
-  if (u === null) return "—";
-  const s = u >= 0 ? `+${u.toFixed(2)}u` : `${u.toFixed(2)}u`;
-  return s;
-}
-
-function resultColor(r: BetRecord["result"]): string {
-  if (r === "WIN") return "var(--green)";
-  if (r === "LOSS") return "var(--red)";
-  if (r === "PUSH") return "var(--text-2)";
-  return "var(--amber)";
-}
-
-function resultLabel(r: BetRecord["result"]): string {
-  if (r === null) return "PENDING";
-  return r;
-}
-
-function tierColor(tier: string): string {
-  if (tier === "STRONG LEAN") return "var(--green)";
-  if (tier === "LEAN") return "var(--blue)";
-  return "var(--text-3)";
 }
 
 // ── CLV chip ───────────────────────────────────────────────────────────────
@@ -46,7 +39,8 @@ const CLV_NO_CLOSE: ReadonlySet<string> = new Set([
 ]);
 
 function ClvChip({ bet }: { bet: BetRecord }) {
-  // No close captured (or backend predates CLV) → honest placeholder.
+  // No close captured (or backend predates CLV) → honest placeholder, styled as
+  // the first-class Accruing primitive (dashed border, --text-muted, never red).
   if (
     bet.clv_source == null ||
     bet.beat_close == null ||
@@ -60,20 +54,15 @@ function ClvChip({ bet }: { bet: BetRecord }) {
             ? "No scheduled first pitch on record — cannot define a closing line"
             : "No pre-first-pitch closing snapshot was captured for this market"
         }
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "10px",
-          color: "var(--text-3)",
-          letterSpacing: "0.03em",
-        }}
+        style={{ display: "inline-flex" }}
       >
-        no close
+        <Accruing inline note="no close" style={{ fontSize: "var(--fs-caption)" }} />
       </span>
     );
   }
 
   const beat = bet.beat_close === true;
-  const col = beat ? "var(--green)" : "var(--red)";
+  const col = beat ? "var(--pos)" : "var(--neg)";
   const pct = (bet.clv_pct * 100).toFixed(1);
   const sign = bet.clv_pct >= 0 ? "+" : "";
   return (
@@ -82,16 +71,16 @@ function ClvChip({ bet }: { bet: BetRecord }) {
         `${beat ? "Beat" : "Missed"} the close by ${sign}${pct} prob-points` +
         (bet.closing_odds != null ? ` · close ${fmtOdds(bet.closing_odds)}` : "")
       }
+      className="num"
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: "4px",
-        fontFamily: "var(--font-mono)",
-        fontSize: "10px",
-        fontWeight: 700,
+        gap: "var(--sp-1)",
+        fontSize: "var(--fs-caption)",
+        fontWeight: "var(--weight-bold)",
         lineHeight: 1,
-        padding: "3px 6px",
-        borderRadius: "3px",
+        padding: "var(--sp-1) var(--sp-2)",
+        borderRadius: "var(--r-sm)",
         color: col,
         border: `1px solid ${col}`,
         background: "transparent",
@@ -104,48 +93,62 @@ function ClvChip({ bet }: { bet: BetRecord }) {
 }
 
 // ── Summary stat block ────────────────────────────────────────────────────────
+// CountUp is stabilized: it animates from the PREVIOUS rendered value to the new
+// one, so a settle/delete refresh counts only the delta instead of re-running
+// the full 0→net sweep on every reload.
 
 function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
-  const netColor = g.units_net >= 0 ? "var(--green)" : "var(--red)";
+  // Stabilize CountUp: animate from 0 only on first mount, then count the delta
+  // from the previously-rendered net on each settle/delete refresh (no jumpy
+  // full 0→net re-sweep). We commit the prior net into state AFTER render (in an
+  // effect), so render never reads/mutates a ref. The single effect reads the
+  // last committed value, then stores the new one for next time.
+  const prevNet = useRef(0);
+  const [from, setFrom] = useState(0);
+  useEffect(() => {
+    if (prevNet.current !== g.units_net) {
+      setFrom(prevNet.current);
+      prevNet.current = g.units_net;
+    }
+  }, [g.units_net]);
+
+  const netColor = g.units_net >= 0 ? "var(--pos)" : "var(--neg)";
   const winRate = g.wins + g.losses > 0
     ? ((g.wins / (g.wins + g.losses)) * 100).toFixed(0) + "%"
     : "—";
   return (
-    <div className="glare-card tracker-summary-card" style={{
-      flex: 1, minWidth: 0,
-      background: "var(--surface-2)",
-      border: "1px solid var(--border)",
-      borderRadius: "6px",
-      padding: "14px 16px",
-    }}>
-      <div style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "10px",
-        fontWeight: 700,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: "var(--text-3)",
-        marginBottom: "8px",
-      }}>{label}</div>
-      <div style={{
-        fontFamily: "var(--font-display)",
-        fontSize: "28px",
-        fontWeight: 800,
-        letterSpacing: "-0.02em",
-        color: netColor,
-        lineHeight: 1,
-      }}>
+    <Card
+      variant="inset"
+      className="tracker-summary-card"
+      style={{ flex: 1, minWidth: 0, background: "var(--surface-2)" }}
+    >
+      <div
+        style={{
+          fontSize: "var(--fs-caption)",
+          fontWeight: "var(--weight-bold)",
+          letterSpacing: "var(--tracking-label)",
+          textTransform: "uppercase",
+          color: "var(--text-2)",
+          marginBottom: "var(--sp-2)",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="num"
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "var(--fs-headline)",
+          fontWeight: "var(--weight-display)",
+          color: netColor,
+          lineHeight: "var(--lh-tight)",
+        }}
+      >
         {g.units_net >= 0 ? "+" : ""}
-        <CountUp
-          to={g.units_net}
-          from={0}
-          direction="up"
-          duration={1.2}
-          delay={0.1}
-        />
+        <CountUp to={g.units_net} from={from} direction="up" duration={1.2} delay={0.1} />
         u
       </div>
-      <div style={{ marginTop: "8px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+      <div style={{ marginTop: "var(--sp-2)", display: "flex", gap: "var(--sp-3)", flexWrap: "wrap" }}>
         {[
           ["Bets", g.bets],
           ["W", g.wins],
@@ -156,254 +159,270 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
           ["Wagered", g.units_wagered.toFixed(1) + "u"],
         ].map(([k, v]) => (
           <div key={k as string} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{k}</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", fontWeight: 600, color: "var(--text)" }}>{v}</span>
+            <span
+              style={{
+                fontSize: "var(--fs-micro)",
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "var(--tracking-label)",
+              }}
+            >
+              {k}
+            </span>
+            <span className="num" style={{ fontSize: "var(--fs-body)", fontWeight: "var(--weight-semibold)", color: "var(--text)" }}>
+              {v}
+            </span>
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }
 
-// ── Bet row ───────────────────────────────────────────────────────────────────
+// ── Ledger columns (DataTable) ────────────────────────────────────────────────
 
-function BetRow({
-  bet,
-  onSettle,
-  onDelete,
-  unlocked,
-}: {
-  bet: BetRecord;
+type RowActions = {
   onSettle: (id: number, result: "WIN" | "LOSS" | "PUSH") => void;
   onDelete: (id: number) => void;
   unlocked: boolean;
-}) {
-  const rc = resultColor(bet.result);
-  const tc = tierColor(bet.tier);
-  const isPending = bet.result === null;
+};
 
-  const resultClass =
-    bet.result === "WIN"  ? "bet-result-win"  :
-    bet.result === "LOSS" ? "bet-result-loss" :
-    bet.result === "PUSH" ? "bet-result-push" :
-    "bet-result-pending";
-
-  const btnBase: React.CSSProperties = {
-    fontFamily: "var(--font-mono)",
-    fontSize: "10px",
-    fontWeight: 700,
-    padding: "3px 7px",
-    borderRadius: "3px",
-    border: "1px solid",
-    cursor: "pointer",
-    lineHeight: 1,
-    letterSpacing: "0.04em",
-  };
-
-  return (
-    <div className={`${resultClass} tracker-row`} style={{
-      display: "grid",
-      gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 96px 80px",
-      alignItems: "center",
-      gap: "10px",
-      padding: "8px 12px",
-      borderBottom: "1px solid var(--border)",
-    }}>
-      {/* date / game status */}
-      <span className="tracker-cell" data-label="Date" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
-        {bet.game_date}
-        {isPending && bet.game_status && (() => {
-          const isLive = bet.game_status === "In Progress";
-          const isPreGame = bet.game_status === "Pre-Game";
-          if (isLive) {
-            return (
-              <span style={{
-                display: "block",
-                fontSize: "9px",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                color: "var(--red)",
-                marginTop: "2px",
-              }}>● LIVE</span>
-            );
-          }
-          if ((bet.game_status === "Scheduled" || isPreGame) && bet.game_time_utc) {
-            // Convert UTC to ET
-            const d = new Date(bet.game_time_utc);
-            const etStr = d.toLocaleTimeString("en-US", {
-              timeZone: "America/New_York",
-              hour: "numeric",
-              minute: "2-digit",
-              hour12: true,
-            });
-            return (
-              <span style={{
-                display: "block",
-                fontSize: "9px",
-                color: "var(--text-3)",
-                marginTop: "2px",
-              }}>{etStr} ET</span>
-            );
-          }
-          return null;
-        })()}
-      </span>
-
-      {/* game + pick */}
-      <div className="tracker-cell" data-label="Pick" style={{ minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 600 }}>
-          {bet.away_team_abbr} @ {bet.home_team_abbr}
-        </div>
-        <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text)", marginTop: "2px", lineHeight: 1.3 }}>
-          {bet.selection}
-          {bet.market === "total" && bet.total_line != null && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)" }}> · o/u {bet.total_line}</span>
-          )}
-        </div>
-      </div>
-
-      {/* odds */}
-      <span className="tracker-cell" data-label="Odds" style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
-        {fmtOdds(bet.american_odds)}
-      </span>
-
-      {/* units wagered */}
-      <span className="tracker-cell" data-label="Units" style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)" }}>
-        {bet.units}u
-      </span>
-
-      {/* tier badge */}
-      <span className="tier-badge tracker-cell" data-label="Tier" style={{ color: tc, borderColor: tc, fontSize: "9px" }}>
-        {bet.tier === "STRONG LEAN" ? "SL" : bet.tier === "LEAN" ? "L" : bet.tier}
-      </span>
-
-      {/* result badge */}
-      <span className="tier-badge tracker-cell" data-label="Result" style={{ color: rc, borderColor: rc, fontSize: "9px" }}>
-        {resultLabel(bet.result)}
-      </span>
-
-      {/* units net */}
-      <span className="tracker-cell" data-label="+/− Units" style={{
-        fontFamily: "var(--font-display)",
-        fontSize: "15px",
-        fontWeight: 800,
-        letterSpacing: "-0.01em",
-        color: bet.units_returned === null
-          ? "var(--text-3)"
-          : bet.units_returned >= 0 ? "var(--green)" : "var(--red)",
-      }}>
-        {fmtUnits(bet.units_returned)}
-      </span>
-
-      {/* CLV — did the picked price beat the close? */}
-      <span className="tracker-cell" data-label="CLV" style={{ minWidth: 0 }}>
-        <ClvChip bet={bet} />
-      </span>
-
-      {/* actions — only shown when admin is unlocked */}
-      <div className="tracker-cell" data-label="Actions" style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-        {unlocked && isPending && (
-          <>
-            <button
-              onClick={() => onSettle(bet.id, "WIN")}
-              style={{ ...btnBase, color: "var(--green)", borderColor: "var(--green)", background: "transparent" }}
-              title="Mark WIN"
-            >W</button>
-            <button
-              onClick={() => onSettle(bet.id, "LOSS")}
-              style={{ ...btnBase, color: "var(--red)", borderColor: "var(--red)", background: "transparent" }}
-              title="Mark LOSS"
-            >L</button>
-            <button
-              onClick={() => onSettle(bet.id, "PUSH")}
-              style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent" }}
-              title="Mark PUSH"
-            >P</button>
-          </>
-        )}
-        {unlocked && (
-          <button
-            onClick={() => onDelete(bet.id)}
-            style={{ ...btnBase, color: "var(--text-3)", borderColor: "var(--border-2)", background: "transparent", marginLeft: isPending ? "2px" : "0" }}
-            title="Delete"
-          >×</button>
-        )}
-      </div>
-    </div>
-  );
+function rowAccentClass(r: BetRecord["result"]): string {
+  if (r === "WIN") return "bet-result-win";
+  if (r === "LOSS") return "bet-result-loss";
+  if (r === "PUSH") return "bet-result-push";
+  return "bet-result-pending";
 }
 
-// ── Column headers ────────────────────────────────────────────────────────────
-
-function TableHeader() {
-  const cell: React.CSSProperties = {
-    fontFamily: "var(--font-mono)",
-    fontSize: "9px",
-    fontWeight: 700,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-    color: "var(--text-3)",
-  };
-  return (
-    <div className="tracker-header" style={{
-      display: "grid",
-      gridTemplateColumns: "90px 1fr 80px 60px 60px 80px 90px 96px 80px",
-      alignItems: "center",
-      gap: "10px",
-      padding: "6px 12px 6px",
-      borderBottom: "1px solid var(--border-2)",
-      background: "rgba(22,27,34,0.7)",
-    }}>
-      <span style={cell}>Date</span>
-      <span style={cell}>Game / Pick</span>
-      <span style={cell}>Odds</span>
-      <span style={cell}>Units</span>
-      <span style={cell}>Tier</span>
-      <span style={cell}>Result</span>
-      <span style={cell}>+/- Units</span>
-      <span style={cell}>CLV</span>
-      <span style={cell}>Actions</span>
-    </div>
-  );
+function GameStatusSub({ bet }: { bet: BetRecord }) {
+  if (bet.result !== null || !bet.game_status) return null;
+  const isLive = bet.game_status === "In Progress";
+  const isPreGame = bet.game_status === "Pre-Game";
+  if (isLive) {
+    return (
+      <span
+        style={{
+          display: "block",
+          fontSize: "var(--fs-micro)",
+          fontWeight: "var(--weight-bold)",
+          letterSpacing: "var(--tracking-label)",
+          color: "var(--neg)",
+          marginTop: "2px",
+        }}
+      >
+        <span className="live-dot" aria-hidden="true" /> LIVE
+      </span>
+    );
+  }
+  if ((bet.game_status === "Scheduled" || isPreGame) && bet.game_time_utc) {
+    const d = new Date(bet.game_time_utc);
+    const etStr = d.toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return (
+      <span style={{ display: "block", fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: "2px" }}>
+        {etStr} ET
+      </span>
+    );
+  }
+  return null;
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-
-type Tab = "all" | "moneyline" | "total";
-
-function Tabs({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "moneyline", label: "Moneyline" },
-    { id: "total", label: "Over/Under" },
+function buildColumns({ onSettle, onDelete, unlocked }: RowActions): Column<BetRecord>[] {
+  return [
+    {
+      key: "date",
+      header: "Date",
+      width: "92px",
+      cell: (bet) => (
+        <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+          {bet.game_date}
+          <GameStatusSub bet={bet} />
+        </span>
+      ),
+    },
+    {
+      key: "pick",
+      header: "Game / Pick",
+      width: "1fr",
+      hideMobileLabel: true,
+      cell: (bet) => (
+        <div style={{ minWidth: 0 }}>
+          <div className="num" style={{ fontSize: "var(--fs-body)", fontWeight: "var(--weight-semibold)" }}>
+            {bet.away_team_abbr} @ {bet.home_team_abbr}
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "var(--fs-body)",
+              color: "var(--text)",
+              marginTop: "2px",
+              lineHeight: "var(--lh-data)",
+            }}
+          >
+            {bet.selection}
+            {bet.market === "total" && bet.total_line != null && (
+              <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+                {" "}· o/u {bet.total_line}
+              </span>
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "odds",
+      header: "Odds",
+      width: "72px",
+      align: "right",
+      cell: (bet) => (
+        <span className="num" style={{ fontSize: "var(--fs-body)", color: oddsColor(bet.american_odds) }}>
+          {fmtOdds(bet.american_odds)}
+        </span>
+      ),
+    },
+    {
+      key: "units",
+      header: "Units",
+      width: "56px",
+      align: "right",
+      cell: (bet) => (
+        <span className="num" style={{ fontSize: "var(--fs-body)", color: "var(--text-2)" }}>
+          {bet.units}u
+        </span>
+      ),
+    },
+    {
+      key: "tier",
+      header: "Tier",
+      width: "92px",
+      cell: (bet) => <TierBadge tier={bet.tier} />,
+    },
+    {
+      key: "result",
+      header: "Result",
+      width: "84px",
+      cell: (bet) => <ResultBadge result={bet.result} />,
+    },
+    {
+      key: "net",
+      header: "+/− Units",
+      width: "88px",
+      align: "right",
+      cell: (bet) =>
+        bet.units_returned === null ? (
+          <span className="num" style={{ fontSize: "var(--fs-data)", color: "var(--text-muted)" }}>
+            —
+          </span>
+        ) : (
+          <SemanticValue
+            value={bet.units_returned}
+            mode="units"
+            digits={2}
+            suffix="u"
+            style={{ fontSize: "var(--fs-data)", fontWeight: "var(--weight-bold)" }}
+          />
+        ),
+    },
+    {
+      key: "clv",
+      header: "CLV",
+      width: "100px",
+      cell: (bet) => <ClvChip bet={bet} />,
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      width: "150px",
+      cell: (bet) => {
+        const isPending = bet.result === null;
+        if (!unlocked) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+        const game = `${bet.away_team_abbr} @ ${bet.home_team_abbr}`;
+        return (
+          <div style={{ display: "flex", gap: "var(--sp-1)", alignItems: "center", flexWrap: "wrap" }}>
+            {isPending && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  aria-label={`Mark ${game} as a win`}
+                  title="Mark WIN"
+                  onClick={() => onSettle(bet.id, "WIN")}
+                  style={{ color: "var(--pos)", borderColor: "var(--pos)", minHeight: "32px", minWidth: "32px" }}
+                >
+                  W
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  aria-label={`Mark ${game} as a loss`}
+                  title="Mark LOSS"
+                  onClick={() => onSettle(bet.id, "LOSS")}
+                  style={{ color: "var(--neg)", borderColor: "var(--neg)", minHeight: "32px", minWidth: "32px" }}
+                >
+                  L
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  aria-label={`Mark ${game} as a push`}
+                  title="Mark PUSH"
+                  onClick={() => onSettle(bet.id, "PUSH")}
+                  style={{ minHeight: "32px", minWidth: "32px" }}
+                >
+                  P
+                </Button>
+              </>
+            )}
+            <ConfirmButton
+              iconOnly
+              aria-label={`Delete tracked bet ${game}`}
+              confirmLabel="Delete?"
+              onConfirm={() => onDelete(bet.id)}
+              style={{ minHeight: "32px", minWidth: "32px" }}
+            >
+              ×
+            </ConfirmButton>
+          </div>
+        );
+      },
+    },
   ];
+}
+
+// ── Group sub-header (Pending / Settled / per-date roll-up) ───────────────────
+
+function GroupBar({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", gap: "0", borderBottom: "1px solid var(--border)" }}>
-      {tabs.map(({ id, label }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "11px",
-            fontWeight: active === id ? 700 : 500,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            padding: "8px 14px",
-            background: "transparent",
-            border: "none",
-            borderBottom: active === id ? "2px solid var(--blue)" : "2px solid transparent",
-            color: active === id ? "var(--text)" : "var(--text-3)",
-            cursor: "pointer",
-            transition: "color 0.12s",
-          }}
-        >{label}</button>
-      ))}
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--sp-2)",
+        padding: "var(--sp-1) var(--sp-4)",
+        background: "var(--surface-2)",
+        fontSize: "var(--fs-caption)",
+        fontWeight: "var(--weight-bold)",
+        letterSpacing: "var(--tracking-label)",
+        textTransform: "uppercase",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      {children}
     </div>
   );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+
+type Tab = "all" | "moneyline" | "total";
 
 export default function TrackerPage() {
   const [bets, setBets] = useState<BetRecord[] | null>(null);
@@ -487,10 +506,38 @@ export default function TrackerPage() {
   };
   const s = summary ?? emptySummary;
 
+  const columns = buildColumns({ onSettle: handleSettle, onDelete: handleDelete, unlocked });
+
+  const tabItems: TabItem[] = [
+    { value: "all", label: "All" },
+    { value: "moneyline", label: "Moneyline" },
+    { value: "total", label: "Over / Under" },
+  ];
+
+  // Group settled bets by date descending for per-day roll-ups.
+  const settledByDate: [string, BetRecord[]][] = (() => {
+    const byDate: Record<string, BetRecord[]> = {};
+    settled.forEach((b) => {
+      (byDate[b.game_date] ??= []).push(b);
+    });
+    return Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
+  })();
+
   return (
     <div>
+      {/* Scoped responsive toggle for the DataTable (table on desktop, card
+          list on phones). The shared globals.css doesn't yet define these, so
+          we wire the breakpoint here without touching the component. */}
+      <style>{`
+        .data-table-mobile { display: none; }
+        @media (max-width: 640px) {
+          .data-table-desktop { display: none; }
+          .data-table-mobile { display: flex; }
+        }
+      `}</style>
+
       {/* Dither banner */}
-      <div style={{ position: "relative", borderRadius: "6px", overflow: "hidden", border: "1px solid #D2992266" }}>
+      <div style={{ position: "relative", borderRadius: "var(--r-md)", overflow: "hidden", border: "1px solid var(--clay)" }}>
         <DitherHeader
           color={[0.95, 0.55, 0.1]}
           colorNum={8}
@@ -499,18 +546,33 @@ export default function TrackerPage() {
           speed={0.03}
           height={110}
         />
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "flex-end",
-          padding: "0 20px 14px",
-          background: "linear-gradient(to right, rgba(8,12,16,0.65) 0%, rgba(8,12,16,0.2) 60%, rgba(8,12,16,0.55) 100%)",
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "flex-end",
+            padding: "0 var(--sp-5) var(--sp-3)",
+            background: "linear-gradient(to right, var(--scrim-2) 0%, var(--scrim-1) 60%, var(--scrim-2) 100%)",
+          }}
+        >
           <div>
-            <h1 style={{
-              fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px",
-              letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
-            }}>Picks Tracker</h1>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "rgba(255,255,255,0.7)", marginTop: "4px", textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>
+            <h1
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: "var(--weight-display)",
+                fontSize: "var(--fs-headline)",
+                margin: 0,
+                textTransform: "uppercase",
+                color: "var(--text)",
+              }}
+            >
+              Picks Tracker
+            </h1>
+            <div
+              className="num"
+              style={{ fontSize: "var(--fs-meta)", color: "var(--text)", marginTop: "var(--sp-1)", textShadow: "0 1px 4px var(--scrim-3)" }}
+            >
               Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
             </div>
           </div>
@@ -518,176 +580,154 @@ export default function TrackerPage() {
       </div>
 
       {/* Controls row */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "flex-end",
-        gap: "8px", padding: "10px 0", marginBottom: "20px",
-        borderBottom: "1px solid var(--border)",
-      }}>
+      <div
+        className="infield-divider"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: "var(--sp-2)",
+          flexWrap: "wrap",
+          padding: "var(--sp-3) 0",
+          marginBottom: "var(--sp-5)",
+        }}
+      >
         <AdminGate onUnlocked={() => setUnlocked(true)} />
-        <button
+        <Button
+          variant="primary"
           onClick={handleAutoTrack}
           disabled={autoTracking || !unlocked}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "11px",
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            padding: "8px 14px",
-            borderRadius: "4px",
-            border: "1px solid var(--blue)",
-            background: (autoTracking || !unlocked) ? "var(--surface)" : "var(--blue)",
-            color: (autoTracking || !unlocked) ? "var(--blue)" : "#000",
-            cursor: (autoTracking || !unlocked) ? "not-allowed" : "pointer",
-            opacity: (autoTracking || !unlocked) ? 0.5 : 1,
-            transition: "opacity 0.12s",
-          }}
+          aria-label={`Auto-track today's picks for ${today}`}
+          style={(autoTracking || !unlocked) ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
         >
           {autoTracking ? "Tracking…" : `⚡ Auto-track ${today}`}
-        </button>
+        </Button>
         {autoResult && (
-          <div style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "12px",
-            color: autoResult.created > 0 ? "var(--green)" : "var(--text-3)",
-          }}>
+          <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: autoResult.created > 0 ? "var(--pos)" : "var(--text-2)" }}>
             {autoResult.created > 0
               ? `+${autoResult.created} logged · ${autoResult.skipped} already tracked`
               : `All picks already tracked (${autoResult.skipped} skipped)`}
           </div>
         )}
         {autoError && (
-          <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--orange)" }}>
+          <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--hold)" }}>
             {autoError}
           </div>
         )}
       </div>
 
       {settleError && (
-        <div style={{
-          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--orange)",
-          padding: "10px 12px", border: "1px solid var(--orange)", borderRadius: "4px", marginBottom: "12px",
-          cursor: "pointer",
-        }} onClick={() => setSettleError(null)}>
-          ⚠ {settleError}
-        </div>
+        <ErrorBanner
+          kind="outage"
+          title="Settle failed"
+          detail={settleError}
+          action={
+            <Button variant="ghost" size="sm" onClick={() => setSettleError(null)} aria-label="Dismiss error">
+              Dismiss
+            </Button>
+          }
+          style={{ marginBottom: "var(--sp-3)" }}
+        />
       )}
 
       {error && (
-        <div style={{
-          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--red)",
-          padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px", marginBottom: "16px",
-        }}>
-          Unable to load tracker data. The backend may be starting up — try refreshing in a moment.
-        </div>
+        <ErrorBanner
+          kind="outage"
+          title="Unable to load tracker data"
+          detail="The backend may be starting up — try refreshing in a moment."
+          style={{ marginBottom: "var(--sp-4)" }}
+        />
       )}
 
       {/* Summary stats */}
       <div className="pnl-summary-wrap">
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}>
           <SummaryGroup label="Combined" g={s.combined} />
           <SummaryGroup label="Moneyline" g={s.ml} />
           <SummaryGroup label="Over / Under" g={s.total} />
         </div>
       </div>
-      <div style={{ marginBottom: 20 }} />
+      <div style={{ marginBottom: "var(--sp-5)" }} />
 
       {/* Tabs */}
-      <Tabs active={tab} onChange={setTab} />
+      <Tabs items={tabItems} value={tab} onChange={(v) => setTab(v as Tab)} ariaLabel="Filter ledger by market" />
 
       {/* Table */}
       {bets === null && !error && (
-        <div style={{
-          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)",
-          padding: "40px 0", textAlign: "center",
-        }}>Loading…</div>
+        <Loading label="Loading tracked bets">
+          <div style={{ padding: "var(--sp-8) 0" }}>
+            <Loading />
+          </div>
+        </Loading>
       )}
 
       {bets !== null && visible.length === 0 && (
-        <div style={{
-          fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-3)",
-          padding: "40px 0", textAlign: "center",
-        }}>
-          No bets tracked yet. Hit ⚡ Auto-track to log today&apos;s picks automatically.
-        </div>
+        <EmptyState
+          title="No bets tracked yet"
+          detail="Hit ⚡ Auto-track to log today's picks automatically."
+          style={{ marginTop: "var(--sp-4)" }}
+        />
       )}
 
       {visible.length > 0 && (
-        <div style={{ borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-2)" }}>
-          <TableHeader />
-
+        <Card
+          pad={false}
+          style={{ marginTop: "var(--sp-3)", overflow: "hidden", border: "1px solid var(--border)" }}
+        >
           {pending.length > 0 && (
             <>
-              <div style={{
-                padding: "5px 12px",
-                background: "rgba(22,27,34,0.65)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "9px",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--amber)",
-                borderBottom: "1px solid var(--border)",
-              }}>
-                ▸ Pending — {pending.length}
-              </div>
-              {pending.map((b) => (
-                <BetRow key={b.id} bet={b} onSettle={handleSettle} onDelete={handleDelete} unlocked={unlocked} />
-              ))}
+              <GroupBar>
+                <span style={{ color: "var(--warn)" }}>▸ Pending</span>
+                <span className="num" style={{ color: "var(--text-2)" }}>{pending.length}</span>
+              </GroupBar>
+              <DataTable
+                columns={columns}
+                rows={pending}
+                rowKey={(b) => b.id}
+                rowClassName={(b) => rowAccentClass(b.result)}
+                caption="Pending tracked bets"
+              />
             </>
           )}
 
-          {settled.length > 0 && (() => {
-            // Group settled bets by date descending
-            const byDate: Record<string, BetRecord[]> = {};
-            settled.forEach((b) => {
-              if (!byDate[b.game_date]) byDate[b.game_date] = [];
-              byDate[b.game_date].push(b);
-            });
-            const dateGroups = Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
-
-            return (
-              <>
-                <div style={{
-                  padding: "5px 12px",
-                  background: "rgba(22,27,34,0.65)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "9px",
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--text-3)",
-                  borderBottom: "1px solid var(--border)",
-                  borderTop: pending.length > 0 ? "1px solid var(--border)" : undefined,
-                }}>
-                  ▸ Settled — {settled.length}
-                </div>
-                {dateGroups.map(([date, dateBets]) => {
-                  const dayNet = dateBets.reduce((sum, b) => sum + (b.units_returned ?? 0), 0);
-                  const wins = dateBets.filter((b) => b.result === "WIN").length;
-                  const losses = dateBets.filter((b) => b.result === "LOSS").length;
-                  const pnlColor = dayNet > 0 ? "var(--green)" : dayNet < 0 ? "var(--red)" : "var(--text-3)";
-                  return (
-                    <div key={date}>
-                      <div className="date-group-header">
-                        <span>{date}</span>
-                        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                          <span style={{ color: "var(--text-3)" }}>{wins}W–{losses}L</span>
-                          <span className="dgh-pnl" style={{ color: pnlColor }}>
-                            {dayNet >= 0 ? "+" : ""}{dayNet.toFixed(2)}u
-                          </span>
-                        </div>
+          {settledByDate.length > 0 && (
+            <>
+              <GroupBar>
+                <span style={{ color: "var(--text-2)" }}>▸ Settled</span>
+                <span className="num" style={{ color: "var(--text-2)" }}>{settled.length}</span>
+              </GroupBar>
+              {settledByDate.map(([date, dateBets]) => {
+                const dayNet = dateBets.reduce((sum, b) => sum + (b.units_returned ?? 0), 0);
+                const wins = dateBets.filter((b) => b.result === "WIN").length;
+                const losses = dateBets.filter((b) => b.result === "LOSS").length;
+                return (
+                  <div key={date}>
+                    <div className="date-group-header">
+                      <span className="num">{date}</span>
+                      <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center" }}>
+                        <span className="num" style={{ color: "var(--text-2)" }}>{wins}W–{losses}L</span>
+                        <SemanticValue
+                          value={dayNet}
+                          mode="units"
+                          digits={2}
+                          suffix="u"
+                          className="dgh-pnl"
+                        />
                       </div>
-                      {dateBets.map((b) => (
-                        <BetRow key={b.id} bet={b} onSettle={handleSettle} onDelete={handleDelete} unlocked={unlocked} />
-                      ))}
                     </div>
-                  );
-                })}
-              </>
-            );
-          })()}
-        </div>
+                    <DataTable
+                      columns={columns}
+                      rows={dateBets}
+                      rowKey={(b) => b.id}
+                      rowClassName={(b) => rowAccentClass(b.result)}
+                      caption={`Settled tracked bets for ${date}`}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </Card>
       )}
     </div>
   );
