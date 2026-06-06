@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-06-06T22:54:12.724568Z",
+  "n_games": 793,
+  "as_of_rule": "game_date - 1 (leak-free replay)",
+  "moneyline": {
+    "n": 793,
+    "base_rate": 0.5284,
+    "brier_raw": 0.2538,
+    "brier_platt": 0.2486,
+    "brier_isotonic": 0.2559,
+    "platt": {
+      "a": 0.240835,
+      "b": 0.086496
+    },
+    "isotonic": {
+      "x": [
+        0.3,
+        0.4725,
+        0.6068,
+        0.6283,
+        0.72
+      ],
+      "y": [
+        0.4796,
+        0.5172,
+        0.5682,
+        0.6117,
+        1.0
+      ]
+    },
+    "recommended": "platt"
+  },
+  "totals_provisional": {
+    "n": 38,
+    "base_rate": 0.5,
+    "brier_raw": 0.2472,
+    "brier_platt": 0.2332,
+    "brier_isotonic": 0.2521,
+    "platt": {
+      "a": 4.6376,
+      "b": -1.165705
+    },
+    "note": "orientation of qt_p_model unverified; do NOT wire in yet"
+  }
+}
