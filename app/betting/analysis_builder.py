@@ -281,10 +281,15 @@ def _latest_ml_odds_for_abbr(
 def build_game_analysis(game_id: int, as_of: date, db: Session):
     """Load all data for a game and return a GameAnalysis dataclass (or None).
 
-    Every feature lookup is computed `as_of=as_of`. This is the single source
-    of truth for game analysis data loading — `routes._build_analysis`
-    delegates here, and `app.betting.backtest.run_backtest` calls it directly
-    with `as_of=game.game_date` to replay the model without look-ahead bias.
+    Every feature lookup is computed `as_of=as_of` using a `<= as_of` bound.
+    This is the single source of truth for game analysis data loading.
+
+    LOOK-AHEAD NOTE: in LIVE use callers pass `as_of=today`, which is leak-free
+    because today's box scores do not exist yet at pregame. In REPLAY (backtest,
+    snapshot backfill) callers MUST pass `as_of = game_date - 1`, because the
+    predicted game's own box score already exists in the historical DB and a
+    `<= game_date` bound would leak that result into its own form windows / H2H /
+    splits. See `app.betting.backtest.run_backtest`.
     """
     from sqlalchemy import desc
     from app.betting.game_analyzer import analyze_game

@@ -7,8 +7,14 @@ scores. This is standard quant backtesting on real data — **never** fabricated
 Hard rules enforced here (from PROJECT_BRIEF / goal.md):
 
 - **No look-ahead bias.** Every model input for a game is computed
-  `as_of=game.game_date` via `analysis_builder.build_game_analysis`, exactly
-  as the live `/games/{id}/analyze` endpoint does.
+  `as_of=game.game_date - 1 day` via `analysis_builder.build_game_analysis`.
+  This is the critical replay correction: the live endpoint uses
+  `as_of=today` (correct in production, since today's box scores do not exist
+  yet at pregame), but in historical replay the predicted game's OWN box score
+  already exists at `game_date`. Using `<= game_date` would leak that game's
+  result into its own form windows / H2H / splits. MLB teams play once per day,
+  so `game_date - 1` ("everything through yesterday") loses no real pregame
+  information.
 - **No fake data.** A game is only counted if BOTH `home_score` and
   `away_score` are non-null. Any scalar metric with `n=0` is `None` (never
   `0.0`); any list-valued field with `n=0` is `[]`.
@@ -21,7 +27,7 @@ The single public entry point is `run_backtest(db, start, end) -> BacktestResult
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Optional
 
 from sqlalchemy import select
@@ -161,7 +167,10 @@ def run_backtest(db: Session, start: date, end: date) -> BacktestResult:
     bankroll = 100.0
 
     for game in games:
-        analysis = build_game_analysis(game.id, game.game_date, db)
+        # Replay as the morning-of state: as_of = game_date - 1. Using game_date
+        # would leak the predicted game's own box score (which exists in the
+        # historical DB) into its form windows / H2H / splits. See module docstring.
+        analysis = build_game_analysis(game.id, game.game_date - timedelta(days=1), db)
         if analysis is None:
             # Game row vanished between query and load — skip it entirely.
             # It is not counted in n (n is recomputed below from processed).

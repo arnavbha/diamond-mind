@@ -3162,7 +3162,10 @@ def backfill_pick_snapshots(
     skipped_unknown_market = 0
 
     for bet in candidates:
-        analysis_obj = build_game_analysis(bet.game_id, bet.game_date, db)
+        # Replay as morning-of state (as_of = game_date - 1). Using game_date
+        # leaks the game's own box score into its form windows / H2H / splits,
+        # since historical box scores already exist. Matches run_backtest.
+        analysis_obj = build_game_analysis(bet.game_id, bet.game_date - timedelta(days=1), db)
         if analysis_obj is None:
             no_analysis += 1
             continue
