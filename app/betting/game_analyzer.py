@@ -732,6 +732,12 @@ def analyze_game(
 
     # Clamp
     prob = round(min(0.72, max(0.30, prob)), 4)
+    # Calibration: shrink the raw (over-confident) home prob toward the base
+    # rate via the fitted Platt map before any edge/tier/Kelly logic consumes
+    # it. No-op when DM_CALIBRATION=off or no config present. See
+    # app/betting/calibration.py.
+    from app.betting.calibration import calibrate_home_prob
+    prob = calibrate_home_prob(prob)
     away_prob = round(1 - prob, 4)
 
     # 6. Moneyline recommendation
