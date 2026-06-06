@@ -8,7 +8,19 @@
  * Pinned just below the nav, visible on every page.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+
+// Hydration-safe mount flag. Server snapshot is always false; the client
+// snapshot is true, so the first client render after hydration flips it
+// without a synchronous setState-in-effect.
+const emptySubscribe = () => () => {};
+function useMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,10 +159,10 @@ function TickerItem({ game }: { game: TickerGame }) {
   const showScore = isLive || isFinal;
 
   const labelColor = isLive
-    ? "var(--green)"
+    ? "var(--pos)"
     : isPPD
-    ? "var(--orange)"
-    : "var(--text-3)";
+    ? "var(--warn)"
+    : "var(--text-2)";
 
   const awayWins = isFinal && (game.awayScore ?? 0) > (game.homeScore ?? 0);
   const homeWins = isFinal && (game.homeScore ?? 0) > (game.awayScore ?? 0);
@@ -165,13 +177,15 @@ function TickerItem({ game }: { game: TickerGame }) {
     }}>
       {/* Live pulse dot */}
       {isLive && (
-        <span style={{
+        <span className="live-dot-ticker" style={{
           width: 5,
           height: 5,
           borderRadius: "50%",
-          background: "var(--green)",
+          background: "var(--pos)",
           display: "inline-block",
           flexShrink: 0,
+          // The ONE allowed infinite decorative animation: the live pulse on a
+          // genuinely in-progress game. Guarded by the reduced-motion blanket.
           animation: "livePulse 1.4s ease-in-out infinite",
         }} />
       )}
@@ -220,7 +234,7 @@ function TickerItem({ game }: { game: TickerGame }) {
       {/* Status label */}
       <span style={{
         fontFamily: "var(--font-mono)",
-        fontSize: "9px",
+        fontSize: "var(--fs-meta)",
         fontWeight: isLive ? 700 : 500,
         color: labelColor,
         letterSpacing: "0.04em",
@@ -254,19 +268,48 @@ function Dot() {
 
 export function ScoreTicker() {
   const [games, setGames] = useState<TickerGame[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
+  // The horizontal scroll is a decorative infinite animation. Gate it on the
+  // motion budget (reduced-motion / Save-Data / coarse pointer) and pause it
+  // when the tab is hidden. When paused, the strip is fully readable (it just
+  // doesn't scroll) — no data is hidden. The 60s data poll keeps running.
+  const [scrolling, setScrolling] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function refresh() {
-    const result = await loadGames(todayET());
-    setGames(result);
-  }
-
   useEffect(() => {
-    setMounted(true);
+    let active = true;
+    // Async fetch — setState only runs after the await resolves (and only while
+    // still mounted), so it is not a synchronous setState-in-effect.
+    async function refresh() {
+      const result = await loadGames(todayET());
+      if (active) setGames(result);
+    }
     void refresh();
     intervalRef.current = setInterval(() => void refresh(), 60_000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => {
+      active = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  // Decide whether the scroll animation may run, and pause on tab-hidden.
+  useEffect(() => {
+    const mm = (q: string) =>
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia(q).matches
+        : false;
+    const conn = (typeof navigator !== "undefined" &&
+      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection) || undefined;
+    const saveData = conn?.saveData === true;
+    const motionAllowed =
+      !mm("(prefers-reduced-motion: reduce)") && !saveData && !mm("(pointer: coarse)");
+
+    function sync() {
+      setScrolling(motionAllowed && !document.hidden);
+    }
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
   }, []);
 
   // Don't render on server (uses ET date + fetch)
@@ -283,44 +326,71 @@ export function ScoreTicker() {
       : [<TickerItem key={g.gamePk} game={g} />]
   );
 
-  const hasLive = games.some((g) => g.state === "live");
-
   return (
     <div style={{
       width: "100%",
-      height: 36,
+      height: "var(--ticker-h)",
       background: "var(--surface-2)",
-      overflow: "hidden",
+      // When scrolling, clip the duplicated track. When paused (reduced-motion /
+      // hidden / data-saver), allow horizontal scroll so a long slate stays
+      // fully readable without animation.
+      overflowX: scrolling ? "hidden" : "auto",
+      overflowY: "hidden",
       position: "sticky",
-      top: 52,
+      top: "var(--nav-h)",
+      // Just below the nav (--z-nav); a hair under so the sticky nav wins.
       zIndex: 99,
       display: "flex",
       alignItems: "center",
     }}>
-      {/* Animated bottom line */}
-      <div className={hasLive ? "ticker-live-line" : "ticker-idle-line"} />
-      {/* Scrolling track — contents duplicated for seamless loop */}
+      {/* Static bottom hairline. The retired rainbow ticker line conflated
+          "data is scrolling" with "a game is live"; the green live-dot is now
+          the sole live signal, so this is a neutral structural border. */}
       <div style={{
-        display: "inline-flex",
-        alignItems: "center",
-        whiteSpace: "nowrap",
-        animation: `scoreTicker ${durationSec}s linear infinite`,
-        willChange: "transform",
-        fontFamily: "var(--font-mono)",
-        fontSize: "12.5px",
-        letterSpacing: "0.02em",
-      }}>
-        {/* First copy */}
-        <span style={{ display: "inline-flex", alignItems: "center" }}>
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 1,
+        background: "var(--border)",
+      }} />
+      {scrolling ? (
+        // Scrolling track — contents duplicated for a seamless loop.
+        <div style={{
+          display: "inline-flex",
+          alignItems: "center",
+          whiteSpace: "nowrap",
+          animation: `scoreTicker ${durationSec}s linear infinite`,
+          willChange: "transform",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-body)",
+          letterSpacing: "0.02em",
+        }}>
+          {/* First copy */}
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            {items}
+            <Dot />
+          </span>
+          {/* Duplicate for seamless loop */}
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            {items}
+            <Dot />
+          </span>
+        </div>
+      ) : (
+        // Static (paused) track — single copy, scrollable, no animation.
+        <div style={{
+          display: "inline-flex",
+          alignItems: "center",
+          whiteSpace: "nowrap",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-body)",
+          letterSpacing: "0.02em",
+        }}>
           {items}
           <Dot />
-        </span>
-        {/* Duplicate for seamless loop */}
-        <span style={{ display: "inline-flex", alignItems: "center" }}>
-          {items}
-          <Dot />
-        </span>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

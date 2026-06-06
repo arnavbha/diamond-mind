@@ -4,20 +4,7 @@ import { useEffect, useState } from "react";
 import { api, type QuantVerify } from "@/lib/api";
 import { Gauge, DuelBar, HudChip, pPlusColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
-
-function NumField({ label, value, onChange, step = 1, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-      <span style={{ fontSize: "10px", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-3)" }}>{label}</span>
-      <input
-        type="number" value={value} step={step}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        style={{ background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: "4px", padding: "8px 10px", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "14px", fontWeight: 600, outline: "none", width: "100%" }}
-      />
-      {hint && <span style={{ fontSize: "9px", color: "var(--text-3)" }}>{hint}</span>}
-    </label>
-  );
-}
+import { NumberField, ErrorBanner } from "@/components/ui";
 
 function Formula({ title, body, plug, term }: { title: string; body: string; plug: string; term?: string }) {
   return (
@@ -66,14 +53,19 @@ export default function VerifyPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "20px" }}>
-        <NumField label="Model win %" value={modelProb} onChange={setModelProb} hint="your model's prob for the side" />
-        <NumField label="Side odds (American)" value={sideOdds} onChange={setSideOdds} step={5} hint="the line you'd bet" />
-        <NumField label="Opponent odds" value={otherOdds} onChange={setOtherOdds} step={5} hint="needed to devig" />
-        <NumField label="Evidence quality %" value={evidence} onChange={setEvidence} step={5} hint="data completeness 0–100" />
+      <div className="responsive-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
+        <NumberField label="Model win %" value={modelProb} onChange={(v) => setModelProb(parseFloat(v))} hint="your model's prob for the side" />
+        <NumberField label="Side odds (American)" value={sideOdds} onChange={(v) => setSideOdds(parseFloat(v))} step={5} hint="the line you'd bet" />
+        <NumberField label="Opponent odds" value={otherOdds} onChange={(v) => setOtherOdds(parseFloat(v))} step={5} hint="needed to devig" />
+        <NumberField label="Evidence quality %" value={evidence} onChange={(v) => setEvidence(parseFloat(v))} step={5} hint="data completeness 0–100" />
       </div>
 
-      {err && <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)", padding: "10px 12px", border: "1px solid var(--red)", borderRadius: "4px" }}>Backend not reachable — uvicorn app.api.routes:app --port 8000</div>}
+      {err && (
+        <ErrorBanner
+          kind="outage"
+          detail="Backend not reachable — uvicorn app.api.routes:app --port 8000"
+        />
+      )}
 
       {q && (
         <>

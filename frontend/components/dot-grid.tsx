@@ -169,11 +169,20 @@ export default function DotGrid({
       }
     }
 
-    // Respect reduced-motion: build + paint a single static frame, no rAF loop.
+    // Decorative-motion budget: the per-frame mouse canvas only animates when
+    // the user hasn't asked for reduced motion, isn't on a Save-Data / metered
+    // connection, and is on a fine pointer (mouse). On phones / reduced-motion /
+    // data-saver we paint a single static frame and skip the rAF loop entirely.
+    const mm = (q: string) =>
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia(q).matches
+        : false;
+    const conn = (typeof navigator !== "undefined" &&
+      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection) || undefined;
+    const saveData = conn?.saveData === true;
+    const coarsePointer = mm("(pointer: coarse)");
     const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      mm("(prefers-reduced-motion: reduce)") || saveData || coarsePointer;
 
     function drawStatic() {
       ctx!.clearRect(0, 0, W, H);

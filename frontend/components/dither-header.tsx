@@ -265,11 +265,19 @@ export function DitherHeader({
       raf = requestAnimationFrame(tick);
     }
 
-    // Respect reduced-motion: paint one static frame, never loop.
+    // Decorative-motion budget (heaviest cost — WebGL shader): animate only
+    // when motion is allowed AND not on Save-Data AND the pointer is fine.
+    // Otherwise paint one static frame and never start the render loop.
+    const mm = (q: string) =>
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia(q).matches
+        : false;
+    const conn = (typeof navigator !== "undefined" &&
+      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection) || undefined;
+    const saveData = conn?.saveData === true;
+    const coarsePointer = mm("(pointer: coarse)");
     const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      mm("(prefers-reduced-motion: reduce)") || saveData || coarsePointer;
 
     function startLoop() {
       if (running && raf) return;

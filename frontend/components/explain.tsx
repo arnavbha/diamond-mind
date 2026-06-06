@@ -102,7 +102,7 @@ export function ExplainTooltip({ term, children }: Props) {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        style={{ fontSize: "11px", lineHeight: 1 }}
+        style={{ fontSize: "var(--fs-meta)", lineHeight: 1 }}
       >
         ⓘ
       </button>

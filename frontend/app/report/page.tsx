@@ -2,32 +2,25 @@
 
 import { useState } from "react";
 import { api, todayET } from "@/lib/api";
+import {
+  Card,
+  Button,
+  Markdown,
+  DateNav,
+  DateField,
+  ErrorBanner,
+  EmptyState,
+  SkeletonText,
+  Loading,
+} from "@/components/ui";
 
 const METHOD_STYLE: Record<string, { label: string; color: string }> = {
-  sdk:  { label: "AI · SDK",  color: "var(--green)" },
-  cli:  { label: "AI · CLI",  color: "var(--amber)" },
-  none: { label: "Raw",       color: "var(--text-2)" },
+  sdk: { label: "AI · SDK", color: "var(--pos)" },
+  cli: { label: "AI · CLI", color: "var(--warn)" },
+  none: { label: "Raw", color: "var(--text-2)" },
 };
 
-function offsetDate(base: string, days: number): string {
-  const d = new Date(base + "T12:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-}
-
-function btnStyle(active = true): React.CSSProperties {
-  return {
-    background: "var(--surface)",
-    border: "1px solid var(--border-2)",
-    borderRadius: "4px",
-    padding: "6px 10px",
-    color: active ? "var(--text-2)" : "var(--text-3)",
-    fontFamily: "var(--font-mono)",
-    fontSize: "13px",
-    cursor: "pointer",
-    lineHeight: 1,
-  };
-}
+type View = "polished" | "raw";
 
 export default function ReportPage() {
   const today = todayET();
@@ -39,9 +32,15 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [view, setView] = useState<View>("polished");
 
   async function loadReport(d = date) {
-    setMarkdown(null); setPolishedText(null); setMethod(null); setError(null); setLoading(true);
+    setMarkdown(null);
+    setPolishedText(null);
+    setMethod(null);
+    setError(null);
+    setView("polished");
+    setLoading(true);
     try {
       const md = await api.reportMarkdown(d);
       if (md === null) throw new Error("not found");
@@ -67,6 +66,7 @@ export default function ReportPage() {
     } else {
       setPolishedText(result.markdown);
       setMethod(result.method);
+      setView("polished");
     }
     setPolishing(false);
   }
@@ -79,91 +79,161 @@ export default function ReportPage() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  const displayText = polishedText ?? markdown;
-  const methodMeta = method ? (METHOD_STYLE[method] ?? METHOD_STYLE.none) : null;
+  // displayText follows the explicit raw/polished toggle when both exist.
+  const hasPolish = polishedText != null;
+  const displayText =
+    hasPolish && view === "polished" ? polishedText : markdown;
+  const methodMeta = method ? METHOD_STYLE[method] ?? METHOD_STYLE.none : null;
 
   return (
     <div>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", borderBottom: "1px solid var(--border)", paddingBottom: "14px", marginBottom: "24px", flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-3)",
+          borderBottom: "1px solid var(--border)",
+          paddingBottom: "var(--sp-3)",
+          marginBottom: "var(--sp-6)",
+          flexWrap: "wrap",
+        }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontWeight: 700, fontSize: "20px", letterSpacing: "-0.03em", margin: 0, color: "var(--text)" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: "var(--weight-display)",
+              fontSize: "var(--fs-headline)",
+              letterSpacing: "var(--tracking-num)",
+              margin: 0,
+              color: "var(--text)",
+            }}
+          >
             Daily Report
           </h1>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "3px" }}>
+          <div
+            className="num"
+            style={{ fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: "var(--sp-1)" }}
+          >
             {date}
           </div>
         </div>
 
-        {/* Date nav */}
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <button style={btnStyle()} onClick={() => changeDate(offsetDate(date, -1))}>←</button>
-          <input
-            type="date" value={date}
-            onChange={e => changeDate(e.target.value)}
-            style={{ background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: "4px", padding: "6px 10px", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "12px", outline: "none" }}
-          />
-          <button style={btnStyle()} onClick={() => changeDate(offsetDate(date, 1))}>→</button>
+        {/* Date nav (auto-loads on change) */}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap" }}>
+          <DateNav value={date} onChange={changeDate} maxToday />
+          <DateField value={date} max={today} onChange={changeDate} aria-label="Report date" />
         </div>
-
-        {/* Load */}
-        <button
-          onClick={() => loadReport()}
-          style={{ background: "var(--surface-2)", border: "1px solid var(--border-2)", borderRadius: "4px", padding: "6px 14px", color: "var(--text)", fontFamily: "var(--font-ui)", fontWeight: 600, fontSize: "12px", letterSpacing: "0.03em", cursor: "pointer" }}
-        >
-          Load
-        </button>
-
-        {/* Polish */}
-        {markdown && (
-          <button
-            onClick={polish} disabled={polishing}
-            style={{ background: polishing ? "var(--border)" : "var(--amber)", border: "none", borderRadius: "4px", padding: "6px 14px", color: polishing ? "var(--text-2)" : "var(--bg)", fontFamily: "var(--font-ui)", fontWeight: 700, fontSize: "12px", cursor: polishing ? "not-allowed" : "pointer", transition: "background 0.15s" }}
-          >
-            {polishing ? "Polishing…" : "Polish with Claude"}
-          </button>
-        )}
-
-        {/* Method badge */}
-        {methodMeta && (
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: methodMeta.color, border: `1px solid ${methodMeta.color}`, borderRadius: "3px", padding: "2px 8px", opacity: 0.85 }}>
-            {methodMeta.label}
-          </span>
-        )}
-
-        {/* Copy */}
-        {displayText && (
-          <button
-            onClick={copyText}
-            style={{ background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: "4px", padding: "6px 12px", color: copied ? "var(--green)" : "var(--text-2)", fontFamily: "var(--font-mono)", fontSize: "11px", cursor: "pointer", transition: "color 0.15s" }}
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        )}
       </div>
 
-      {error && (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--orange)", padding: "12px", border: "1px solid var(--orange)", borderRadius: "4px", marginBottom: "16px" }}>
-          {error}
+      {/* Controls row */}
+      {markdown && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--sp-2)",
+            marginBottom: "var(--sp-4)",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Raw / Polished toggle — only meaningful once polish exists */}
+          {hasPolish && (
+            <div
+              role="group"
+              aria-label="Report view"
+              style={{
+                display: "inline-flex",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)",
+                overflow: "hidden",
+              }}
+            >
+              {(["polished", "raw"] as View[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  aria-pressed={view === v}
+                  style={{
+                    minHeight: "44px",
+                    padding: "0 var(--sp-3)",
+                    border: "none",
+                    background: view === v ? "var(--surface-2)" : "transparent",
+                    color: view === v ? "var(--text)" : "var(--text-2)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--fs-meta)",
+                    letterSpacing: "var(--tracking-label)",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                  }}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <Button variant="primary" size="sm" onClick={polish} disabled={polishing}>
+            {polishing ? "Polishing…" : hasPolish ? "Re-polish" : "Polish with Claude"}
+          </Button>
+
+          {methodMeta && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--fs-meta)",
+                color: methodMeta.color,
+                border: `1px solid ${methodMeta.color}`,
+                borderRadius: "var(--r-sm)",
+                padding: "var(--sp-1) var(--sp-2)",
+                letterSpacing: "var(--tracking-label)",
+              }}
+            >
+              {methodMeta.label}
+            </span>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={copyText}
+            style={{ marginLeft: "auto", color: copied ? "var(--pos)" : undefined }}
+          >
+            {copied ? "Copied!" : "Copy"}
+          </Button>
         </div>
+      )}
+
+      {error && (
+        <ErrorBanner
+          kind="outage"
+          title={`No report for ${date}`}
+          detail={error}
+          style={{ marginBottom: "var(--sp-4)" }}
+        />
       )}
 
       {loading && (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>
-          Loading…
-        </div>
+        <Loading label="Loading report">
+          <Card>
+            <SkeletonText lines={8} />
+          </Card>
+        </Loading>
       )}
 
-      {displayText ? (
-        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)", fontSize: "12px", lineHeight: 1.7, color: "var(--text)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "24px" }}>
-          {displayText}
-        </pre>
-      ) : (
-        !error && !loading && (
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>
-            Select a date and click Load — or use ← → to browse.
-          </div>
-        )
+      {!loading && displayText && (
+        <Card variant="well" style={{ padding: "var(--sp-6)" }}>
+          <Markdown source={displayText} />
+        </Card>
+      )}
+
+      {!loading && !error && !displayText && (
+        <EmptyState
+          title="No report loaded"
+          detail="Use ← → or pick a date to load that day's report. Reports are generated by the daily pipeline."
+        />
       )}
     </div>
   );

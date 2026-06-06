@@ -3,39 +3,41 @@
 import { useEffect, useState } from "react";
 import {
   api,
+  todayET,
   type CalibrationBucket,
   type TierHitRate,
   type TrackRecordResult,
   type TrackRecordClv,
 } from "@/lib/api";
 import { ExplainTooltip } from "@/components/explain";
+import { tierColor } from "@/lib/visual-tokens";
+import {
+  Card,
+  Panel,
+  StatCell,
+  StatGroup,
+  SemanticValue,
+  Accruing,
+  SampleSize,
+  DateField,
+  SectionHeader,
+  ErrorBanner,
+  Skeleton,
+  Tabs,
+  TabPanel,
+  type TabItem,
+} from "@/components/ui";
 
 /* ── date helpers ──────────────────────────────────────── */
-function isoDay(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return isoDay(d);
-}
-
-/* ── shared empty state ────────────────────────────────── */
-function Accruing({ label, sub }: { label: string; sub?: string }) {
-  return (
-    <div className="accruing-state" role="status">
-      <span style={{ fontWeight: 700, color: "var(--text-2)", letterSpacing: "0.04em", textTransform: "uppercase", fontSize: "11px" }}>
-        {label}
-      </span>
-      {sub && (
-        <span style={{ marginTop: "8px", color: "var(--text-3)", fontSize: "11px", lineHeight: 1.5 }}>
-          {sub}
-        </span>
-      )}
-    </div>
-  );
+/* ET-based dates (todayET) — fixes the old toISOString() UTC off-by-one. */
+function offsetEtDay(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
 }
 
+/* ── shared chart frame (Panel with clay infield-divider header) ─────────── */
 function ChartFrame({
   title,
   term,
@@ -46,25 +48,26 @@ function ChartFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-        borderRadius: "6px",
-        padding: "16px 18px",
-      }}
-    >
-      <div
-        className="infield-divider"
-        style={{ display: "flex", alignItems: "center", gap: "6px", paddingBottom: "10px", marginBottom: "14px" }}
-      >
-        <span className="section-label" style={{ margin: 0 }}>
-          {title}
+    <Panel
+      title={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-1)" }}>
+          <span
+            style={{
+              fontSize: "var(--fs-caption)",
+              fontWeight: "var(--weight-bold)",
+              letterSpacing: "var(--tracking-label)",
+              textTransform: "uppercase",
+              color: "var(--text-2)",
+            }}
+          >
+            {title}
+          </span>
+          {term && <ExplainTooltip term={term} />}
         </span>
-        {term && <ExplainTooltip term={term} />}
-      </div>
+      }
+    >
       {children}
-    </div>
+    </Panel>
   );
 }
 
@@ -73,10 +76,11 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
   const live = buckets.filter((b) => b.n > 0 && b.actual_win_rate != null);
   if (live.length === 0) {
     return (
-      <Accruing
-        label="Calibration accruing"
-        sub="No completed games with a HOME/AWAY lean in this range yet."
-      />
+      <Accruing note="No completed games with a HOME/AWAY lean in this range yet.">
+        <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", textTransform: "uppercase", fontSize: "var(--fs-meta)" }}>
+          Calibration accruing
+        </span>
+      </Accruing>
     );
   }
 
@@ -131,7 +135,7 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
         const cx = xOf(b.midpoint);
         const cy = yOf(b.actual_win_rate as number);
         const off = Math.abs((b.actual_win_rate as number) - b.midpoint);
-        const col = off <= 0.05 ? "var(--green)" : off <= 0.12 ? "var(--amber)" : "var(--red)";
+        const col = off <= 0.05 ? "var(--pos)" : off <= 0.12 ? "var(--warn)" : "var(--neg)";
         return (
           <g key={b.midpoint}>
             <circle cx={cx} cy={cy} r={r} fill={col} fillOpacity={0.22} stroke={col} strokeWidth={1.5} />
@@ -162,12 +166,6 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
 
 /* ── 2 · Tier hit rate ─────────────────────────────────── */
 const TIER_ORDER = ["STRONG LEAN", "LEAN", "PASS", "AVOID"];
-function tierBarColor(tier: string): string {
-  if (tier === "STRONG LEAN") return "var(--green)";
-  if (tier === "LEAN") return "var(--blue)";
-  if (tier === "AVOID") return "var(--red)";
-  return "var(--text-3)";
-}
 
 function TierHitRateChart({ rows }: { rows: TierHitRate[] }) {
   const byTier = new Map(rows.map((r) => [r.tier, r]));
@@ -175,10 +173,11 @@ function TierHitRateChart({ rows }: { rows: TierHitRate[] }) {
   const anyLive = ordered.some((r) => r.n > 0);
   if (!anyLive) {
     return (
-      <Accruing
-        label="No graded picks yet"
-        sub="Tier hit rate populates once completed games carry a tier label."
-      />
+      <Accruing note="Tier hit rate populates once completed games carry a tier label.">
+        <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", textTransform: "uppercase", fontSize: "var(--fs-meta)" }}>
+          No graded picks yet
+        </span>
+      </Accruing>
     );
   }
 
@@ -200,7 +199,7 @@ function TierHitRateChart({ rows }: { rows: TierHitRate[] }) {
       {ordered.map((r, i) => {
         const y = 14 + i * rowH;
         const cy = y + rowH / 2 - 7;
-        const col = tierBarColor(r.tier);
+        const col = tierColor(r.tier);
         const hasData = r.n > 0 && r.hit_rate != null;
         const w = hasData ? (r.hit_rate as number) * trackW : 0;
         return (
@@ -218,13 +217,13 @@ function TierHitRateChart({ rows }: { rows: TierHitRate[] }) {
                 width={trackW}
                 height={16}
                 fill="none"
-                stroke="var(--border-2)"
+                stroke="var(--border)"
                 strokeDasharray="3 3"
                 rx={2}
               />
             )}
             {/* 50% reference */}
-            <line x1={trackX + trackW * 0.5} y1={cy - 12} x2={trackX + trackW * 0.5} y2={cy + 12} stroke="var(--border-2)" strokeWidth={1} strokeDasharray="2 2" />
+            <line x1={trackX + trackW * 0.5} y1={cy - 12} x2={trackX + trackW * 0.5} y2={cy + 12} stroke="var(--border)" strokeWidth={1} strokeDasharray="2 2" />
             <text x={trackX + trackW + 6} y={cy + 3} fontSize={10} fontFamily="var(--font-mono)" fontWeight={700} fill={hasData ? "var(--text)" : "var(--text-3)"}>
               {hasData ? `${((r.hit_rate as number) * 100).toFixed(0)}%` : "—"}
             </text>
@@ -238,18 +237,19 @@ function TierHitRateChart({ rows }: { rows: TierHitRate[] }) {
   );
 }
 
-/* ── 3 · P&L line (flat vs Kelly) ──────────────────────── */
+/* ── 3 · P&L line (single realized series) ─────────────── */
 function linePath(values: number[], xOf: (i: number) => number, yOf: (v: number) => number): string {
   return values.map((v, i) => `${i === 0 ? "M" : "L"} ${xOf(i).toFixed(2)} ${yOf(v).toFixed(2)}`).join(" ");
 }
 
-function PLLineChart({ flat, kelly }: { flat: number[]; kelly: number[] }) {
-  if (flat.length === 0) {
+function PLLineChart({ series }: { series: number[] }) {
+  if (series.length === 0) {
     return (
-      <Accruing
-        label="No P&L history"
-        sub="P&L simulation needs at least one completed game with a HOME/AWAY lean."
-      />
+      <Accruing note="P&L simulation needs at least one completed game with a HOME/AWAY lean.">
+        <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", textTransform: "uppercase", fontSize: "var(--fs-meta)" }}>
+          No P&L history
+        </span>
+      </Accruing>
     );
   }
 
@@ -258,11 +258,11 @@ function PLLineChart({ flat, kelly }: { flat: number[]; kelly: number[] }) {
   const pad = { l: 44, r: 14, t: 16, b: 30 };
   const plotW = W - pad.l - pad.r;
   const plotH = H - pad.t - pad.b;
-  const all = [...flat, ...kelly, 0];
+  const all = [...series, 0];
   const min = Math.min(...all);
   const max = Math.max(...all);
   const span = max - min || 1;
-  const n = flat.length;
+  const n = series.length;
   const xOf = (i: number) => pad.l + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
   const yOf = (v: number) => pad.t + (1 - (v - min) / span) * plotH;
 
@@ -272,7 +272,7 @@ function PLLineChart({ flat, kelly }: { flat: number[]; kelly: number[] }) {
       className="chart-draw"
       viewBox={`0 0 ${W} ${H}`}
       role="img"
-      aria-label="Cumulative profit and loss in units per game: flat-stake line versus uncertainty-Kelly line, with a zero baseline."
+      aria-label="Cumulative realized profit and loss in units per settled game, with a zero baseline."
       style={{ width: "100%", height: "auto", display: "block" }}
     >
       {Array.from({ length: yTicks + 1 }, (_, i) => {
@@ -297,23 +297,11 @@ function PLLineChart({ flat, kelly }: { flat: number[]; kelly: number[] }) {
           {i + 1}
         </text>
       ))}
-      <path d={linePath(flat, xOf, yOf)} fill="none" stroke="var(--blue)" strokeWidth={1.6} />
-      <path d={linePath(kelly, xOf, yOf)} fill="none" stroke="var(--green)" strokeWidth={1.6} />
-      {n === 1 && (
-        <>
-          <circle cx={xOf(0)} cy={yOf(flat[0])} r={3} fill="var(--blue)" />
-          <circle cx={xOf(0)} cy={yOf(kelly[0])} r={3} fill="var(--green)" />
-        </>
-      )}
-      {/* legend */}
-      <g fontFamily="var(--font-mono)" fontSize={9}>
-        <rect x={pad.l} y={4} width={10} height={3} fill="var(--blue)" />
-        <text x={pad.l + 14} y={9} fill="var(--text-2)">flat</text>
-        <rect x={pad.l + 52} y={4} width={10} height={3} fill="var(--green)" />
-        <text x={pad.l + 66} y={9} fill="var(--text-2)">Kelly</text>
-      </g>
+      <path d={linePath(series, xOf, yOf)} fill="none" stroke="var(--lean)" strokeWidth={1.6} />
+      {n === 1 && <circle cx={xOf(0)} cy={yOf(series[0])} r={3} fill="var(--lean)" />}
+      {/* single realized series — flat/Kelly legend retired (one true money line) */}
       <text x={pad.l + plotW / 2} y={H - 1} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono)" fill="var(--text-2)">
-        game #
+        settled game #
       </text>
     </svg>
   );
@@ -323,113 +311,53 @@ function PLLineChart({ flat, kelly }: { flat: number[]; kelly: number[] }) {
 function BrierReadout({ brier }: { brier: number | null }) {
   if (brier === null) {
     return (
-      <Accruing
-        label="Brier score accruing"
-        sub="Needs at least one completed game to score the forecast."
-      />
+      <Accruing note="Needs at least one completed game to score the forecast.">
+        <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", textTransform: "uppercase", fontSize: "var(--fs-meta)" }}>
+          Brier score accruing
+        </span>
+      </Accruing>
     );
   }
   const baseline = 0.25;
-  const col = brier < baseline ? "var(--green)" : brier > baseline ? "var(--red)" : "var(--amber)";
+  const col = brier < baseline ? "var(--pos)" : brier > baseline ? "var(--neg)" : "var(--warn)";
   // visual scale: 0 (best) → 0.5 (worst); clamp
   const scale = (v: number) => `${Math.max(0, Math.min(100, (v / 0.5) * 100))}%`;
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: "12px", marginBottom: "16px" }}>
-        <span className="scoreboard-num" style={{ fontSize: "44px", color: col, lineHeight: 0.9 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--sp-3)", marginBottom: "var(--sp-4)" }}>
+        <span className="scoreboard-num" style={{ fontSize: "var(--fs-hero)", color: col, lineHeight: 0.9 }}>
           {brier.toFixed(4)}
         </span>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", paddingBottom: "6px" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", paddingBottom: "var(--sp-1)" }}>
           {brier < baseline ? "better than a coin flip" : brier > baseline ? "worse than a coin flip" : "coin-flip equivalent"}
         </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", width: "92px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: "var(--text-2)", width: "92px", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>
             Model
           </span>
           <div className="stat-bar-track" style={{ flex: 1, height: "6px" }}>
             <div className="stat-bar-fill" style={{ "--fill": scale(brier), background: col } as React.CSSProperties} />
           </div>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: col, fontWeight: 700, width: "52px", textAlign: "right" }}>
+          <span className="num" style={{ fontSize: "var(--fs-meta)", color: col, fontWeight: "var(--weight-bold)", width: "52px", textAlign: "right" }}>
             {brier.toFixed(4)}
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", width: "92px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: "var(--text-2)", width: "92px", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>
             Coin flip
           </span>
           <div className="stat-bar-track" style={{ flex: 1, height: "6px" }}>
             <div className="stat-bar-fill" style={{ "--fill": scale(baseline), background: "var(--text-3)" } as React.CSSProperties} />
           </div>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", fontWeight: 700, width: "52px", textAlign: "right" }}>
+          <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", fontWeight: "var(--weight-bold)", width: "52px", textAlign: "right" }}>
             0.2500
           </span>
         </div>
       </div>
     </div>
-  );
-}
-
-/* ── summary strip ─────────────────────────────────────── */
-function SummaryStat({
-  label,
-  value,
-  color,
-  term,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-  term?: string;
-}) {
-  return (
-    <div className="bsg-cell" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-      <span
-        style={{
-          fontSize: "9px",
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--text-3)",
-          display: "flex",
-          alignItems: "center",
-          gap: "4px",
-        }}
-      >
-        {label}
-        {term && <ExplainTooltip term={term} />}
-      </span>
-      <span className="scoreboard-num" style={{ fontSize: "22px", color: color ?? "var(--text)" }}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-/* ── date input ────────────────────────────────────────── */
-function DateField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-      <span style={{ fontSize: "9px", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-3)" }}>
-        {label}
-      </span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border-2)",
-          borderRadius: "4px",
-          padding: "6px 10px",
-          color: "var(--text)",
-          fontFamily: "var(--font-mono)",
-          fontSize: "12px",
-          outline: "none",
-        }}
-      />
-    </label>
   );
 }
 
@@ -465,37 +393,37 @@ function CalibrationCoverageNote({
     <div
       style={{
         fontFamily: "var(--font-mono)",
-        fontSize: "10px",
-        color: "var(--text-3)",
-        marginBottom: "12px",
+        fontSize: "var(--fs-caption)",
+        color: "var(--text-2)",
+        marginBottom: "var(--sp-3)",
         display: "flex",
         flexWrap: "wrap",
-        gap: "10px",
+        gap: "var(--sp-3)",
         alignItems: "center",
       }}
     >
-      <span style={{ color: "var(--text-2)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+      <span style={{ color: "var(--text-2)", letterSpacing: "var(--tracking-label)", textTransform: "uppercase" }}>
         Snapshot coverage:
       </span>
       <span>
-        <strong style={{ color: "var(--green)" }}>{live}</strong> live
+        <strong style={{ color: "var(--pos)" }}>{live}</strong> live
       </span>
       {replay > 0 && (
         <span>
-          <strong style={{ color: "var(--amber)" }}>{replay}</strong> replay-backfilled
+          <strong style={{ color: "var(--warn)" }}>{replay}</strong> replay-backfilled
         </span>
       )}
       {replayNoOdds > 0 && (
-        <span style={{ color: "var(--text-3)" }}>
+        <span style={{ color: "var(--text-muted)" }}>
           <strong>{replayNoOdds}</strong> replay (no odds)
         </span>
       )}
       {nullN > 0 && (
-        <span style={{ color: "var(--text-3)" }}>
+        <span style={{ color: "var(--text-muted)" }}>
           <strong>{nullN}</strong> pre-capture (excluded)
         </span>
       )}
-      <span style={{ marginLeft: "auto", color: "var(--text-3)" }}>
+      <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
         live = captured at pick time; replay = re-derived from today&apos;s model code
       </span>
     </div>
@@ -532,30 +460,30 @@ function ClvSliceBars({
       <div
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: "9px",
-          letterSpacing: "0.08em",
+          fontSize: "var(--fs-caption)",
+          letterSpacing: "var(--tracking-label)",
           textTransform: "uppercase",
-          color: "var(--text-3)",
-          marginBottom: "8px",
+          color: "var(--text-2)",
+          marginBottom: "var(--sp-2)",
         }}
       >
         {title}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
         {live.map((r) => {
           const pct = r.pct_beat_close;
-          const col = pct == null ? "var(--text-3)" : pct >= 0.5 ? "var(--green)" : "var(--red)";
+          const col = pct == null ? "var(--text-muted)" : pct >= 0.5 ? "var(--pos)" : "var(--neg)";
           const w = pct == null ? 0 : Math.max(0, Math.min(1, pct)) * 100;
           return (
-            <div key={r.key} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div key={r.key} style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: "10px",
+                  fontSize: "var(--fs-caption)",
                   color: "var(--text-2)",
                   width: "92px",
                   textTransform: "uppercase",
-                  letterSpacing: "0.03em",
+                  letterSpacing: "var(--tracking-label)",
                 }}
               >
                 {r.key}
@@ -567,37 +495,59 @@ function ClvSliceBars({
                 />
               </div>
               <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "11px",
-                  color: col,
-                  fontWeight: 700,
-                  width: "48px",
-                  textAlign: "right",
-                }}
+                className="num"
+                style={{ fontSize: "var(--fs-meta)", color: col, fontWeight: "var(--weight-bold)", width: "48px", textAlign: "right" }}
               >
                 {fmtPct1(pct)}
               </span>
               <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "10px",
-                  color: "var(--text-3)",
-                  width: "70px",
-                  textAlign: "right",
-                }}
+                className="num"
+                style={{ fontSize: "var(--fs-caption)", color: "var(--text-muted)", width: "70px", textAlign: "right" }}
                 title="Average CLV in prob-points for this slice"
               >
                 {fmtPct1(r.avg_clv_pct, true)} avg
               </span>
-              <span
-                style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", width: "34px", textAlign: "right" }}
-              >
-                [{r.n_eligible}]
-              </span>
+              <SampleSize n={r.n_eligible} style={{ width: "34px", textAlign: "right" }} />
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* CLV vs result — beat-the-close decoupled from win/loss. Honesty: CLV edge can
+ * be real even when a single bet loses (and vice versa); show the 2×2 split. */
+function ClvVsResult({ v }: { v: TrackRecordClv["clv_vs_result"] }) {
+  const total = v.beat_and_won + v.beat_and_lost + v.missed_and_won + v.missed_and_lost;
+  if (total === 0) return null;
+  const cells: { label: string; n: number; color: string }[] = [
+    { label: "Beat close · won", n: v.beat_and_won, color: "var(--pos)" },
+    { label: "Beat close · lost", n: v.beat_and_lost, color: "var(--text-2)" },
+    { label: "Missed close · won", n: v.missed_and_won, color: "var(--text-2)" },
+    { label: "Missed close · lost", n: v.missed_and_lost, color: "var(--neg)" },
+  ];
+  return (
+    <div style={{ marginTop: "var(--sp-3)" }}>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-caption)",
+          letterSpacing: "var(--tracking-label)",
+          textTransform: "uppercase",
+          color: "var(--text-2)",
+          marginBottom: "var(--sp-2)",
+        }}
+      >
+        CLV vs. result
+      </div>
+      <StatGroup min="130px">
+        {cells.map((c) => (
+          <StatCell key={c.label} label={c.label} value={c.n} color={c.color} emphasis="data" />
+        ))}
+      </StatGroup>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: "var(--sp-2)" }}>
+        Beating the close is the edge signal; the win/loss split shows variance around it.
       </div>
     </div>
   );
@@ -613,20 +563,21 @@ function ClvBlock({ clv }: { clv: TrackRecordClv | null | undefined }) {
     return (
       <ChartFrame title="Closing-line value (beat the close)">
         <Accruing
-          label="CLV accruing"
-          sub={
+          note={
             nSettled > 0
               ? `No pre-first-pitch closing line captured for any of the ${nSettled} settled pick${nSettled === 1 ? "" : "s"} yet. CLV appears once a close is recorded; nothing is fabricated.`
               : "Closing-line value populates once settled picks have a captured pre-first-pitch close."
           }
-        />
+        >
+          <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", textTransform: "uppercase", fontSize: "var(--fs-meta)" }}>
+            CLV accruing
+          </span>
+        </Accruing>
       </ChartFrame>
     );
   }
 
   const pctBeat = clv.pct_beat_close;
-  const headlineCol =
-    pctBeat == null ? "var(--text-3)" : pctBeat >= 0.5 ? "var(--green)" : "var(--red)";
 
   const tierRows = (clv.clv_by_tier ?? []).map((t) => ({
     key: t.tier,
@@ -648,10 +599,10 @@ function ClvBlock({ clv }: { clv: TrackRecordClv | null | undefined }) {
       <div
         style={{
           fontFamily: "var(--font-body)",
-          fontSize: "12px",
+          fontSize: "var(--fs-body)",
           color: "var(--text-2)",
-          lineHeight: 1.55,
-          marginBottom: "16px",
+          lineHeight: "var(--lh-prose)",
+          marginBottom: "var(--sp-4)",
         }}
       >
         Beating the closing line is the strongest evidence of genuine edge —
@@ -660,93 +611,77 @@ function ClvBlock({ clv }: { clv: TrackRecordClv | null | undefined }) {
       </div>
 
       {/* Headline metrics */}
-      <div
-        className="box-score-grid responsive-grid-4"
-        style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "14px" }}
-      >
-        <div className="bsg-row" style={{ display: "contents" }}>
-          <SummaryStat
-            label="% Beat close"
-            value={fmtPct1(pctBeat)}
-            color={headlineCol}
-          />
-          <SummaryStat
-            label="Avg CLV"
-            value={fmtPct1(clv.avg_clv_pct, true)}
-            color={
-              clv.avg_clv_pct == null
-                ? "var(--text-3)"
-                : clv.avg_clv_pct >= 0
-                ? "var(--green)"
-                : "var(--red)"
-            }
-          />
-          <SummaryStat
-            label="Median CLV"
-            value={fmtPct1(clv.median_clv_pct, true)}
-            color={
-              clv.median_clv_pct == null
-                ? "var(--text-3)"
-                : clv.median_clv_pct >= 0
-                ? "var(--green)"
-                : "var(--red)"
-            }
-          />
-          <SummaryStat label="Beat / eligible" value={`${clv.beat_close_n}/${clv.n_eligible}`} />
-        </div>
-      </div>
+      <StatGroup min="130px" style={{ marginBottom: "var(--sp-3)" }}>
+        <StatCell
+          label="% Beat close"
+          value={fmtPct1(pctBeat)}
+          color={pctBeat == null ? "var(--text-muted)" : pctBeat >= 0.5 ? "var(--pos)" : "var(--neg)"}
+        />
+        <StatCell
+          label="Avg CLV"
+          value={fmtPct1(clv.avg_clv_pct, true)}
+          color={clv.avg_clv_pct == null ? "var(--text-muted)" : clv.avg_clv_pct >= 0 ? "var(--pos)" : "var(--neg)"}
+        />
+        <StatCell
+          label="Median CLV"
+          value={fmtPct1(clv.median_clv_pct, true)}
+          color={clv.median_clv_pct == null ? "var(--text-muted)" : clv.median_clv_pct >= 0 ? "var(--pos)" : "var(--neg)"}
+        />
+        <StatCell label="Beat / eligible" value={`${clv.beat_close_n}/${clv.n_eligible}`} />
+      </StatGroup>
 
       {/* % beat-close Wilson CI */}
       {pctBeat != null &&
         clv.pct_beat_close_ci_low != null &&
         clv.pct_beat_close_ci_high != null && (
-          <div
+          <Card
+            variant="inset"
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "11px",
+              fontSize: "var(--fs-meta)",
               color: "var(--text-2)",
-              background: "var(--surface-2)",
-              border: "1px solid var(--border)",
-              borderRadius: "6px",
-              padding: "10px 14px",
               display: "flex",
               justifyContent: "space-between",
               flexWrap: "wrap",
-              gap: "6px",
-              marginBottom: "14px",
+              gap: "var(--sp-2)",
+              marginBottom: "var(--sp-3)",
             }}
           >
             <span>
               95% CI on % beat close:{" "}
-              <strong style={{ color: "var(--text)" }}>
+              <strong className="num" style={{ color: "var(--text)" }}>
                 {fmtPct1(clv.pct_beat_close_ci_low)} – {fmtPct1(clv.pct_beat_close_ci_high)}
               </strong>{" "}
               (Wilson, n={clv.n_eligible})
             </span>
-            <span style={{ color: "var(--text-3)" }}>
+            <span style={{ color: "var(--text-muted)" }}>
               50% = no edge vs. the close
             </span>
-          </div>
+          </Card>
         )}
 
       {/* Per-tier and per-market slices */}
       <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--sp-5)", marginBottom: "var(--sp-3)" }}
         className="responsive-grid-2"
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px", marginBottom: "14px" }}
       >
         <ClvSliceBars title="By tier" rows={tierRows} />
         <ClvSliceBars title="By market" rows={marketRows} />
       </div>
 
+      {/* CLV decoupled from win/loss outcome */}
+      <ClvVsResult v={clv.clv_vs_result} />
+
       {/* Honest coverage line */}
       <div
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: "10px",
-          color: "var(--text-3)",
-          lineHeight: 1.6,
-          paddingLeft: "8px",
+          fontSize: "var(--fs-caption)",
+          color: "var(--text-muted)",
+          lineHeight: "var(--lh-prose)",
+          paddingLeft: "var(--sp-2)",
           borderLeft: "2px solid var(--clay)",
+          marginTop: "var(--sp-3)",
         }}
       >
         CLV available for <strong style={{ color: "var(--text-2)" }}>{nWith}</strong> of{" "}
@@ -771,28 +706,15 @@ function ClvBlock({ clv }: { clv: TrackRecordClv | null | undefined }) {
   );
 }
 
-function ChartSkeleton() {
-  return (
-    <div
-      style={{
-        height: "200px",
-        borderRadius: "6px",
-        background: "linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%)",
-        backgroundSize: "200% 100%",
-        animation: "fillBar 1.1s linear infinite alternate",
-        border: "1px solid var(--border)",
-      }}
-    />
-  );
-}
-
 export default function TrackRecordPage() {
   // Default: cover the entire tracked history. The endpoint reads BetRecord
-  // rows (162-ish), not a model replay, so any window is cheap.
-  const [start, setStart] = useState(() => daysAgo(90));
-  const [end, setEnd] = useState(() => daysAgo(0));
+  // rows (162-ish), not a model replay, so any window is cheap. ET-based dates
+  // (todayET) avoid the old UTC toISOString() off-by-one.
+  const [start, setStart] = useState(() => offsetEtDay(todayET(), -90));
+  const [end, setEnd] = useState(() => todayET());
   const [result, setResult] = useState<TrackRecordResult | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [section, setSection] = useState("performance");
 
   useEffect(() => {
     let alive = true;
@@ -834,10 +756,25 @@ export default function TrackRecordPage() {
   // Kelly-bankroll curve to honestly render. The curve we DO have is the real
   // money line: every bet was sized at the discretized Kelly value.
   const pnlCurve = result?.pnl_curve ?? [];
-  const flatSeries = pnlCurve.map((p) => p.cum_units);
+  const pnlSeries = pnlCurve.map((p) => p.cum_units);
+
+  const tabItems: TabItem[] = [
+    { value: "performance", label: "Performance" },
+    { value: "clv", label: "CLV" },
+    { value: "calibration", label: "Calibration" },
+  ];
+
+  const combined = result?.summary.combined;
 
   return (
     <div style={{ position: "relative" }}>
+      <style>{`
+        @media (max-width: 640px) {
+          .tr-hero { grid-template-columns: 1fr 1fr !important; }
+          .responsive-grid-2 { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+
       {/* decorative infield diamond watermark */}
       <div className="diamond-watermark" aria-hidden="true">
         <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
@@ -856,255 +793,334 @@ export default function TrackRecordPage() {
           alignItems: "flex-end",
           justifyContent: "space-between",
           flexWrap: "wrap",
-          gap: "16px",
-          marginBottom: "22px",
-          paddingBottom: "16px",
+          gap: "var(--sp-4)",
+          marginBottom: "var(--sp-6)",
+          paddingBottom: "var(--sp-4)",
         }}
       >
         <div>
           <h1
             className="scoreboard-num"
-            style={{ fontSize: "30px", margin: 0, color: "var(--text)", textTransform: "uppercase", lineHeight: 1 }}
+            style={{ fontSize: "var(--fs-headline)", margin: 0, color: "var(--text)", textTransform: "uppercase", lineHeight: "var(--lh-tight)" }}
           >
             Track Record
           </h1>
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              color: "var(--text-3)",
-              marginTop: "6px",
-              letterSpacing: "0.03em",
+              fontSize: "var(--fs-meta)",
+              color: "var(--text-2)",
+              marginTop: "var(--sp-1)",
+              letterSpacing: "var(--tracking-label)",
             }}
           >
             Live-tracked picks · settled vs. predicted · no replay, no fabricated data
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "10px" }}>
-          <DateField label="From" value={start} onChange={setStart} />
-          <DateField label="To" value={end} onChange={setEnd} />
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--sp-3)" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+            <span style={{ fontSize: "var(--fs-caption)", letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-2)" }}>From</span>
+            <DateField value={start} onChange={setStart} aria-label="Start date" max={end} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+            <span style={{ fontSize: "var(--fs-caption)", letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-2)" }}>To</span>
+            <DateField value={end} onChange={setEnd} aria-label="End date" max={todayET()} />
+          </label>
         </div>
       </div>
 
       {state === "error" && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "12px",
-            color: "var(--red)",
-            padding: "10px 12px",
-            border: "1px solid var(--red)",
-            borderRadius: "4px",
-            marginBottom: "16px",
-          }}
-        >
-          Track-record endpoint not reachable — run: uvicorn app.api.routes:app --port 8000
-        </div>
+        <ErrorBanner
+          kind="outage"
+          title="Track-record endpoint not reachable"
+          detail="Run: uvicorn app.api.routes:app --port 8000"
+          style={{ marginBottom: "var(--sp-4)" }}
+        />
       )}
 
       {state === "loading" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <ChartSkeleton />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            <ChartSkeleton />
-            <ChartSkeleton />
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
+          <Skeleton height={96} radius="var(--r-lg)" />
+          <Skeleton height={200} radius="var(--r-md)" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--sp-4)" }} className="responsive-grid-2">
+            <Skeleton height={200} radius="var(--r-md)" />
+            <Skeleton height={200} radius="var(--r-md)" />
           </div>
         </div>
       )}
 
       {state === "ready" && result && result.summary.combined.n === 0 && (
-        <div className="accruing-state" style={{ padding: "56px 24px" }} role="status">
-          <span style={{ fontWeight: 700, color: "var(--text-2)", fontSize: "13px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        <Accruing
+          note={
+            <>
+              No picks logged between{" "}
+              <strong style={{ color: "var(--text-2)" }}>{result.start ?? "—"}</strong> and{" "}
+              <strong style={{ color: "var(--text-2)" }}>{result.end ?? "—"}</strong>. Widen the
+              date range or wait for the next slate. Nothing is fabricated to fill this view.
+            </>
+          }
+          style={{ padding: "var(--sp-10) var(--sp-6)" }}
+        >
+          <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", fontSize: "var(--fs-body)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>
             No tracked picks in range
           </span>
-          <span style={{ marginTop: "10px", color: "var(--text-3)", fontSize: "12px", lineHeight: 1.6, maxWidth: "440px", margin: "10px auto 0" }}>
-            No picks logged between{" "}
-            <strong style={{ color: "var(--text-2)" }}>{result.start ?? "—"}</strong> and{" "}
-            <strong style={{ color: "var(--text-2)" }}>{result.end ?? "—"}</strong>. Widen the
-            date range or wait for the next slate. Nothing is fabricated to fill this view.
-          </span>
-        </div>
+        </Accruing>
       )}
 
-      {state === "ready" && result && result.summary.combined.n > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* summary strip — combined record */}
-          <div
-            className="box-score-grid responsive-grid-4"
-            style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}
+      {state === "ready" && result && combined && combined.n > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
+          {/* ── HERO BAND — Net Units / ROI / % beat close ── */}
+          <Card
+            variant="default"
+            style={{
+              borderRadius: "var(--r-lg)",
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "var(--sp-4)",
+              padding: "var(--sp-5) var(--sp-6)",
+            }}
+            className="tr-hero"
           >
-            <div className="bsg-row" style={{ display: "contents" }}>
-              <SummaryStat
-                label="Record"
-                value={`${result.summary.combined.wins}-${result.summary.combined.losses}${result.summary.combined.pushes ? "-" + result.summary.combined.pushes : ""}`}
-                color="var(--text)"
-              />
-              <SummaryStat
-                label="Win %"
-                value={
-                  result.summary.combined.win_rate != null
-                    ? `${(result.summary.combined.win_rate * 100).toFixed(1)}%`
-                    : "—"
-                }
-                color={
-                  result.summary.combined.win_rate == null
-                    ? "var(--text-3)"
-                    : result.summary.combined.win_rate >= 0.524
-                    ? "var(--green)"
-                    : "var(--red)"
-                }
-              />
-              <SummaryStat
-                label="ROI"
-                value={
-                  result.summary.combined.roi != null
-                    ? `${result.summary.combined.roi >= 0 ? "+" : ""}${(result.summary.combined.roi * 100).toFixed(1)}%`
-                    : "—"
-                }
-                color={
-                  result.summary.combined.roi == null
-                    ? "var(--text-3)"
-                    : result.summary.combined.roi >= 0
-                    ? "var(--green)"
-                    : "var(--red)"
-                }
-              />
-              <SummaryStat
-                label="Net Units"
-                value={`${result.summary.combined.units_net >= 0 ? "+" : ""}${result.summary.combined.units_net.toFixed(2)}u`}
-                color={result.summary.combined.units_net >= 0 ? "var(--green)" : "var(--red)"}
-              />
-            </div>
-          </div>
+            <HeroMetric
+              label="Net Units"
+              value={
+                <SemanticValue
+                  value={combined.units_net}
+                  mode="units"
+                  digits={2}
+                  suffix="u"
+                  style={{ fontSize: "var(--fs-hero)", fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)" }}
+                />
+              }
+            />
+            <HeroMetric
+              label="ROI"
+              value={
+                combined.roi == null ? (
+                  <span className="scoreboard-num" style={{ fontSize: "var(--fs-hero)", color: "var(--text-muted)" }}>—</span>
+                ) : (
+                  <SemanticValue
+                    value={combined.roi}
+                    mode="roi"
+                    display={`${combined.roi >= 0 ? "+" : ""}${(combined.roi * 100).toFixed(1)}%`}
+                    style={{ fontSize: "var(--fs-hero)", fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)" }}
+                  />
+                )
+              }
+            />
+            <HeroMetric
+              label="% Beat close"
+              value={
+                result.clv?.pct_beat_close == null ? (
+                  <span className="scoreboard-num" style={{ fontSize: "var(--fs-hero)", color: "var(--text-muted)" }}>—</span>
+                ) : (
+                  <span
+                    className="scoreboard-num"
+                    style={{
+                      fontSize: "var(--fs-hero)",
+                      color: result.clv.pct_beat_close >= 0.5 ? "var(--pos)" : "var(--neg)",
+                    }}
+                  >
+                    {(result.clv.pct_beat_close * 100).toFixed(1)}%
+                  </span>
+                )
+              }
+            />
+            <HeroMetric
+              label="Record"
+              value={
+                <span className="scoreboard-num" style={{ fontSize: "var(--fs-hero)", color: "var(--text)" }}>
+                  {combined.wins}-{combined.losses}{combined.pushes ? "-" + combined.pushes : ""}
+                </span>
+              }
+              sub={
+                combined.win_rate != null ? (
+                  <SemanticValue
+                    value={combined.win_rate}
+                    mode="win-rate"
+                    display={`${(combined.win_rate * 100).toFixed(1)}% win`}
+                    style={{ fontSize: "var(--fs-meta)" }}
+                  />
+                ) : undefined
+              }
+            />
+          </Card>
 
           {/* Win-rate Wilson CI strip */}
-          {result.summary.combined.win_rate != null &&
-            result.summary.combined.win_rate_ci_low != null &&
-            result.summary.combined.win_rate_ci_high != null && (
-              <div
+          {combined.win_rate != null &&
+            combined.win_rate_ci_low != null &&
+            combined.win_rate_ci_high != null && (
+              <Card
+                variant="inset"
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: "11px",
+                  fontSize: "var(--fs-meta)",
                   color: "var(--text-2)",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "6px",
-                  padding: "10px 14px",
                   display: "flex",
                   justifyContent: "space-between",
                   flexWrap: "wrap",
-                  gap: "6px",
+                  gap: "var(--sp-2)",
                 }}
               >
                 <span>
                   95% CI on win rate:{" "}
-                  <strong style={{ color: "var(--text)" }}>
-                    {(result.summary.combined.win_rate_ci_low * 100).toFixed(1)}% –{" "}
-                    {(result.summary.combined.win_rate_ci_high * 100).toFixed(1)}%
+                  <strong className="num" style={{ color: "var(--text)" }}>
+                    {(combined.win_rate_ci_low * 100).toFixed(1)}% –{" "}
+                    {(combined.win_rate_ci_high * 100).toFixed(1)}%
                   </strong>{" "}
-                  (Wilson, n={result.summary.combined.wins + result.summary.combined.losses})
+                  (Wilson, n={combined.wins + combined.losses})
                 </span>
-                <span style={{ color: "var(--text-3)" }}>
+                <span style={{ color: "var(--text-muted)" }}>
                   Break-even at -110 = 52.4%
                 </span>
+              </Card>
+            )}
+
+          {/* ── SECTION TABS ── */}
+          <Tabs items={tabItems} value={section} onChange={setSection} ariaLabel="Track-record sections" />
+
+          {/* ── PERFORMANCE ── */}
+          <TabPanel baseId="tr" tabValue="performance" active={section === "performance"}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
+              {/* Per-market split */}
+              <div className="responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "var(--sp-4)" }}>
+                {(["ml", "total"] as const).map((mkt) => {
+                  const sm = result.summary[mkt];
+                  const label = mkt === "ml" ? "Moneyline" : "Over/Under";
+                  return (
+                    <Card key={mkt}>
+                      <SectionHeader divider={false} style={{ marginBottom: "var(--sp-2)" }}>{label}</SectionHeader>
+                      <StatGroup min="90px">
+                        <StatCell
+                          variant="plain"
+                          label="Record"
+                          value={`${sm.wins}-${sm.losses}${sm.pushes ? "-" + sm.pushes : ""}`}
+                          emphasis="data"
+                        />
+                        <StatCell
+                          variant="plain"
+                          label="Win %"
+                          emphasis="data"
+                          value={sm.win_rate != null ? `${(sm.win_rate * 100).toFixed(1)}%` : "—"}
+                          color={
+                            sm.win_rate == null
+                              ? "var(--text-muted)"
+                              : sm.win_rate >= 0.524
+                              ? "var(--pos)"
+                              : "var(--neg)"
+                          }
+                        />
+                        <StatCell
+                          variant="plain"
+                          label="Net"
+                          emphasis="data"
+                          value={`${sm.units_net >= 0 ? "+" : ""}${sm.units_net.toFixed(2)}u`}
+                          color={sm.units_net >= 0 ? "var(--pos)" : "var(--neg)"}
+                        />
+                      </StatGroup>
+                    </Card>
+                  );
+                })}
               </div>
-            )}
 
-          {/* CLV — the sharpest edge signal, surfaced prominently */}
-          <ClvBlock clv={result.clv} />
+              {/* Tier hit rate + Brier */}
+              <div className="responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--sp-4)" }}>
+                <ChartFrame title="Tier hit rate" term="tiers">
+                  <TierHitRateChart rows={tierRowsForChart} />
+                </ChartFrame>
+                <ChartFrame title="Brier vs coin flip" term="brier-score">
+                  <BrierReadout brier={result.brier_score} />
+                </ChartFrame>
+              </div>
 
-          {/* Per-market split */}
-          <div className="box-score-grid responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }}>
-            {(["ml", "total"] as const).map((mkt) => {
-              const s = result.summary[mkt];
-              const label = mkt === "ml" ? "Moneyline" : "Over/Under";
-              return (
-                <div
-                  key={mkt}
-                  style={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "6px",
-                    padding: "14px 16px",
-                  }}
-                >
-                  <div
-                    className="section-label"
-                    style={{ marginBottom: "10px", color: "var(--text-2)" }}
-                  >
-                    {label}
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-                    <SummaryStat
-                      label="Record"
-                      value={`${s.wins}-${s.losses}${s.pushes ? "-" + s.pushes : ""}`}
-                    />
-                    <SummaryStat
-                      label="Win %"
-                      value={s.win_rate != null ? `${(s.win_rate * 100).toFixed(1)}%` : "—"}
-                      color={
-                        s.win_rate == null
-                          ? "var(--text-3)"
-                          : s.win_rate >= 0.524
-                          ? "var(--green)"
-                          : "var(--red)"
-                      }
-                    />
-                    <SummaryStat
-                      label="Net"
-                      value={`${s.units_net >= 0 ? "+" : ""}${s.units_net.toFixed(2)}u`}
-                      color={s.units_net >= 0 ? "var(--green)" : "var(--red)"}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+              {/* P&L line (realized) */}
+              <ChartFrame title="Cumulative net units (realized)">
+                {pnlSeries.length === 0 ? (
+                  <Accruing note="Curve fills in as bets settle.">
+                    <span style={{ fontWeight: "var(--weight-bold)", color: "var(--text-2)", textTransform: "uppercase", fontSize: "var(--fs-meta)" }}>
+                      No settled picks yet
+                    </span>
+                  </Accruing>
+                ) : (
+                  <PLLineChart series={pnlSeries} />
+                )}
+              </ChartFrame>
 
-          {/* Tier hit rate + Brier */}
-          <div className="responsive-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            <ChartFrame title="Tier hit rate" term="tiers">
-              <TierHitRateChart rows={tierRowsForChart} />
+              <CoverageFootnote />
+            </div>
+          </TabPanel>
+
+          {/* ── CLV ── */}
+          <TabPanel baseId="tr" tabValue="clv" active={section === "clv"}>
+            <ClvBlock clv={result.clv} />
+          </TabPanel>
+
+          {/* ── CALIBRATION ── */}
+          <TabPanel baseId="tr" tabValue="calibration" active={section === "calibration"}>
+            <ChartFrame title="Calibration (model prob vs realized)" term="calibration">
+              <CalibrationCoverageNote coverage={result.snapshot_coverage} />
+              <CalibrationChart buckets={calibrationForChart} />
             </ChartFrame>
-            <ChartFrame title="Brier vs coin flip" term="brier-score">
-              <BrierReadout brier={result.brier_score} />
-            </ChartFrame>
-          </div>
-
-          {/* Calibration — caveats inline */}
-          <ChartFrame title="Calibration (model prob vs realized)" term="calibration">
-            <CalibrationCoverageNote coverage={result.snapshot_coverage} />
-            <CalibrationChart buckets={calibrationForChart} />
-          </ChartFrame>
-
-          {/* P&L line (realized) */}
-          <ChartFrame title="Cumulative net units (realized)">
-            {flatSeries.length === 0 ? (
-              <Accruing label="No settled picks yet" sub="Curve fills in as bets settle." />
-            ) : (
-              <PLLineChart flat={flatSeries} kelly={[]} />
-            )}
-          </ChartFrame>
-
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10px",
-              color: "var(--text-3)",
-              lineHeight: 1.6,
-              paddingLeft: "8px",
-              borderLeft: "2px solid var(--clay)",
-            }}
-          >
-            Live-pick basis: every row aggregates real BetRecord entries created
-            by /tracker/auto-track at the time the pick was made, settled against
-            real box scores. ROI uses units actually wagered (Kelly-discretized
-            stakes, not flat). Calibration restricts to picks with a captured
-            model probability — see the coverage note above. Past performance
-            doesn&apos;t establish future results.
-          </div>
+          </TabPanel>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── hero metric atom ──────────────────────────────────── */
+function HeroMetric({
+  label,
+  value,
+  sub,
+  explain,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  explain?: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)", minWidth: 0 }}>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--sp-1)",
+          fontSize: "var(--fs-caption)",
+          letterSpacing: "var(--tracking-label)",
+          textTransform: "uppercase",
+          color: "var(--text-2)",
+        }}
+      >
+        {label}
+        {explain && <ExplainTooltip term={explain} />}
+      </span>
+      <span style={{ lineHeight: "var(--lh-tight)" }}>{value}</span>
+      {sub != null && <span>{sub}</span>}
+    </div>
+  );
+}
+
+/* ── shared honesty footnote ───────────────────────────── */
+function CoverageFootnote() {
+  return (
+    <div
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--fs-caption)",
+        color: "var(--text-muted)",
+        lineHeight: "var(--lh-prose)",
+        paddingLeft: "var(--sp-2)",
+        borderLeft: "2px solid var(--clay)",
+      }}
+    >
+      Live-pick basis: every row aggregates real BetRecord entries created
+      by /tracker/auto-track at the time the pick was made, settled against
+      real box scores. ROI uses units actually wagered (Kelly-discretized
+      stakes, not flat). Calibration restricts to picks with a captured
+      model probability — see the coverage note above. Past performance
+      doesn&apos;t establish future results.
     </div>
   );
 }

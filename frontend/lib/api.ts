@@ -444,6 +444,77 @@ export type ParlayEv = {
   correlation_warning: string | null;
 };
 
+// ── /tools/bankroll — stateless Kelly stake / risk-of-ruin calculator ────────
+// Given a bankroll, a bet's american odds, and a VIG-FREE fair win prob (seed
+// from the model's p_shrunk), computes the full-Kelly fraction, a recommended
+// stake at a chosen fractional-Kelly multiplier, expected log-growth, an honest
+// risk-of-drawdown estimate, and an edge-sensitivity table. Risk-of-ruin and
+// growth are SENSITIVE to the edge assumption — the model edge is ESTIMATED, not
+// known. The caveat strings encode that honesty; surface them verbatim. Never a
+// pick — verification framing only.
+export type BankrollDrawdownRow = {
+  floor: number;   // bankroll fraction, in (0,1)
+  prob: number;    // probability of touching that floor; [1e-4, 1.0], never 0
+};
+
+export type BankrollMultiplierRow = {
+  label: "quarter" | "half" | "full" | string;
+  multiplier: number;
+  fraction: number;            // m * f_full
+  stake_currency: number;
+  stake_units: number;
+  growth_rate: number;
+  doubling_bets: number | null;
+};
+
+export type BankrollSensitivityRow = {
+  delta: number;               // how much lower the true edge might be (>= 0)
+  true_prob: number;           // fair_prob - delta
+  full_kelly_at_true_p: number;
+  ev_per_dollar: number;
+  growth_rate: number;
+  exceeds_full_kelly: boolean; // chosen stake over-bets this lower-edge truth
+  drawdown: BankrollDrawdownRow[];
+};
+
+export type BankrollRiskBody = {
+  bankroll: number;                        // > 0
+  american_odds: number;                   // != 0
+  fair_prob: number;                       // VIG-FREE fair win prob in (0,1)
+  kelly_multiplier?: number;               // in (0,1], default 0.5
+  unit_size?: number | null;               // default bankroll * 0.01
+  drawdown_floors?: number[] | null;       // each in (0,1), default [0.5, 0.25, 0.10]
+  edge_sensitivity_deltas?: number[] | null; // each >= 0, default [0.0, 0.02, 0.04]
+};
+
+export type BankrollRisk = {
+  bankroll: number;
+  american_odds: number;
+  decimal_odds: number;
+  fair_prob: number;
+  kelly_multiplier: number;
+  unit_size: number;
+  kelly_full: number;          // unclamped full Kelly f*
+  kelly_used_fraction: number; // m * f_full, 0.0 when clamped
+  stake_currency: number;
+  stake_units: number;
+  ev_per_dollar: number;
+  ev_on_stake: number;
+  growth_rate: number;         // g at f_used
+  doubling_bets: number | null; // ln2 / g, null if g <= 0
+  no_bet: boolean;             // true when f_full <= 0
+  verdict:
+    | "no bet / -EV"
+    | "+EV (small edge)"
+    | "+EV (moderate)"
+    | "+EV (large — full-Kelly stake is high; fractional strongly advised)"
+    | string;
+  multiplier_table: BankrollMultiplierRow[]; // [] when no_bet
+  drawdown: BankrollDrawdownRow[];           // [] when no_bet
+  edge_sensitivity: BankrollSensitivityRow[]; // [] when no_bet
+  caveats: string[];                         // honesty strings, render verbatim
+};
+
 /** Live monitoring alert payload — surfaced on slate cards / detail panel.
  *  Verification language only; never a "pick". */
 export type LiveAlertPayload = {
@@ -481,6 +552,35 @@ export type LiveState = {
   alert: LiveAlertPayload | null;
 };
 
+// ── Model edge (+EV) — model vig-free prob MINUS book Shin no-vig prob ───────
+// The purest edge signal: where the model's true-price estimate disagrees with
+// the no-vig market, for the model's lean side. Positive = model thinks the
+// fair price is better than the de-vigged market = genuine edge (independent of
+// vig and of the tier heuristic; realized edge shows up as CLV). VERIFICATION,
+// NOT a guaranteed-winners list. All fields additive — older payloads omit it.
+//
+// model_edge.<mkt> is null (render an honest "no market" cell, excluded from
+// ranking — never a fabricated 0 edge) when that market has no two-sided
+// same-book price (live_odds.<mkt>.fair == null) or, for a PASS total, when the
+// total line is null. model_edge itself is null only when the game has no
+// analysis at all.
+export type ModelEdge = {
+  side: "home" | "away" | "over" | "under";   // the lean, or model-implied side on PASS
+  line?: number | null;                        // total only: the total line
+  tier: string;                                // 'STRONG LEAN' | 'LEAN' | 'PASS'
+  actionable: boolean;                         // false when no directional lean (PASS/model-implied side)
+  model_prob: number;                          // leaned-side vig-free model prob (q_p_shrunk / qt_p_shrunk), 0..1
+  novig_prob: number;                          // leaned-side Shin no-vig market prob, 0..1
+  edge: number;                                // model_prob - novig_prob, signed, 4dp
+  hold_pct: number | null;                     // book overround from live_odds.<mkt>.fair; null when no fair block
+  movement_agreement: "toward" | "away" | "neutral" | null; // from live_odds.<mkt>.movement
+};
+
+export type ModelEdgeBundle = {
+  moneyline: ModelEdge | null;
+  total: ModelEdge | null;
+};
+
 /** Returned by /games/slate — one entry per game, everything bundled. */
 export type SlateGame = {
   game_id: number;
@@ -502,6 +602,9 @@ export type SlateGame = {
   live?: LiveState | null;
   // First-pitch time (UTC, ISO8601). Additive — older payloads may omit it.
   game_time_utc?: string | null;
+  // Per-market +EV edge (model vig-free prob − book no-vig prob). Additive;
+  // null only when the game has no analysis at all. See ModelEdge above.
+  model_edge?: ModelEdgeBundle | null;
 };
 
 export type CalibrationBucket = {
@@ -699,6 +802,10 @@ export const api = {
   // Stateless parlay / SGP checker. >=2 legs (each american != 0); offered != 0.
   // Returns the compounded book hold + independence-basis EV. Never a pick.
   parlayEv: (params: ParlayEvBody) => post<ParlayEv>("/tools/parlay-ev", params),
+  // Stateless Kelly stake / risk-of-ruin calculator. bankroll > 0, american != 0,
+  // fair_prob (vig-free) in (0,1). Returns recommended fractional-Kelly stake,
+  // log-growth, an honest risk-of-drawdown estimate + edge-sensitivity. Never a pick.
+  bankroll: (params: BankrollRiskBody) => post<BankrollRisk>("/tools/bankroll", params),
   // ── Tracker ──────────────────────────────────────────────────────────────
   trackerBets: (params?: { date_from?: string; date_to?: string; market?: string; game_date?: string }) => {
     const qs = new URLSearchParams();

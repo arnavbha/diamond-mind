@@ -1,26 +1,37 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, todayET, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState, type FairValueResult, type BoostEv, type Movement } from "@/lib/api";
-import { teamLogoUrl } from "@/lib/team-logos";
+import { api, type GameContext, type WeatherData, type GameAnalysis, type TeamBatting, type LiveState, type FairValueResult, type BoostEv, type Movement } from "@/lib/api";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
 import { LiveAlert } from "@/components/live-alert";
+import {
+  Card,
+  Panel,
+  TeamLogo,
+  TierBadge,
+  SectionHeader,
+  StatCell,
+  Bar,
+  LabeledBar,
+  OddsValue,
+  Tabs,
+  TabPanel,
+  Button,
+  NumberField,
+  EmptyState,
+  ErrorBanner,
+  SkeletonCard,
+  SkeletonText,
+  Loading,
+} from "@/components/ui";
+import { tierColor, heatColorFor, semanticColor, HOLD_COLOR } from "@/lib/visual-tokens";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
-function TeamLogo({ abbr, size = 40 }: { abbr: string; size?: number }) {
-  return (
-    <img src={teamLogoUrl(abbr)} alt={abbr} width={size} height={size}
-      style={{ objectFit: "contain", flexShrink: 0 }}
-      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-    />
-  );
-}
-
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: "10px" }}>
+    <div style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--weight-bold)", letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "var(--sp-3)" }}>
       {children}
     </div>
   );
@@ -28,111 +39,95 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function StatRow({ label, value, mono = true }: { label: string; value: string | number | null | undefined; mono?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-2)" }}>{label}</span>
-      <span style={{ fontFamily: mono ? "var(--font-mono)" : "var(--font-body)", fontSize: "13px", color: "var(--text)", fontWeight: 500 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--sp-1) 0", borderBottom: "1px solid var(--border)" }}>
+      <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text-2)" }}>{label}</span>
+      <span className={mono ? "num" : undefined} style={{ fontFamily: mono ? undefined : "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text)", fontWeight: "var(--weight-medium)" }}>
         {value ?? "—"}
       </span>
     </div>
   );
 }
 
-function ScoreBar({ value, color, delay = 0 }: { value: number; color: string; delay?: number }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-      <div className="stat-bar-track" style={{ flex: 1 }}>
-        <div className="stat-bar-fill"
-          style={{ "--fill": `${value}%`, "--delay": `${delay}ms`, background: color } as React.CSSProperties}
-        />
-      </div>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color, fontWeight: 600, width: "40px", textAlign: "right" }}>
-        {value.toFixed(0)}
-      </span>
-    </div>
-  );
-}
-
 function vulnColor(score: number) {
-  if (score >= 70) return "var(--red)";
-  if (score >= 50) return "var(--orange)";
-  return "var(--green)";
+  // Continuous gauge — heat ramp (fresh→gassed), not win/loss semantic red.
+  return heatColorFor(score, 0, 100);
 }
 
 function BullpenCard({ abbr, bp }: { abbr: string; bp: NonNullable<GameContext["home_bullpen"]> }) {
   const vc = vulnColor(bp.vulnerability_score);
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderTop: `2px solid ${vc}`, borderRadius: "6px", padding: "16px" }}>
+    <Card style={{ borderTop: `2px solid ${vc}` }}>
       <Label>{abbr} Bullpen</Label>
-      <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "14px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-3)", marginBottom: "var(--sp-3)" }}>
         <div>
-          <div style={{ marginBottom: "4px" }}>
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>Vulnerability</span>
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", marginLeft: "6px" }}>— how exposed the pen is tonight (0 = fresh, 100 = gassed)</span>
+          <div style={{ marginBottom: "var(--sp-1)" }}>
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", fontWeight: "var(--weight-medium)" }}>Vulnerability</span>
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "var(--sp-1)" }}>— how exposed the pen is tonight (0 = fresh, 100 = gassed)</span>
           </div>
-          <ScoreBar value={bp.vulnerability_score} color={vc} delay={0} />
+          <LabeledBar label="Vuln" value={bp.vulnerability_score / 100} color={vc} valueText={bp.vulnerability_score.toFixed(0)} valueColor={vc} delay={0} />
         </div>
         <div>
-          <div style={{ marginBottom: "4px" }}>
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>Fatigue</span>
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", marginLeft: "6px" }}>— pitcher workload over last 3 days</span>
+          <div style={{ marginBottom: "var(--sp-1)" }}>
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", fontWeight: "var(--weight-medium)" }}>Fatigue</span>
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "var(--sp-1)" }}>— pitcher workload over last 3 days</span>
           </div>
-          <ScoreBar value={bp.fatigue_score} color="var(--text-2)" delay={80} />
+          <LabeledBar label="Fatigue" value={bp.fatigue_score / 100} color="var(--text-2)" valueText={bp.fatigue_score.toFixed(0)} valueColor="var(--text-2)" delay={80} />
         </div>
         <div>
-          <div style={{ marginBottom: "4px" }}>
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>Available Quality</span>
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", marginLeft: "6px" }}>— quality of relievers who can pitch tonight</span>
+          <div style={{ marginBottom: "var(--sp-1)" }}>
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", fontWeight: "var(--weight-medium)" }}>Available Quality</span>
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "var(--sp-1)" }}>— quality of relievers who can pitch tonight</span>
           </div>
-          <ScoreBar value={bp.available_quality} color="var(--amber)" delay={160} />
+          <LabeledBar label="Avail. quality" value={bp.available_quality / 100} color="var(--warn)" valueText={bp.available_quality.toFixed(0)} valueColor="var(--warn)" delay={160} />
         </div>
       </div>
       {(bp.unavailable_relievers?.length ?? 0) > 0 && (
-        <div style={{ marginTop: "8px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--red)" }}>
+        <div style={{ marginTop: "var(--sp-2)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--neg)" }}>
           Can&apos;t pitch tonight: {bp.unavailable_relievers.join(", ")}
         </div>
       )}
       {(bp.limited_relievers?.length ?? 0) > 0 && (
-        <div style={{ marginTop: "4px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--orange)" }}>
+        <div style={{ marginTop: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: HOLD_COLOR }}>
           Limited (high usage): {bp.limited_relievers.join(", ")}
         </div>
       )}
       {(bp.best_available?.length ?? 0) > 0 && (
-        <div style={{ marginTop: "4px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--green)" }}>
+        <div style={{ marginTop: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--pos)" }}>
           Best available: {bp.best_available.join(", ")}
         </div>
       )}
-      <div style={{ marginTop: "12px", fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontStyle: "italic", lineHeight: 1.4 }}>
+      <div style={{ marginTop: "var(--sp-3)", fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", fontStyle: "italic", lineHeight: "var(--lh-prose)" }}>
         {bp.betting_implication}
       </div>
-    </div>
+    </Card>
   );
 }
 
 function StarterCard({ abbr, starter }: { abbr: string; starter: NonNullable<GameContext["home_starter"]> | null }) {
   const fipColor = starter?.fip != null
-    ? starter.fip <= 3.20 ? "var(--green)" : starter.fip >= 4.50 ? "var(--red)" : "var(--text)"
+    ? starter.fip <= 3.20 ? "var(--pos)" : starter.fip >= 4.50 ? "var(--neg)" : "var(--text)"
     : "var(--text)";
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+    <Card>
       <Label>{abbr} Starting Pitcher</Label>
       {starter ? (
         <>
-          <div style={{ fontWeight: 600, fontSize: "15px", marginBottom: "12px", color: "var(--text)", letterSpacing: "-0.01em" }}>
+          <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-data)", marginBottom: "var(--sp-3)", color: "var(--text)", letterSpacing: "-0.01em" }}>
             {starter.pitcher_name}
           </div>
           {starter.insufficient_sample && starter.starts === 0 ? (
-            <div style={{ fontSize: "12px", color: "var(--text-2)", lineHeight: 1.45 }}>
+            <div style={{ fontSize: "var(--fs-body)", color: "var(--text-2)", lineHeight: "var(--lh-prose)" }}>
               Announced starter — no recent-start sample available yet.
             </div>
           ) : (
             <>
               <StatRow label="ERA" value={starter.era?.toFixed(2)} />
               {starter.fip != null && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                  <span style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "var(--text-2)", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--sp-1) 0", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text-2)", display: "inline-flex", alignItems: "center", gap: "var(--sp-1)" }}>
                     <ExplainTooltip term="fip"><span>FIP</span></ExplainTooltip>
                   </span>
-                  <span className="scoreboard-num" style={{ fontSize: "14px", color: fipColor }}>{starter.fip.toFixed(2)}</span>
+                  <span className="num" style={{ fontSize: "var(--fs-data)", color: fipColor }}>{starter.fip.toFixed(2)}</span>
                 </div>
               )}
               <StatRow label="WHIP" value={starter.whip?.toFixed(2)} />
@@ -146,13 +141,13 @@ function StarterCard({ abbr, starter }: { abbr: string; starter: NonNullable<Gam
             </>
           )}
           {starter.insufficient_sample && (
-            <div style={{ marginTop: "8px", fontSize: "11px", color: "var(--amber)" }}>Small sample — fewer than 5 starts</div>
+            <div style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-meta)", color: "var(--warn)" }}>Small sample — fewer than 5 starts</div>
           )}
         </>
       ) : (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)" }}>Starter not yet announced</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-muted)" }}>Starter not yet announced</div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -170,17 +165,17 @@ function windEffect(speedMph: number, deg: number): string {
 
 function WeatherCard({ w }: { w: WeatherData }) {
   if (w.is_dome) return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+    <Card>
       <Label>Conditions</Label>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)" }}>Indoor venue — weather not a factor.</div>
-    </div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-2)" }}>Indoor venue — weather not a factor.</div>
+    </Card>
   );
   const tempNote = w.temperature_f != null
     ? w.temperature_f >= 85 ? " (hot)" : w.temperature_f <= 50 ? " (cold)" : "" : "";
   const windNote = w.wind_speed_mph != null && w.wind_direction_deg != null && w.wind_speed_mph >= 6
     ? windEffect(w.wind_speed_mph, w.wind_direction_deg) : null;
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+    <Card>
       <Label>Conditions</Label>
       <StatRow label={`Temp${tempNote}`} value={w.temperature_f != null ? `${w.temperature_f}°F` : null} />
       {w.wind_speed_mph != null && (
@@ -190,7 +185,7 @@ function WeatherCard({ w }: { w: WeatherData }) {
         />
       )}
       <StatRow label="Precip chance" value={w.precipitation_chance != null ? `${w.precipitation_chance}%` : null} />
-    </div>
+    </Card>
   );
 }
 
@@ -214,12 +209,12 @@ function CompareRow({ label, home, away, higherBetter = true, fmt = (v: number) 
   const homeWins = hVal !== null && aVal !== null && (higherBetter ? hVal > aVal : hVal < aVal);
   const awayWins = hVal !== null && aVal !== null && (higherBetter ? aVal > hVal : aVal < hVal);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", alignItems: "center", padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: homeWins ? "var(--text)" : "var(--text-2)", fontWeight: homeWins ? 600 : 400, textAlign: "right" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", alignItems: "center", padding: "var(--sp-1) 0", borderBottom: "1px solid var(--border)" }}>
+      <span className="num" style={{ fontSize: "var(--fs-body)", color: homeWins ? "var(--text)" : "var(--text-2)", fontWeight: homeWins ? "var(--weight-semibold)" : "var(--weight-normal)", textAlign: "right" }}>
         {hVal !== null ? fmt(hVal) : "—"}
       </span>
-      <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", textAlign: "center", letterSpacing: "0.04em" }}>{label}</span>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: awayWins ? "var(--text)" : "var(--text-2)", fontWeight: awayWins ? 600 : 400, textAlign: "left" }}>
+      <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", textAlign: "center", letterSpacing: "var(--tracking-label)" }}>{label}</span>
+      <span className="num" style={{ fontSize: "var(--fs-body)", color: awayWins ? "var(--text)" : "var(--text-2)", fontWeight: awayWins ? "var(--weight-semibold)" : "var(--weight-normal)", textAlign: "left" }}>
         {aVal !== null ? fmt(aVal) : "—"}
       </span>
     </div>
@@ -235,11 +230,11 @@ function TeamStatsCard({ homeAbbr, awayAbbr, homeForm, awayForm, homeBatting, aw
   const af = awayForm as FormWindow | null;
   if (!hf && !af) return null;
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", marginBottom: "12px" }}>
-        <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)", textAlign: "right", letterSpacing: "-0.01em" }}>{homeAbbr}</div>
-        <div style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.04em", color: "var(--text-3)", textTransform: "uppercase", textAlign: "center", paddingTop: "3px" }}>L10</div>
-        <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-2)", textAlign: "left", letterSpacing: "-0.01em" }}>{awayAbbr}</div>
+    <Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", marginBottom: "var(--sp-3)" }}>
+        <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-data)", color: "var(--text)", textAlign: "right", letterSpacing: "-0.01em" }}>{homeAbbr}</div>
+        <div style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--weight-bold)", letterSpacing: "var(--tracking-label)", color: "var(--text-2)", textTransform: "uppercase", textAlign: "center", paddingTop: "var(--sp-1)" }}>L10</div>
+        <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-data)", color: "var(--text-2)", textAlign: "left", letterSpacing: "-0.01em" }}>{awayAbbr}</div>
       </div>
       <CompareRow label="R/G" home={hf?.runs_per_game} away={af?.runs_per_game} fmt={v => v.toFixed(1)} />
       <CompareRow label="RA/G" home={hf?.runs_allowed_per_game} away={af?.runs_allowed_per_game} higherBetter={false} fmt={v => v.toFixed(1)} />
@@ -257,21 +252,14 @@ function TeamStatsCard({ homeAbbr, awayAbbr, homeForm, awayForm, homeBatting, aw
       <CompareRow label="W (L10)" home={hf?.record_wins} away={af?.record_wins} fmt={v => String(Math.round(v))} />
       <CompareRow label="L (L10)" home={hf?.record_losses} away={af?.record_losses} higherBetter={false} fmt={v => String(Math.round(v))} />
       {(hf?.trend_label || af?.trend_label) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", padding: "5px 0" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", textAlign: "right" }}>{hf?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
-          <span style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", textAlign: "center" }}>Trend</span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-2)", textAlign: "left" }}>{af?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", padding: "var(--sp-1) 0" }}>
+          <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", textAlign: "right" }}>{hf?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
+          <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", textAlign: "center" }}>Trend</span>
+          <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", textAlign: "left" }}>{af?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
         </div>
       )}
-    </div>
+    </Card>
   );
-}
-
-function tierColor(tier: string) {
-  if (tier === "STRONG LEAN") return "var(--green)";
-  if (tier === "LEAN") return "var(--blue)";
-  if (tier === "AVOID") return "var(--red)";
-  return "var(--text-3)";
 }
 
 function AnalysisPanel({ a }: { a: GameAnalysis }) {
@@ -282,185 +270,181 @@ function AnalysisPanel({ a }: { a: GameAnalysis }) {
     : null;
   const isActionable = leanAbbr !== null && a.ml_tier !== "AVOID";
   const evPct = a.ev_per_dollar != null ? a.ev_per_dollar * 100 : null;
-  const cardClass = a.ml_tier === "STRONG LEAN" ? "card-strong-lean" : a.ml_tier === "LEAN" ? "card-lean" : "";
+  const variant = a.ml_tier === "STRONG LEAN" ? "strong-lean" : a.ml_tier === "LEAN" ? "lean" : "default";
 
   return (
-    <div style={{ marginBottom: "24px" }}>
-      <div className="section-label">Model Verdict</div>
-      <div className={cardClass} style={{ background: "var(--surface)", border: `1px solid ${isActionable ? tc : "var(--border)"}`, borderRadius: "4px", overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", background: isActionable ? `rgba(${a.ml_tier === "STRONG LEAN" ? "63,185,80" : "88,166,255"},0.04)` : "transparent", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
-          <div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", fontWeight: 800, color: tc, letterSpacing: "0.02em", textTransform: "uppercase", lineHeight: 1 }}>
-              {isActionable ? `${leanAbbr} ML` : a.ml_tier}
-            </div>
-            {isActionable && (
-              <div style={{ fontSize: "11px", color: "var(--text-2)", marginTop: "5px" }}>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text)" }}>
-                  {a.ml_american_odds > 0 ? "+" : ""}{a.ml_american_odds}
-                </span>{" "}· {a.ml_tier}
-              </div>
-            )}
+    <Card variant={variant} pad={false} style={{ overflow: "hidden" }}>
+      <div style={{ padding: "var(--sp-4) var(--sp-5)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--sp-4)", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-headline)", fontWeight: "var(--weight-display)", color: tc, letterSpacing: "0.02em", textTransform: "uppercase", lineHeight: "var(--lh-tight)" }}>
+            {isActionable ? `${leanAbbr} ML` : a.ml_tier}
           </div>
           {isActionable && (
-            <div style={{ display: "flex", gap: "24px", textAlign: "right" }}>
-              <div>
-                <div className="data-label" style={{ textAlign: "right" }}>EV / dollar</div>
-                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "20px", color: evPct != null && evPct > 0 ? "var(--green)" : "var(--red)", lineHeight: 1.1 }}>
-                  {evPct != null ? `${evPct > 0 ? "+" : ""}${evPct.toFixed(1)}¢` : "—"}
-                </div>
-                <div style={{ fontSize: "9px", color: "var(--text-3)", marginTop: "2px" }}>per $1 wagered</div>
-              </div>
-              <div>
-                <div className="data-label" style={{ textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
-                  Kelly <ExplainTooltip term="uncertainty-kelly" />
-                </div>
-                <div className="scoreboard-num" style={{ fontSize: "22px", color: "var(--text)", lineHeight: 1.1 }}>
-                  {(a.ml_kelly_fraction * 100).toFixed(1)}%
-                </div>
-                <div style={{ fontSize: "9px", color: "var(--text-3)", marginTop: "2px" }}>of bankroll</div>
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <span className="num" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text)" }}>
+                {a.ml_american_odds > 0 ? "+" : ""}{a.ml_american_odds}
+              </span>
+              <TierBadge tier={a.ml_tier} />
             </div>
           )}
         </div>
-
-        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: "20px", alignItems: "center", marginBottom: "16px" }}>
+        {isActionable && (
+          <div style={{ display: "flex", gap: "var(--sp-6)", textAlign: "right" }}>
             <div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginBottom: "10px", display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
-                model{" "}
-                <span className="scoreboard-num" style={{ fontSize: "13px", color: "var(--text)" }}>{(a.q_p_model * 100).toFixed(1)}%</span>{" "}→{" "}
-                <ExplainTooltip term="bayesian-shrinkage"><span>shrunk</span></ExplainTooltip>{" "}
-                <strong className="scoreboard-num" style={{ color: "var(--text)", fontSize: "13px" }}>{(a.q_p_shrunk * 100).toFixed(1)}%</strong>{" "}vs{" "}
-                <ExplainTooltip term="shin-devig"><span>Shin market</span></ExplainTooltip>{" "}
-                <span className="scoreboard-num" style={{ fontSize: "13px", color: "var(--text)" }}>{(a.q_shin_vig_free * 100).toFixed(1)}%</span>
+              <div className="data-label" style={{ textAlign: "right" }}>EV / dollar</div>
+              <div className="num" style={{ fontWeight: "var(--weight-bold)", fontSize: "var(--fs-stat)", color: evPct != null ? semanticColor(evPct) : "var(--text-2)", lineHeight: "var(--lh-tight)" }}>
+                {evPct != null ? `${evPct > 0 ? "+" : ""}${evPct.toFixed(1)}¢` : "—"}
               </div>
-              <DuelBar model={a.q_p_shrunk} market={a.q_shin_vig_free} lower={a.q_ci_low} upper={a.q_ci_high} />
+              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: "var(--sp-1)" }}>per $1 wagered</div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-              <Gauge p={a.q_prob_positive} size={140} />
-              <ExplainTooltip term="p-plus-ev">
-                <span style={{ fontSize: "9px", color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>P(+EV)</span>
-              </ExplainTooltip>
-            </div>
-          </div>
-          <div className="section-label" style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>Bankroll growth <ExplainTooltip term="expected-log-growth" /></span>
-            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>Doubling <ExplainTooltip term="doubling-time" /></span>
-          </div>
-          <GrowthReadout a={a} />
-          {isActionable && <div style={{ marginTop: "16px" }}><MethodCompare a={a} /></div>}
-        </div>
-
-        <div className="mobile-stack" style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0" }}>
-          <div style={{ padding: "0 14px 0 0", borderRight: "1px solid var(--border)" }}>
-            <div className="data-label" style={{ marginBottom: "8px" }}>Win Probability</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {[
-                { abbr: a.home_team_abbr, prob: a.model_home_win_prob },
-                { abbr: a.away_team_abbr, prob: a.model_away_win_prob },
-              ].map(({ abbr, prob }) => (
-                <div key={abbr} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "10px", color: "var(--text-3)", width: "30px" }}>{abbr}</span>
-                  <div className="stat-bar-track" style={{ flex: 1 }}>
-                    <div className="stat-bar-fill" style={{ "--fill": `${prob * 100}%`, background: "var(--blue)" } as React.CSSProperties} />
-                  </div>
-                  <span className="scoreboard-num" style={{ fontSize: "14px", color: "var(--text)", width: "42px", textAlign: "right" }}>
-                    {(prob * 100).toFixed(1)}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{ padding: "0 14px", borderRight: "1px solid var(--border)" }}>
-            <div className="data-label" style={{ marginBottom: "8px" }}>Total (O/U)</div>
-            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "18px", color: a.total_lean === "OVER" ? "var(--amber)" : a.total_lean === "UNDER" ? "var(--blue)" : "var(--text-3)" }}>
-              {a.total_lean === "PASS" ? "NO LEAN" : a.total_lean}
-            </div>
-            <div style={{ fontSize: "10px", color: "var(--text-3)", marginTop: "4px" }}>
-              proj <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-2)" }}>{a.projected_total.toFixed(1)}</span> runs
-            </div>
-          </div>
-          <div style={{ padding: "0 0 0 14px" }}>
-            <div className="data-label" style={{ marginBottom: "8px", display: "flex", alignItems: "center", gap: "4px" }}>
-              Base Rate <ExplainTooltip term="vig-overround" />
-            </div>
-            <div style={{ fontSize: "10px", color: "var(--text-2)", lineHeight: 1.6 }}>
-              Home adv: <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>53.5%</span><br/>
-              Vig: <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>{a.overround != null ? `${((a.overround - 1) * 100).toFixed(1)}%` : "—"}</span>
-            </div>
-          </div>
-        </div>
-
-        {(() => {
-          const components = [
-            { label: "SP / FIP",      val: a.component_fip,       note: "FIP differential" },
-            { label: "Bullpen",       val: a.component_bullpen,   note: "Vulnerability & fatigue gap" },
-            { label: "Offense",       val: a.component_offense,   note: "wOBA + R/G vs RA/G" },
-            { label: "Form / Splits", val: a.component_trend,     note: "Trend, H2H, home/road" },
-            { label: "K Matchup",     val: a.component_k_matchup, note: "SP K/9 vs lineup K%" },
-            { label: "Weather",       val: a.component_weather,   note: "Wind + temp effect" },
-            { label: "Rest",          val: a.component_rest,      note: "Pitcher days rest" },
-            { label: "Park",          val: a.component_park,      note: "Ballpark run factor" },
-          ].filter(c => Math.abs(c.val) > 0.001);
-          if (!components.length) return null;
-          const maxAbs = Math.max(...components.map(c => Math.abs(c.val)), 0.01);
-          return (
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                <div className="data-label">Factor Waterfall</div>
-                <div style={{ fontSize: "9px", color: "var(--text-3)", display: "flex", gap: "12px" }}>
-                  <span style={{ color: "var(--red)" }}>← {a.away_team_abbr}</span>
-                  <span style={{ color: "var(--green)" }}>{a.home_team_abbr} →</span>
-                </div>
+            <div>
+              <div className="data-label" style={{ textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "var(--sp-1)" }}>
+                Kelly <ExplainTooltip term="uncertainty-kelly" />
               </div>
-              {components.map(({ label, val, note }) => {
-                const pct = (Math.abs(val) / maxAbs) * 80;
-                const color = val > 0 ? "var(--green)" : "var(--red)";
-                return (
-                  <div key={label} style={{ marginBottom: "10px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
-                      <div>
-                        <span style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>{label}</span>
-                        <span style={{ fontSize: "9px", color: "var(--text-3)", marginLeft: "8px" }}>{note}</span>
-                      </div>
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color, fontWeight: 700 }}>
-                        {val > 0 ? "+" : ""}{(val * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                      <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-                        {val < 0 && <div style={{ width: `${pct}%`, height: "4px", background: color, borderRadius: "1px" }} />}
-                      </div>
-                      <div style={{ width: "1px", height: "8px", background: "var(--border-2)", flexShrink: 0 }} />
-                      <div style={{ flex: 1 }}>
-                        {val > 0 && <div style={{ width: `${pct}%`, height: "4px", background: color, borderRadius: "1px" }} />}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              <div className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+                {(a.ml_kelly_fraction * 100).toFixed(1)}%
+              </div>
+              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: "var(--sp-1)" }}>of bankroll</div>
             </div>
-          );
-        })()}
-
-        {a.key_factors.length > 0 && (
-          <div style={{ padding: "14px 20px", borderBottom: a.cautions.length > 0 ? "1px solid var(--border)" : "none" }}>
-            <div className="data-label" style={{ marginBottom: "8px" }}>Key Factors</div>
-            {a.key_factors.map((f, i) => (
-              <div key={i} style={{ fontSize: "11px", color: "var(--text-2)", marginBottom: "4px", paddingLeft: "8px", borderLeft: "1px solid var(--border-2)" }}>{f}</div>
-            ))}
-          </div>
-        )}
-
-        {a.cautions.length > 0 && (
-          <div style={{ padding: "12px 20px", background: "rgba(240,136,62,0.04)" }}>
-            {a.cautions.map((c, i) => (
-              <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--orange)", marginBottom: "3px" }}>{c}</div>
-            ))}
           </div>
         )}
       </div>
-    </div>
+
+      <div style={{ padding: "var(--sp-4) var(--sp-5)", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: "var(--sp-5)", alignItems: "center", marginBottom: "var(--sp-4)" }}>
+          <div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginBottom: "var(--sp-3)", display: "flex", alignItems: "center", gap: "var(--sp-1)", flexWrap: "wrap" }}>
+              model{" "}
+              <span className="num" style={{ color: "var(--text)" }}>{(a.q_p_model * 100).toFixed(1)}%</span>{" "}→{" "}
+              <ExplainTooltip term="bayesian-shrinkage"><span>shrunk</span></ExplainTooltip>{" "}
+              <strong className="num" style={{ color: "var(--text)" }}>{(a.q_p_shrunk * 100).toFixed(1)}%</strong>{" "}vs{" "}
+              <ExplainTooltip term="shin-devig"><span>Shin market</span></ExplainTooltip>{" "}
+              <span className="num" style={{ color: "var(--text)" }}>{(a.q_shin_vig_free * 100).toFixed(1)}%</span>
+            </div>
+            <DuelBar model={a.q_p_shrunk} market={a.q_shin_vig_free} lower={a.q_ci_low} upper={a.q_ci_high} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--sp-1)" }}>
+            <Gauge p={a.q_prob_positive} size={140} />
+            <ExplainTooltip term="p-plus-ev">
+              <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-2)", letterSpacing: "var(--tracking-label)", textTransform: "uppercase" }}>P(+EV)</span>
+            </ExplainTooltip>
+          </div>
+        </div>
+        <div className="section-label" style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", marginBottom: "var(--sp-2)" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-1)" }}>Bankroll growth <ExplainTooltip term="expected-log-growth" /></span>
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-1)" }}>Doubling <ExplainTooltip term="doubling-time" /></span>
+        </div>
+        <GrowthReadout a={a} />
+        {isActionable && <div style={{ marginTop: "var(--sp-4)" }}><MethodCompare a={a} /></div>}
+      </div>
+
+      <div className="mobile-stack" style={{ padding: "var(--sp-3) var(--sp-5)", borderBottom: "1px solid var(--border)", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
+        <div style={{ padding: "0 var(--sp-3) 0 0", borderRight: "1px solid var(--border)" }}>
+          <div className="data-label" style={{ marginBottom: "var(--sp-2)" }}>Win Probability</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+            {[
+              { abbr: a.home_team_abbr, prob: a.model_home_win_prob },
+              { abbr: a.away_team_abbr, prob: a.model_away_win_prob },
+            ].map(({ abbr, prob }) => (
+              <div key={abbr} style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                <span style={{ fontSize: "var(--fs-caption)", color: "var(--text-2)", width: "30px" }}>{abbr}</span>
+                <Bar value={prob} color="var(--lean)" style={{ flex: 1 }} />
+                <span className="num" style={{ fontSize: "var(--fs-data)", color: "var(--text)", width: "42px", textAlign: "right" }}>
+                  {(prob * 100).toFixed(1)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ padding: "0 var(--sp-3)", borderRight: "1px solid var(--border)" }}>
+          <div className="data-label" style={{ marginBottom: "var(--sp-2)" }}>Total (O/U)</div>
+          <div className="num" style={{ fontWeight: "var(--weight-bold)", fontSize: "var(--fs-stat)", color: a.total_lean === "OVER" ? "var(--pos)" : a.total_lean === "UNDER" ? "var(--lean)" : "var(--text-2)" }}>
+            {a.total_lean === "PASS" ? "NO LEAN" : a.total_lean}
+          </div>
+          <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>
+            proj <span className="num" style={{ color: "var(--text-2)" }}>{a.projected_total.toFixed(1)}</span> runs
+          </div>
+        </div>
+        <div style={{ padding: "0 0 0 var(--sp-3)" }}>
+          <div className="data-label" style={{ marginBottom: "var(--sp-2)", display: "flex", alignItems: "center", gap: "var(--sp-1)" }}>
+            Base Rate <ExplainTooltip term="vig-overround" />
+          </div>
+          <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-2)", lineHeight: "var(--lh-prose)" }}>
+            Home adv: <span className="num" style={{ color: "var(--text)" }}>53.5%</span><br/>
+            Vig: <span className="num" style={{ color: "var(--text)" }}>{a.overround != null ? `${((a.overround - 1) * 100).toFixed(1)}%` : "—"}</span>
+          </div>
+        </div>
+      </div>
+
+      {(() => {
+        const components = [
+          { label: "SP / FIP",      val: a.component_fip,       note: "FIP differential" },
+          { label: "Bullpen",       val: a.component_bullpen,   note: "Vulnerability & fatigue gap" },
+          { label: "Offense",       val: a.component_offense,   note: "wOBA + R/G vs RA/G" },
+          { label: "Form / Splits", val: a.component_trend,     note: "Trend, H2H, home/road" },
+          { label: "K Matchup",     val: a.component_k_matchup, note: "SP K/9 vs lineup K%" },
+          { label: "Weather",       val: a.component_weather,   note: "Wind + temp effect" },
+          { label: "Rest",          val: a.component_rest,      note: "Pitcher days rest" },
+          { label: "Park",          val: a.component_park,      note: "Ballpark run factor" },
+        ].filter(c => Math.abs(c.val) > 0.001);
+        if (!components.length) return null;
+        const maxAbs = Math.max(...components.map(c => Math.abs(c.val)), 0.01);
+        return (
+          <div style={{ padding: "var(--sp-3) var(--sp-5)", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--sp-3)" }}>
+              <div className="data-label">Factor Waterfall</div>
+              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-2)", display: "flex", gap: "var(--sp-3)" }}>
+                <span style={{ color: "var(--neg)" }}>← {a.away_team_abbr}</span>
+                <span style={{ color: "var(--pos)" }}>{a.home_team_abbr} →</span>
+              </div>
+            </div>
+            {components.map(({ label, val, note }) => {
+              const pct = (Math.abs(val) / maxAbs) * 80;
+              const color = val > 0 ? "var(--pos)" : "var(--neg)";
+              return (
+                <div key={label} style={{ marginBottom: "var(--sp-3)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--sp-1)" }}>
+                    <div>
+                      <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>{label}</span>
+                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-2)", marginLeft: "var(--sp-2)" }}>{note}</span>
+                    </div>
+                    <span className="num" style={{ fontSize: "var(--fs-meta)", color, fontWeight: "var(--weight-bold)" }}>
+                      {val > 0 ? "+" : ""}{(val * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+                    <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+                      {val < 0 && <div style={{ width: `${pct}%`, height: "4px", background: color, borderRadius: "var(--r-xs)" }} />}
+                    </div>
+                    <div style={{ width: "1px", height: "8px", background: "var(--border)", flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      {val > 0 && <div style={{ width: `${pct}%`, height: "4px", background: color, borderRadius: "var(--r-xs)" }} />}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {a.key_factors.length > 0 && (
+        <div style={{ padding: "var(--sp-3) var(--sp-5)", borderBottom: a.cautions.length > 0 ? "1px solid var(--border)" : "none" }}>
+          <div className="data-label" style={{ marginBottom: "var(--sp-2)" }}>Key Factors</div>
+          {a.key_factors.map((f, i) => (
+            <div key={i} style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", marginBottom: "var(--sp-1)", paddingLeft: "var(--sp-2)", borderLeft: "1px solid var(--border)" }}>{f}</div>
+          ))}
+        </div>
+      )}
+
+      {a.cautions.length > 0 && (
+        <div style={{ padding: "var(--sp-3) var(--sp-5)", background: "var(--amber-tint)" }}>
+          {a.cautions.map((c, i) => (
+            <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: HOLD_COLOR, marginBottom: "var(--sp-1)" }}>{c}</div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -472,9 +456,9 @@ function fmtAmerican(n: number | null | undefined): string {
 }
 
 function verdictColor(verdict: string): string {
-  if (verdict === "+EV") return "var(--green)";
-  if (verdict === "-EV") return "var(--red)";
-  return "var(--amber)"; // marginal
+  if (verdict === "+EV") return "var(--pos)";
+  if (verdict === "-EV") return "var(--neg)";
+  return "var(--warn)"; // marginal
 }
 
 /** One market's offered price vs the no-vig fair line + book hold. Verification
@@ -488,43 +472,44 @@ function FairMarketRow({ label, offered, fair, holdPct, fmt = fmtAmerican }: {
 }) {
   if (!offered) {
     return (
-      <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>
+      <div style={{ padding: "var(--sp-2) 0", borderBottom: "1px solid var(--border)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
           {label} — odds not captured (two-sided price required)
         </span>
       </div>
     );
   }
   return (
-    <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
-        <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>{label}</span>
+    <div style={{ padding: "var(--sp-2) 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "var(--sp-2)" }}>
+        <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text-2)", fontWeight: "var(--weight-medium)" }}>{label}</span>
         {holdPct != null && (
           <span
+            className="num"
             title="Book hold (overround) — the vig baked into both sides of this market"
-            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--orange)", fontWeight: 600 }}
+            style={{ fontSize: "var(--fs-meta)", color: HOLD_COLOR, fontWeight: "var(--weight-semibold)" }}
           >
             hold {holdPct.toFixed(1)}%
           </span>
         )}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "6px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--sp-1)", marginTop: "var(--sp-1)" }}>
         {[
           { tag: offered.aTag, off: offered.a, fr: fair?.a ?? null },
           { tag: offered.bTag, off: offered.b, fr: fair?.b ?? null },
         ].map(({ tag, off, fr }) => (
-          <div key={tag} style={{ display: "flex", alignItems: "baseline", gap: "6px", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
-            <span style={{ color: "var(--text-3)", width: "34px" }}>{tag}</span>
-            <span style={{ color: "var(--text)", fontWeight: 600 }}>{fmt(off)}</span>
-            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>book</span>
-            <span style={{ color: "var(--text-3)" }}>·</span>
-            <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmt(fr)}</span>
-            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>fair</span>
+          <div key={tag} style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)" }}>
+            <span style={{ color: "var(--text-2)", width: "34px" }}>{tag}</span>
+            <OddsValue odds={off} />
+            <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>book</span>
+            <span style={{ color: "var(--text-muted)" }}>·</span>
+            <OddsValue odds={fr} muted />
+            <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>fair</span>
           </div>
         ))}
       </div>
       {!fair && (
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", marginTop: "4px" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: "var(--text-muted)", marginTop: "var(--sp-1)" }}>
           fair line needs both sides priced
         </div>
       )}
@@ -591,80 +576,58 @@ function BoostEvWidget({ fv }: { fv: FairValueResult }) {
   const awayAbbr = fv.away_team_abbr ?? "AWAY";
   const sideLabel = side === "home" ? homeAbbr : awayAbbr;
 
-  const inputStyle: React.CSSProperties = {
-    background: "var(--bg)", border: "1px solid var(--border-2)", borderRadius: "4px",
-    padding: "5px 8px", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "12px",
-    width: "100%", outline: "none",
-  };
   const sideBtn = (active: boolean): React.CSSProperties => ({
-    background: active ? "var(--surface-2, var(--surface))" : "transparent",
-    border: `1px solid ${active ? "var(--blue)" : "var(--border-2)"}`,
+    background: active ? "var(--surface-2)" : "transparent",
+    border: `1px solid ${active ? "var(--lean)" : "var(--border)"}`,
     color: active ? "var(--text)" : "var(--text-2)",
-    borderRadius: "4px", padding: "5px 10px", cursor: "pointer",
-    fontFamily: "var(--font-mono)", fontSize: "11px", fontWeight: 600,
+    borderRadius: "var(--r-sm)", padding: "var(--sp-1) var(--sp-3)", cursor: "pointer",
+    minHeight: "44px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", fontWeight: "var(--weight-semibold)",
   });
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+    <Card>
       <Label>Profit-Boost EV</Label>
-      <div style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", marginBottom: "12px", lineHeight: 1.45 }}>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginBottom: "var(--sp-3)", lineHeight: "var(--lh-prose)" }}>
         A profit boost lifts your winnings only (never the stake). Enter a boost % and a fair
         win probability to verify whether the promo is +EV — this is a check, not a recommendation.
       </div>
 
       {/* Side toggle (moneyline) */}
-      <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
-        <button style={sideBtn(side === "away")} onClick={() => pickSide("away")}>{awayAbbr}</button>
-        <button style={sideBtn(side === "home")} onClick={() => pickSide("home")}>{homeAbbr}</button>
+      <div style={{ display: "flex", gap: "var(--sp-1)", marginBottom: "var(--sp-2)", alignItems: "center" }}>
+        <button type="button" style={sideBtn(side === "away")} onClick={() => pickSide("away")}>{awayAbbr}</button>
+        <button type="button" style={sideBtn(side === "home")} onClick={() => pickSide("home")}>{homeAbbr}</button>
         {modelSide && (
-          <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)", alignSelf: "center" }}>
+          <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: "var(--text-2)", alignSelf: "center" }}>
             seeded from model · {modelSide === "home" ? homeAbbr : awayAbbr}
           </span>
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "10px" }}>
-        <div>
-          <div style={{ fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "3px" }}>{sideLabel} price</div>
-          <input style={inputStyle} value={oddsStr} onChange={(e) => setOddsStr(e.target.value)} placeholder="e.g. -120" inputMode="numeric" />
-        </div>
-        <div>
-          <div style={{ fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "3px" }}>boost %</div>
-          <input style={inputStyle} value={String(boostPct)} onChange={(e) => setBoostPct(parseFloat(e.target.value))} inputMode="decimal" />
-        </div>
-        <div>
-          <div style={{ fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "3px" }}>fair win %</div>
-          <input style={inputStyle} value={probStr} onChange={(e) => setProbStr(e.target.value)} placeholder="e.g. 55" inputMode="decimal" />
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--sp-2)", marginBottom: "var(--sp-3)" }}>
+        <NumberField label={`${sideLabel} price`} value={oddsStr} onChange={setOddsStr} placeholder="e.g. -120" inputMode="numeric" />
+        <NumberField label="boost %" value={String(boostPct)} onChange={(v) => setBoostPct(parseFloat(v))} inputMode="decimal" />
+        <NumberField label="fair win %" value={probStr} onChange={setProbStr} placeholder="e.g. 55" inputMode="decimal" />
       </div>
 
-      <button
-        onClick={compute}
-        disabled={busy}
-        style={{
-          background: "var(--blue)", border: "none", borderRadius: "4px", padding: "7px 14px",
-          color: "#fff", fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 600,
-          cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1,
-        }}
-      >
+      <Button variant="primary" onClick={compute} disabled={busy}>
         {busy ? "Evaluating…" : "Evaluate boost"}
-      </button>
+      </Button>
 
       {err && (
-        <div style={{ marginTop: "10px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--red)" }}>{err}</div>
+        <div style={{ marginTop: "var(--sp-2)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--neg)" }}>{err}</div>
       )}
 
       {result && (
-        <div style={{ marginTop: "14px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)" }}>
+        <div style={{ marginTop: "var(--sp-3)", borderTop: "1px solid var(--border)", paddingTop: "var(--sp-3)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--sp-3)" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-2)" }}>
               boosted price{" "}
-              <span style={{ color: "var(--text)", fontWeight: 700 }}>{fmtAmerican(result.boosted_american)}</span>
+              <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-bold)" }}>{fmtAmerican(result.boosted_american)}</span>
             </span>
-            <span style={{
-              fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 700,
+            <span className="num" style={{
+              fontSize: "var(--fs-body)", fontWeight: "var(--weight-bold)",
               color: verdictColor(result.verdict),
-              border: `1px solid ${verdictColor(result.verdict)}`, borderRadius: "4px", padding: "2px 8px",
+              border: `1px solid ${verdictColor(result.verdict)}`, borderRadius: "var(--r-sm)", padding: "var(--sp-1) var(--sp-2)",
             }}>
               {result.verdict}
             </span>
@@ -676,7 +639,7 @@ function BoostEvWidget({ fv }: { fv: FairValueResult }) {
           <StatRow label="Boosted payout / $1" value={result.boosted_payout_per_unit.toFixed(3)} />
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -687,9 +650,9 @@ function BoostEvWidget({ fv }: { fv: FairValueResult }) {
 // when fewer than two pre-pitch snapshots exist. No fabricated numbers.
 
 function movementLabelColor(label: Movement["label"]): string {
-  if (label === "confirmation") return "var(--green)";
-  if (label === "fade") return "var(--red)";
-  return "var(--text-3)"; // flat / null
+  if (label === "confirmation") return "var(--pos)";
+  if (label === "fade") return "var(--neg)";
+  return "var(--text-2)"; // flat / null
 }
 
 function movementSideTag(m: Movement, homeAbbr: string, awayAbbr: string): string | null {
@@ -730,9 +693,9 @@ function MovementMarketRow({ label, m, homeAbbr, awayAbbr }: {
       : m.source === "no_book_snapshots" ? "no snapshots captured for this book"
       : "no movement data";
     return (
-      <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500, marginBottom: "2px" }}>{label}</div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)" }}>{why}</div>
+      <div style={{ padding: "var(--sp-2) 0", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text-2)", fontWeight: "var(--weight-medium)", marginBottom: "var(--sp-1)" }}>{label}</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{why}</div>
       </div>
     );
   }
@@ -749,13 +712,14 @@ function MovementMarketRow({ label, m, homeAbbr, awayAbbr }: {
   const probApprox = m.source === "one_sided";
 
   return (
-    <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px" }}>
-        <span style={{ fontFamily: "var(--font-body)", fontSize: "12px", color: "var(--text-2)", fontWeight: 500 }}>{label}</span>
+    <div style={{ padding: "var(--sp-2) 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "var(--sp-2)" }}>
+        <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text-2)", fontWeight: "var(--weight-medium)" }}>{label}</span>
         {m.label && (
           <span
+            className="num"
             title="Whether the book's net move went toward or away from the model's leaned side"
-            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em" }}
+            style={{ fontSize: "var(--fs-meta)", color, fontWeight: "var(--weight-semibold)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}
           >
             {m.label}
           </span>
@@ -763,46 +727,46 @@ function MovementMarketRow({ label, m, homeAbbr, awayAbbr }: {
       </div>
 
       {/* Open → close prices (and total line when it moved) */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "14px", marginTop: "6px", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <span style={{ color: "var(--text-3)", fontSize: "10px" }}>price</span>
-          <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtAmerican(m.open.american)}</span>
-          <span style={{ color: "var(--text-3)" }}>→</span>
-          <span style={{ color: "var(--text)", fontWeight: 700 }}>{fmtAmerican(m.close.american)}</span>
-          <span style={{ color: "var(--text-3)", fontSize: "10px" }}>({fmtSignedNum(m.american_delta, 0)})</span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-3)", marginTop: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-1)" }}>
+          <span style={{ color: "var(--text-2)", fontSize: "var(--fs-caption)" }}>price</span>
+          <span className="num" style={{ color: "var(--text-2)", fontWeight: "var(--weight-semibold)" }}>{fmtAmerican(m.open.american)}</span>
+          <span style={{ color: "var(--text-muted)" }}>→</span>
+          <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-bold)" }}>{fmtAmerican(m.close.american)}</span>
+          <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>({fmtSignedNum(m.american_delta, 0)})</span>
         </span>
         {lineMoved && (
-          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>total</span>
-            <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{m.open.line}</span>
-            <span style={{ color: "var(--text-3)" }}>→</span>
-            <span style={{ color: "var(--text)", fontWeight: 700 }}>{m.close.line}</span>
-            <span style={{ color: "var(--text-3)", fontSize: "10px" }}>({fmtSignedNum(m.line_delta, 1)})</span>
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--sp-1)" }}>
+            <span style={{ color: "var(--text-2)", fontSize: "var(--fs-caption)" }}>total</span>
+            <span className="num" style={{ color: "var(--text-2)", fontWeight: "var(--weight-semibold)" }}>{m.open.line}</span>
+            <span style={{ color: "var(--text-muted)" }}>→</span>
+            <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-bold)" }}>{m.close.line}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>({fmtSignedNum(m.line_delta, 1)})</span>
           </span>
         )}
       </div>
 
       {/* Vig-free implied-prob delta for the measured side */}
-      <div style={{ marginTop: "5px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)" }}>
-        <span style={{ color: "var(--text-3)" }}>
+      <div style={{ marginTop: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+        <span style={{ color: "var(--text-2)" }}>
           {probApprox ? "implied-prob Δ (price-implied)" : "vig-free implied-prob Δ"}
           {sideTag ? ` · ${sideTag}` : ""}
         </span>{" "}
-        <span style={{ color: "var(--text)", fontWeight: 600 }}>
+        <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-semibold)" }}>
           {m.devig_prob_delta != null ? fmtSignedPct(m.devig_prob_delta) : (lineMoved ? "see line move" : "—")}
         </span>
       </div>
 
       {/* Direction vs model side */}
       {sideTag && m.agreement && (
-        <div style={{ marginTop: "4px", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
-          <span style={{ color: "var(--text-3)" }}>market moved</span>{" "}
-          <span style={{ color, fontWeight: 600 }}>{dirWord} {sideTag}</span>
+        <div style={{ marginTop: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)" }}>
+          <span style={{ color: "var(--text-2)" }}>market moved</span>{" "}
+          <span style={{ color, fontWeight: "var(--weight-semibold)" }}>{dirWord} {sideTag}</span>
         </div>
       )}
 
       {m.bookmaker && (
-        <div style={{ marginTop: "4px", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-3)" }}>
+        <div style={{ marginTop: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
           {m.bookmaker}
           {m.open.captured_at && m.close.captured_at ? " · open → latest pre-first-pitch" : ""}
         </div>
@@ -823,17 +787,17 @@ function MovementPanel({ fv }: { fv: FairValueResult }) {
   const totLine = fv.total.offered?.line;
 
   return (
-    <div style={{ marginBottom: "24px" }}>
-      <div className="section-label">Line movement — open → close (single book)</div>
-      <div style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", margin: "4px 0 12px", lineHeight: 1.45 }}>
+    <div style={{ marginBottom: "var(--sp-6)" }}>
+      <SectionHeader>Line movement — open → close (single book)</SectionHeader>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", margin: "var(--sp-1) 0 var(--sp-3)", lineHeight: "var(--lh-prose)" }}>
         Net move for one bookmaker between the opening and the latest pre-first-pitch snapshot —
         and whether it went toward or away from the model&apos;s leaned side. This is single-book
         line movement, not a cross-book market read; the price delta is for context only.
       </div>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px" }}>
+      <Card>
         <MovementMarketRow label="Moneyline" m={mlMove} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
         <MovementMarketRow label={`Total${totLine != null ? ` (${totLine})` : ""}`} m={totMove} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
-      </div>
+      </Card>
     </div>
   );
 }
@@ -856,19 +820,19 @@ function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
   }
 
   return (
-    <div style={{ marginBottom: "24px" }}>
-      <div className="section-label">Beat the Book — fair value &amp; vig</div>
-      <div style={{ fontFamily: "var(--font-body)", fontSize: "11px", color: "var(--text-3)", margin: "4px 0 12px", lineHeight: 1.45 }}>
+    <div style={{ marginBottom: "var(--sp-6)" }}>
+      <SectionHeader>Beat the Book — fair value &amp; vig</SectionHeader>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", margin: "var(--sp-1) 0 var(--sp-3)", lineHeight: "var(--lh-prose)" }}>
         The no-vig fair line is what the book&apos;s own two-sided price implies once the hold
         (overround) is removed. Single-book (no-vig), not a market consensus — and not a pick.
       </div>
 
       {!hasAnyOffered ? (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)" }}>
+        <Card style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-muted)" }}>
           No two-sided price captured for this game — fair value not available.
-        </div>
+        </Card>
       ) : (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "16px", marginBottom: "12px" }}>
+        <Card style={{ marginBottom: "var(--sp-3)" }}>
           <FairMarketRow
             label="Moneyline"
             offered={ml.offered ? { aTag: fv.away_team_abbr ?? "AWAY", a: ml.offered.away, bTag: fv.home_team_abbr ?? "HOME", b: ml.offered.home } : null}
@@ -882,14 +846,14 @@ function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
             holdPct={tot.hold_pct}
           />
           {modelVsMarket && (
-            <div style={{ marginTop: "10px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)" }}>
-              <span style={{ color: "var(--text-3)" }}>model vs market</span>{" "}
-              <span style={{ color: "var(--text)", fontWeight: 600 }}>{modelVsMarket.side}</span>{" "}
-              model <span style={{ color: "var(--text)", fontWeight: 600 }}>{(modelVsMarket.model * 100).toFixed(1)}%</span>{" "}
-              vs no-vig <span style={{ color: "var(--text)", fontWeight: 600 }}>{(modelVsMarket.market * 100).toFixed(1)}%</span>
+            <div style={{ marginTop: "var(--sp-3)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+              <span style={{ color: "var(--text-2)" }}>model vs market</span>{" "}
+              <span style={{ color: "var(--text)", fontWeight: "var(--weight-semibold)" }}>{modelVsMarket.side}</span>{" "}
+              model <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-semibold)" }}>{(modelVsMarket.model * 100).toFixed(1)}%</span>{" "}
+              vs no-vig <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-semibold)" }}>{(modelVsMarket.market * 100).toFixed(1)}%</span>
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       <BoostEvWidget fv={fv} />
@@ -899,53 +863,83 @@ function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
 
 // ── Main export ────────────────────────────────────────────────────────────────
 
+type SectionKey = "matchup" | "pitching" | "bullpen" | "model" | "beat";
+
+const SECTION_TABS = [
+  { value: "matchup", label: "Matchup" },
+  { value: "pitching", label: "Pitching" },
+  { value: "bullpen", label: "Bullpen" },
+  { value: "model", label: "Model" },
+  { value: "beat", label: "Beat the Book" },
+];
+
 export function GameDetailPanel({ gameId, date }: { gameId: number; date: string }) {
-  const [ctx, setCtx] = useState<GameContext | null>(null);
-  const [homeBatting, setHomeBatting] = useState<TeamBatting | null>(null);
-  const [awayBatting, setAwayBatting] = useState<TeamBatting | null>(null);
-  const [live, setLive] = useState<LiveState | null>(null);
-  const [fairValue, setFairValue] = useState<FairValueResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  // All loaded resources are stamped with the request key they belong to. When
+  // gameId/date changes, the key no longer matches and we treat everything as
+  // freshly-loading (and ignore any in-flight stale responses) during render —
+  // no synchronous setState-in-effect needed to clear the previous game.
+  const reqKey = `${gameId}|${date}`;
+  const [ctxState, setCtxState] = useState<{ key: string; ctx: GameContext | null; failed: boolean } | null>(null);
+  const [homeBattingState, setHomeBattingState] = useState<{ key: string; data: TeamBatting | null } | null>(null);
+  const [awayBattingState, setAwayBattingState] = useState<{ key: string; data: TeamBatting | null } | null>(null);
+  const [liveState, setLiveState] = useState<{ key: string; data: LiveState | null } | null>(null);
+  const [fairState, setFairState] = useState<{ key: string; data: FairValueResult | null; done: boolean } | null>(null);
+  const [section, setSection] = useState<SectionKey>("matchup");
+  const tabsId = "game-detail-tabs";
 
   useEffect(() => {
-    setLoading(true);
-    setCtx(null);
-    setLive(null);
-    setFairValue(null);
+    const key = `${gameId}|${date}`;
     api.context(gameId, date).then((c) => {
-      setCtx(c);
-      setLoading(false);
+      setCtxState({ key, ctx: c, failed: !c });
       if (c) {
-        api.batting(c.home_team_id, date).then(d => setHomeBatting(d));
-        api.batting(c.away_team_id, date).then(d => setAwayBatting(d));
+        api.batting(c.home_team_id, date).then(d => setHomeBattingState({ key, data: d }));
+        api.batting(c.away_team_id, date).then(d => setAwayBattingState({ key, data: d }));
       }
     });
     // Live monitoring is best-effort; default to "No live signal" on failure.
-    api.live(gameId).then(setLive).catch(() => setLive(null));
+    api.live(gameId).then(d => setLiveState({ key, data: d })).catch(() => setLiveState({ key, data: null }));
     // Beat-the-Book fair value (no-vig + hold). Best-effort; null hides the panel.
-    api.fairValue(gameId).then(setFairValue).catch(() => setFairValue(null));
+    api.fairValue(gameId)
+      .then(d => setFairState({ key, data: d, done: true }))
+      .catch(() => setFairState({ key, data: null, done: true }));
   }, [gameId, date]);
 
+  // Derive per-resource values, scoped to the current request key. A stale
+  // entry (key mismatch) reads as not-yet-loaded for this game.
+  const ctx = ctxState?.key === reqKey ? ctxState.ctx : null;
+  const ctxFailed = ctxState?.key === reqKey ? ctxState.failed : false;
+  const loading = !(ctxState?.key === reqKey);
+  const homeBatting = homeBattingState?.key === reqKey ? homeBattingState.data : null;
+  const awayBatting = awayBattingState?.key === reqKey ? awayBattingState.data : null;
+  const live = liveState?.key === reqKey ? liveState.data : null;
+  const fairValue = fairState?.key === reqKey ? fairState.data : null;
+  const fairLoading = !(fairState?.key === reqKey && fairState.done);
+
   if (loading) return (
-    <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>Loading…</div>
+    <Loading label="Loading game detail">
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
+        <SkeletonCard lines={2} />
+        <SkeletonCard lines={5} />
+      </div>
+    </Loading>
   );
-  if (!ctx) return (
-    <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--red)" }}>Game not found.</div>
+  if (ctxFailed || !ctx) return (
+    <ErrorBanner kind="outage" title="Game not found" detail="This game's context could not be loaded. Try again from the slate." />
   );
 
   const analysis = ctx.analysis;
 
   return (
     <div>
-      {/* Matchup header */}
-      <div style={{ marginBottom: "24px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+      {/* Matchup header — sticky parity between drawer + route */}
+      <div style={{ marginBottom: "var(--sp-4)", paddingBottom: "var(--sp-4)", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
           <TeamLogo abbr={ctx.away_team_abbr} size={42} />
           <div>
-            <h2 style={{ fontWeight: 700, fontSize: "24px", letterSpacing: "-0.03em", margin: 0, lineHeight: 1.1 }}>
-              {ctx.away_team_abbr} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>@</span> {ctx.home_team_abbr}
+            <h2 style={{ fontWeight: "var(--weight-bold)", fontSize: "var(--fs-headline)", letterSpacing: "-0.03em", margin: 0, lineHeight: "var(--lh-tight)" }}>
+              {ctx.away_team_abbr} <span style={{ color: "var(--text-2)", fontWeight: "var(--weight-normal)" }}>@</span> {ctx.home_team_abbr}
             </h2>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "5px" }}>
+            <div className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>
               {ctx.venue} · {ctx.game_date}
             </div>
           </div>
@@ -955,54 +949,98 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
         <LiveAlert live={live} />
       </div>
 
-      {/* Team stats */}
-      {(ctx.home_form || ctx.away_form) && (
-        <div style={{ marginBottom: "24px" }}>
-          <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "12px" }}>Team Stats</div>
-          <TeamStatsCard
-            homeAbbr={ctx.home_team_abbr}
-            awayAbbr={ctx.away_team_abbr}
-            homeForm={(ctx.home_form as Record<string, unknown>)?.l10 as FormWindow}
-            awayForm={(ctx.away_form as Record<string, unknown>)?.l10 as FormWindow}
-            homeBatting={homeBatting}
-            awayBatting={awayBatting}
+      {/* Section tabs */}
+      <Tabs
+        items={SECTION_TABS}
+        value={section}
+        onChange={(v) => setSection(v as SectionKey)}
+        ariaLabel="Game detail sections"
+        style={{ marginBottom: "var(--sp-4)" }}
+      />
+
+      {/* Matchup — team stats + weather */}
+      <TabPanel baseId={tabsId} tabValue="matchup" active={section === "matchup"}>
+        {(ctx.home_form || ctx.away_form) ? (
+          <div style={{ marginBottom: "var(--sp-6)" }}>
+            <SectionHeader>Team Stats</SectionHeader>
+            <TeamStatsCard
+              homeAbbr={ctx.home_team_abbr}
+              awayAbbr={ctx.away_team_abbr}
+              homeForm={(ctx.home_form as Record<string, unknown>)?.l10 as FormWindow}
+              awayForm={(ctx.away_form as Record<string, unknown>)?.l10 as FormWindow}
+              homeBatting={homeBatting}
+              awayBatting={awayBatting}
+            />
+          </div>
+        ) : (
+          <EmptyState title="No recent-form data" detail="L10 splits aren't available for this matchup yet." style={{ marginBottom: "var(--sp-6)" }} />
+        )}
+
+        {ctx.weather && (
+          <div style={{ maxWidth: "360px", marginBottom: "var(--sp-6)" }}>
+            <WeatherCard w={ctx.weather} />
+          </div>
+        )}
+      </TabPanel>
+
+      {/* Pitching — starters */}
+      <TabPanel baseId={tabsId} tabValue="pitching" active={section === "pitching"}>
+        <div style={{ marginBottom: "var(--sp-6)" }}>
+          <SectionHeader>Starting Pitchers</SectionHeader>
+          <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--sp-3)" }}>
+            <StarterCard abbr={ctx.home_team_abbr} starter={ctx.home_starter} />
+            <StarterCard abbr={ctx.away_team_abbr} starter={ctx.away_starter} />
+          </div>
+        </div>
+      </TabPanel>
+
+      {/* Bullpen */}
+      <TabPanel baseId={tabsId} tabValue="bullpen" active={section === "bullpen"}>
+        <div style={{ marginBottom: "var(--sp-6)" }}>
+          <SectionHeader>Bullpen Intelligence</SectionHeader>
+          {ctx.home_bullpen || ctx.away_bullpen ? (
+            <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--sp-3)" }}>
+              {ctx.home_bullpen && <BullpenCard abbr={ctx.home_team_abbr} bp={ctx.home_bullpen} />}
+              {ctx.away_bullpen && <BullpenCard abbr={ctx.away_team_abbr} bp={ctx.away_bullpen} />}
+            </div>
+          ) : (
+            <EmptyState title="No bullpen data" detail="Reliever availability hasn't been computed for this game yet." />
+          )}
+        </div>
+      </TabPanel>
+
+      {/* Model verdict */}
+      <TabPanel baseId={tabsId} tabValue="model" active={section === "model"}>
+        <div style={{ marginBottom: "var(--sp-6)" }}>
+          <SectionHeader>Model Verdict</SectionHeader>
+          {analysis ? (
+            <AnalysisPanel a={analysis} />
+          ) : (
+            <EmptyState title="No model verdict" detail="The model hasn't produced an analysis for this game." />
+          )}
+        </div>
+      </TabPanel>
+
+      {/* Beat the Book — fair value, hold, boost-EV, line movement */}
+      <TabPanel baseId={tabsId} tabValue="beat" active={section === "beat"}>
+        {fairLoading ? (
+          <div style={{ marginBottom: "var(--sp-6)" }}>
+            <SectionHeader>Beat the Book — fair value &amp; vig</SectionHeader>
+            <Card><SkeletonText lines={4} /></Card>
+          </div>
+        ) : fairValue ? (
+          <>
+            <BeatTheBookPanel fv={fairValue} />
+            <MovementPanel fv={fairValue} />
+          </>
+        ) : (
+          <EmptyState
+            title="Fair value not available"
+            detail="No two-sided book price was captured for this game, so no-vig fair lines can't be computed."
+            style={{ marginBottom: "var(--sp-6)" }}
           />
-        </div>
-      )}
-
-      {/* Starters */}
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "12px" }}>Starting Pitchers</div>
-        <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <StarterCard abbr={ctx.home_team_abbr} starter={ctx.home_starter} />
-          <StarterCard abbr={ctx.away_team_abbr} starter={ctx.away_starter} />
-        </div>
-      </div>
-
-      {/* Bullpens */}
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: "12px" }}>Bullpen Intelligence</div>
-        <div className="mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          {ctx.home_bullpen && <BullpenCard abbr={ctx.home_team_abbr} bp={ctx.home_bullpen} />}
-          {ctx.away_bullpen && <BullpenCard abbr={ctx.away_team_abbr} bp={ctx.away_bullpen} />}
-        </div>
-      </div>
-
-      {/* Weather */}
-      {ctx.weather && (
-        <div style={{ maxWidth: "360px", marginBottom: "24px" }}>
-          <WeatherCard w={ctx.weather} />
-        </div>
-      )}
-
-      {/* Analysis */}
-      {analysis && <AnalysisPanel a={analysis} />}
-
-      {/* Beat the Book — no-vig fair value, book hold, profit-boost EV calculator */}
-      {fairValue && <BeatTheBookPanel fv={fairValue} />}
-
-      {/* Line movement — single-book net move (open → close) toward/away the model side */}
-      {fairValue && <MovementPanel fv={fairValue} />}
+        )}
+      </TabPanel>
     </div>
   );
 }

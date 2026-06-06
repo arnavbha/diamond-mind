@@ -9,6 +9,15 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion } from "motion/react";
 
+// Per-session guard so a given text only runs its reveal once per browser
+// session (keyed by the text content). The nav wordmark used to re-scramble on
+// every remount — page navigations in the App Router that remount the layout
+// subtree, IntersectionObserver re-fires, etc. Once revealed, stay revealed.
+const animatedThisSession =
+  typeof window !== "undefined"
+    ? ((window as Window & { __dmDecrypted?: Set<string> }).__dmDecrypted ??= new Set<string>())
+    : new Set<string>();
+
 const srOnly: React.CSSProperties = {
   position: "absolute",
   width: 1, height: 1,
@@ -50,15 +59,10 @@ export default function DecryptedText({
   animateOn = "hover",
   clickMode = "once",
 }: DecryptedTextProps) {
-  const [displayText, setDisplayText]     = useState(text);
-  const [isAnimating, setIsAnimating]     = useState(false);
-  const [revealedIndices, setRevealedIndices] = useState(new Set<number>());
-  const [hasAnimated, setHasAnimated]     = useState(false);
-  const [isDecrypted, setIsDecrypted]     = useState(animateOn !== "click");
-  const [direction, setDirection]         = useState<"forward" | "reverse">("forward");
-
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  // If this text already revealed earlier in the session, treat it as done so a
+  // remount (e.g. layout subtree re-rendering on navigation) doesn't re-scramble.
+  const alreadyRevealed =
+    (animateOn === "view" || animateOn === "auto") && animatedThisSession.has(text);
 
   const availableChars = useMemo(() =>
     useOriginalCharsOnly
@@ -75,6 +79,29 @@ export default function DecryptedText({
     }).join(""),
     [availableChars],
   );
+
+  // Initial render state is derived from `animateOn` once, at mount, via lazy
+  // initializers — no setState-in-effect needed to seed the first frame.
+  //   • "click"           → start scrambled, not yet decrypted
+  //   • "auto" (fresh)    → start animating the reveal immediately
+  //   • "view"/"hover"    → start as plain, decrypted text (the defaults)
+  // Seeding the once-per-session record for "auto" happens here too (idempotent).
+  const [displayText, setDisplayText] = useState(() =>
+    animateOn === "click" ? shuffleText(text, new Set<number>()) : text,
+  );
+  const [isAnimating, setIsAnimating] = useState(() => {
+    const autoReveal = animateOn === "auto" && !alreadyRevealed;
+    // Record the auto reveal in the session set once, at mount (idempotent).
+    if (autoReveal) animatedThisSession.add(text);
+    return autoReveal;
+  });
+  const [revealedIndices, setRevealedIndices] = useState(new Set<number>());
+  const [hasAnimated, setHasAnimated]     = useState(alreadyRevealed);
+  const [isDecrypted, setIsDecrypted]     = useState(animateOn !== "click");
+  const [direction, setDirection]         = useState<"forward" | "reverse">("forward");
+
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fillAll = useCallback(() => {
     const s = new Set<number>();
@@ -99,13 +126,6 @@ export default function DecryptedText({
     setDirection("forward");
     setIsAnimating(true);
   }, []);
-
-  const encryptInstantly = useCallback(() => {
-    const empty = new Set<number>();
-    setRevealedIndices(empty);
-    setDisplayText(shuffleText(text, empty));
-    setIsDecrypted(false);
-  }, [text, shuffleText]);
 
   // Main animation loop
   useEffect(() => {
@@ -146,29 +166,26 @@ export default function DecryptedText({
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isAnimating, text, speed, maxIterations, sequential, direction, shuffleText, getNextIndex]);
 
-  // View observer
+  // View observer. Skips entirely once the text has revealed this session.
   useEffect(() => {
     if (animateOn !== "view") return;
+    if (hasAnimated) return;
     const obs = new IntersectionObserver(entries => {
       entries.forEach(e => {
         if (e.isIntersecting && !hasAnimated) {
           triggerDecrypt();
           setHasAnimated(true);
+          animatedThisSession.add(text);
         }
       });
     }, { threshold: 0.1 });
     const el = containerRef.current;
     if (el) obs.observe(el);
     return () => { if (el) obs.unobserve(el); };
-  }, [animateOn, hasAnimated, triggerDecrypt]);
+  }, [animateOn, hasAnimated, triggerDecrypt, text]);
 
-  // Auto mode
-  useEffect(() => {
-    if (animateOn === "auto") { triggerDecrypt(); }
-    if (animateOn === "click") { encryptInstantly(); }
-    else { setDisplayText(text); setIsDecrypted(true); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Initial mode state (auto/click/view/hover) is seeded via lazy useState
+  // initializers above — no mount effect required.
 
   const hoverProps = animateOn === "hover" ? {
     onMouseEnter: () => {

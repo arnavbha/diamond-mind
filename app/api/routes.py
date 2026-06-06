@@ -1332,6 +1332,50 @@ def tools_parlay_ev(body: ParlayEvBody):
         raise HTTPException(422, str(exc))
 
 
+class BankrollRiskBody(_BoostBaseModel):
+    bankroll: float                                   # > 0 (currency)
+    american_odds: int                                # != 0 (0 = missing-price sentinel)
+    fair_prob: float                                  # vig-free fair win prob in (0,1)
+    kelly_multiplier: float = 0.5                     # quarter=0.25, half=0.5, full=1.0
+    unit_size: Optional[float] = None                 # currency/unit; default bankroll*0.01
+    drawdown_floors: Optional[List[float]] = None     # each in (0,1); default [0.5,0.25,0.10]
+    edge_sensitivity_deltas: Optional[List[float]] = None  # each >= 0; default [0.0,0.02,0.04]
+
+
+@app.post("/tools/bankroll", tags=["analysis"])
+def tools_bankroll(body: BankrollRiskBody):
+    """Stateless bankroll / risk sizing calculator. Public, no DB writes.
+
+    Given a bankroll, an American price, and a VIG-FREE fair win probability
+    (seedable from the model's p_shrunk — NOT the price's vig-loaded implied
+    prob), returns the full-Kelly fraction, the recommended stake at a chosen
+    Kelly multiplier (in currency + units), the expected per-bet log-growth and
+    doubling time, an honest drawdown-to-α probability (a clearly-labeled
+    continuous-diffusion APPROXIMATION, never 0%), a quarter/half/full Kelly
+    comparison, and an edge-sensitivity table that re-derives sizing at lower
+    true edges to show that over-betting an over-estimated edge is the real
+    danger. Every output is illustrative given the ASSUMED edge — verification,
+    not a pick. f* <= 0 clamps the stake to 0 with verdict "no bet / -EV".
+
+    422 on: bankroll <= 0, american_odds == 0 (missing-price sentinel), fair_prob
+    outside (0,1), kelly_multiplier outside (0,1], unit_size <= 0, any drawdown
+    floor outside (0,1), or any edge-sensitivity delta < 0.
+    """
+    from app.betting.bankroll import bankroll_risk
+    try:
+        return bankroll_risk(
+            bankroll=body.bankroll,
+            american_odds=body.american_odds,
+            fair_prob=body.fair_prob,
+            kelly_multiplier=body.kelly_multiplier,
+            unit_size=body.unit_size,
+            drawdown_floors=body.drawdown_floors,
+            edge_sensitivity_deltas=body.edge_sensitivity_deltas,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @app.get("/backtest", tags=["analysis"])
 def backtest_range(
     response: Response,
@@ -1708,6 +1752,17 @@ def slate(
         if isinstance(live.get("total"), dict):
             live["total"]["movement"] = mv["total"]
 
+    # +EV Edge Board: per game/market model-vs-no-vig edge on the model's lean side.
+    # Reuses the analyzer's already-leaned q_*/qt_* quant fields (model prob,
+    # no-vig market prob, edge = q_edge_quant / qt_edge_quant) plus the fair/movement
+    # blocks just attached above — NO new devig pass. Null per market when there is
+    # no two-sided same-book price (honest "no market"); never a fabricated 0 edge.
+    from app.betting.edge_board import build_model_edge as _build_model_edge
+    for gid, payload in output_map.items():
+        payload["model_edge"] = _build_model_edge(
+            payload.get("analysis"), payload.get("live_odds")
+        )
+
     # Live monitoring: for in-progress games, (a) fall back to the captured live
     # score/inning when the terminal-score gate leaves games.home/away_score
     # NULL mid-game, and (b) inline a LiveState object for watchlisted
@@ -1743,6 +1798,61 @@ def slate(
 
     # Preserve original game order
     return [output_map[m["game_id"]] for m in game_meta if m["game_id"] in output_map]
+
+
+def _latest_away_ml_odds(db: Session, game_id: int, away_abbr: str) -> Optional[int]:
+    """Most-recent captured AWAY moneyline american price for a game, or None.
+
+    Used by auto-track to tag the away-side BetRecord with the real captured
+    market price instead of the analyzer's modeled ml_american_odds.
+
+    Canonical odds_snapshots encoding (writers: app/ingestion/espn_odds.py,
+    app/ingestion/odds_api.py):
+      - market == 'moneyline'  (NOT 'h2h' — that is a provider input key that is
+        normalized to 'moneyline' before any write)
+      - ML selection is a team token that is provider-dependent: ESPN writes the
+        lowercase ABBREVIATION ('ari'); the-odds-api writes the lowercase FULL
+        team name ('arizona diamondbacks').
+
+    We therefore resolve each candidate snapshot's selection to a normalized abbr
+    (the same approach as _latest_odds_by_game / clv._resolve_ml) and pick the most
+    recent row whose resolved abbr equals the away team. A naive substring ilike on
+    Team.name (the nickname) would silently miss the ESPN abbreviation encoding.
+    """
+    from app.models.odds import OddsSnapshotRow
+    from app.chat.classifier import TEAM_NAMES, ALL_ABBRS, ABBR_NORM
+
+    def _resolve_to_abbr(selection: str) -> Optional[str]:
+        if not selection:
+            return None
+        s = selection.strip()
+        up = s.upper()
+        if up in ALL_ABBRS:
+            return up
+        low = s.lower()
+        if low in TEAM_NAMES:
+            return TEAM_NAMES[low]
+        for name, abbr in TEAM_NAMES.items():
+            if name in low or low in name:
+                return abbr
+        return None
+
+    target = ABBR_NORM.get(away_abbr, away_abbr)
+    rows = db.execute(
+        select(OddsSnapshotRow.selection, OddsSnapshotRow.american_odds)
+        .where(
+            OddsSnapshotRow.game_id == game_id,
+            OddsSnapshotRow.market == "moneyline",
+        )
+        .order_by(OddsSnapshotRow.captured_at.desc())
+    ).all()
+    for selection, odds in rows:
+        abbr = _resolve_to_abbr(selection)
+        if abbr is None:
+            continue
+        if ABBR_NORM.get(abbr, abbr) == target:
+            return odds
+    return None
 
 
 def _latest_odds_by_game(
@@ -2887,18 +2997,18 @@ def auto_track(
                     odds = analysis.get("ml_american_odds", 0)
                 else:
                     selection = away_abbr
-                    away_team = db.get(Team, game.away_team_id)
-                    away_frag = away_team.name.lower() if away_team else away_abbr.lower()
-                    away_odds_row = db.execute(
-                        select(OddsSnapshotRow.american_odds)
-                        .where(
-                            OddsSnapshotRow.game_id == game.id,
-                            OddsSnapshotRow.market == "h2h",
-                            OddsSnapshotRow.selection.ilike(f"%{away_frag}%"),
-                        )
-                        .order_by(OddsSnapshotRow.captured_at.desc())
-                        .limit(1)
-                    ).scalar_one_or_none()
+                    # Resolve the away moneyline price from captured odds_snapshots.
+                    # Canonical market string is 'moneyline' (writers: espn_odds.py /
+                    # odds_api._normalize_market). 'h2h' is a PROVIDER input key that is
+                    # normalized to 'moneyline' before any write, so it matches ZERO
+                    # rows in odds_snapshots. Resolve the away selection the same robust
+                    # way _latest_odds_by_game does (abbr-normalized), because ESPN writes
+                    # selection as a lowercase abbreviation ('ari') while odds_api writes
+                    # the lowercase full team name — a substring ilike on Team.name (the
+                    # nickname) would miss the ESPN encoding entirely.
+                    away_odds_row = _latest_away_ml_odds(
+                        db, game.id, away_abbr,
+                    )
                     odds = away_odds_row if away_odds_row is not None else analysis.get("ml_american_odds", 0)
 
                 # ── Heavy-favourite cap ──────────────────────────────────────
@@ -2962,7 +3072,7 @@ def auto_track(
                     select(OddsSnapshotRow.american_odds)
                     .where(
                         OddsSnapshotRow.game_id == game.id,
-                        OddsSnapshotRow.market == "totals",
+                        OddsSnapshotRow.market == "total",
                         OddsSnapshotRow.selection.ilike(f"%{side_frag}%"),
                     )
                     .order_by(OddsSnapshotRow.captured_at.desc())
