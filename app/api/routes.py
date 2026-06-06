@@ -2710,6 +2710,9 @@ def _clv_aggregates(rows: list) -> dict:
 
 
 _ACTIONABLE_TIERS = {"STRONG LEAN", "LEAN"}
+# ML odds cap: data shows -150+ picks hit 17% (need 63%+ to break even).
+# -110 to -149 bucket hits 64% win rate (+4.14u). Cap at -149.
+_ML_MAX_JUICE = -150  # skip any ML pick with odds <= this value
 
 
 _UNIT_SCALE = 0.5  # global scale factor — keeps 1u = ~0.5% bankroll at sane exposure
@@ -2897,6 +2900,14 @@ def auto_track(
                         .limit(1)
                     ).scalar_one_or_none()
                     odds = away_odds_row if away_odds_row is not None else analysis.get("ml_american_odds", 0)
+
+                # ── Heavy-favourite cap ──────────────────────────────────────
+                # Data shows -150+ ML picks hit 17% over the live dataset
+                # (need 63%+ to break even). Cap at -149 to avoid juice traps.
+                # Data-driven: -110 to -149 bucket hits 64%, +4.14u.
+                if int(odds) <= _ML_MAX_JUICE:
+                    skipped += 1
+                    continue
 
                 units = _kelly_units(analysis.get("q_kelly_sized", 0.01))
                 if units == 0.0:
