@@ -528,6 +528,17 @@ def run(as_of: date, dry_run: bool = False, history_days: int = DEFAULT_HISTORY_
                 session.commit()
                 log.info("All changes committed.")
 
+                # 7b. Statcast xStat ingest (Path B): pull the recent window so the
+                # xStat model variant has fresh pitcher/team expected-stats. Isolated
+                # try/except — a savant hiccup must never break the daily run.
+                try:
+                    from datetime import timedelta as _td
+                    from app.ingestion.statcast import ingest_statcast_range
+                    _sc_start = as_of - _td(days=4)
+                    ingest_statcast_range(session, _sc_start, as_of)
+                except Exception as _sc_exc:
+                    log.warning("Statcast ingest skipped: %s", _sc_exc)
+
                 # 8. Auto-settle yesterday's bets now that box scores are in.
                 _auto_settle_bets(session, yesterday)
 

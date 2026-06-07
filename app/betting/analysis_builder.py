@@ -316,7 +316,7 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
         # expected FIP (CSW% + xwOBA-on-contact). Leak-safe (as_of bounded).
         # Off by default; only active under DM_MODEL_VARIANT=xstat so B3 can
         # A/B the variants on CLV without touching live behaviour.
-        if sp is not None and pitcher_id and os.environ.get("DM_MODEL_VARIANT", "").lower() == "xstat":
+        if sp is not None and pitcher_id and os.environ.get("DM_MODEL_VARIANT", "xstat").lower() == "xstat":
             try:
                 from app.betting.statcast_quality import expected_fip
                 xf = expected_fip(db, pitcher_id, as_of)
@@ -345,7 +345,7 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
         # B4 hitter-xwOBA probe: under DM_MODEL_VARIANT=xstat, override team_woba
         # with the Statcast expected-offense value (xwOBA-on-contact). Leak-safe,
         # off by default, guarded.
-        if os.environ.get("DM_MODEL_VARIANT", "").lower() == "xstat":
+        if os.environ.get("DM_MODEL_VARIANT", "xstat").lower() == "xstat":
             try:
                 from app.betting.statcast_quality import effective_team_woba
                 team = db.get(Team, team_id)
