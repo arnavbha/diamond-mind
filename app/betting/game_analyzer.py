@@ -411,6 +411,7 @@ def analyze_game(
     away_sp_babip: Optional[float] = None,
     home_sb_rate: Optional[float] = None,   # SB/PA this season
     away_sb_rate: Optional[float] = None,
+    home_win_prob_override: Optional[float] = None,  # fitted model: replace computed prob
 ) -> GameAnalysis:
 
     factors: list[str] = []
@@ -732,6 +733,12 @@ def analyze_game(
 
     # Clamp
     prob = round(min(0.72, max(0.30, prob)), 4)
+    # Fitted model override: replace the hand-weighted prob with the learned
+    # offense-first logistic prob. Everything downstream (edge/tier/Kelly) then
+    # runs off the fitted number. Passed in by analysis_builder under
+    # DM_MODEL_VARIANT=fitted; None = keep the component-built prob.
+    if home_win_prob_override is not None:
+        prob = round(min(0.72, max(0.30, float(home_win_prob_override))), 4)
     # Calibration: shrink the raw (over-confident) home prob toward the base
     # rate via the fitted Platt map before any edge/tier/Kelly logic consumes
     # it. No-op when DM_CALIBRATION=off or no config present. See

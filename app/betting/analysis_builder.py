@@ -357,6 +357,18 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
                 pass
         return w
 
+    def _fitted_override():
+        """Under DM_MODEL_VARIANT=fitted, return the learned offense-first logistic
+        home-win prob to replace the hand-weighted one. None otherwise / on any
+        failure (graceful fallback to the component model)."""
+        if os.environ.get("DM_MODEL_VARIANT", "xstat").lower() != "fitted":
+            return None
+        try:
+            from app.betting.fitted_model import fitted_home_prob
+            return fitted_home_prob(db, game, as_of)
+        except Exception:
+            return None
+
     # Fetch batting aggregates for K%, ISO, and BB% signals
     home_batting = _batting_stats_for_team(db, team_id=home_id, as_of=as_of)
     away_batting = _batting_stats_for_team(db, team_id=away_id, as_of=as_of)
@@ -588,4 +600,5 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
         away_sp_babip=away_sp_babip,
         home_sb_rate=home_sb_rate,
         away_sb_rate=away_sb_rate,
+        home_win_prob_override=_fitted_override(),
     )
