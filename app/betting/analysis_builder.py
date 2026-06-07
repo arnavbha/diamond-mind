@@ -21,6 +21,7 @@ existing endpoint returns the same result.
 from __future__ import annotations
 
 import dataclasses
+import os
 from datetime import date
 from typing import Optional
 
@@ -305,12 +306,25 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
     away_team = db.get(Team, away_id)
 
     def _sp(pitcher_id):
-        return _starter_form_or_announced(
+        sp = _starter_form_or_announced(
             db,
             pitcher_id=pitcher_id,
             window=WindowKey.LAST_5_STARTS,
             as_of=as_of,
         )
+        # B2 gated xStat variant: swap the lagging real FIP for an xStat-derived
+        # expected FIP (CSW% + xwOBA-on-contact). Leak-safe (as_of bounded).
+        # Off by default; only active under DM_MODEL_VARIANT=xstat so B3 can
+        # A/B the variants on CLV without touching live behaviour.
+        if sp is not None and pitcher_id and os.environ.get("DM_MODEL_VARIANT", "").lower() == "xstat":
+            try:
+                from app.betting.statcast_quality import expected_fip
+                xf = expected_fip(db, pitcher_id, as_of)
+                if xf is not None:
+                    sp = dataclasses.replace(sp, fip=xf)
+            except Exception:
+                pass  # never let xStat lookup break the base model
+        return sp
 
     def _bp(team_id, probable_starter_id=None):
         exclude = [probable_starter_id] if probable_starter_id else None
