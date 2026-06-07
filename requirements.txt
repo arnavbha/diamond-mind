@@ -31,3 +31,4 @@ watchfiles==1.1.1
 websockets==16.0
 groq==1.2.0
 rapidfuzz==3.14.5
+pybaseball==2.2.7

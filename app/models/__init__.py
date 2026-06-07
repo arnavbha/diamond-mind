@@ -23,6 +23,7 @@ from app.models.bullpen import BullpenFatigueRow, RelieverUsageRow
 from app.models.live import LiveGameState
 from app.models.odds import OddsSnapshotRow, WeatherSnapshotRow
 from app.models.reports import BetEvaluationRow, ModelRun, ObsidianExportRow
+from app.models.statcast import StatcastPitcherGame
 
 __all__ = [
     "Team",
@@ -43,4 +44,5 @@ __all__ = [
     "ModelRun",
     "BetEvaluationRow",
     "ObsidianExportRow",
+    "StatcastPitcherGame",
 ]
