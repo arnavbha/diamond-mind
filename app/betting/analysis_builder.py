@@ -342,6 +342,19 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
             woba = _estimated_woba_for_team(db, team_id=team_id, as_of=as_of)
             if woba is not None:
                 w = dataclasses.replace(w, team_woba=woba)
+        # B4 hitter-xwOBA probe: under DM_MODEL_VARIANT=xstat, override team_woba
+        # with the Statcast expected-offense value (xwOBA-on-contact). Leak-safe,
+        # off by default, guarded.
+        if os.environ.get("DM_MODEL_VARIANT", "").lower() == "xstat":
+            try:
+                from app.betting.statcast_quality import effective_team_woba
+                team = db.get(Team, team_id)
+                if team is not None:
+                    ew = effective_team_woba(db, team.abbr, as_of)
+                    if ew is not None:
+                        w = dataclasses.replace(w, team_woba=ew)
+            except Exception:
+                pass
         return w
 
     # Fetch batting aggregates for K%, ISO, and BB% signals

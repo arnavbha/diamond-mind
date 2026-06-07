@@ -23,7 +23,7 @@ from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from app.models.statcast import StatcastPitcherGame
+from app.models.statcast import StatcastPitcherGame, StatcastTeamOffenseGame
 
 # FIP scale anchor: league-average FIP ~ this. Used to center expected FIP.
 _LEAGUE_FIP = 4.10
@@ -31,6 +31,12 @@ _LEAGUE_FIP = 4.10
 _FIP_PER_SKILL_SD = 0.55
 _DEFAULT_LOOKBACK_DAYS = 45
 _MIN_PITCHES = 120  # below this the window is too thin to trust
+
+# Team offense: map league-relative xwOBA-on-contact z to a wOBA-scale value the
+# model's offense component consumes. League wOBA ~0.320, team spread ~0.015.
+_LEAGUE_WOBA = 0.320
+_WOBA_PER_OFF_SD = 0.015
+_MIN_BATTED_BALLS = 80
 
 
 def pitcher_xstat_window(
@@ -136,3 +142,63 @@ def expected_fip(db: Session, pitcher_id: int, as_of: date,
         return None
     fip = _LEAGUE_FIP - sk * _FIP_PER_SKILL_SD
     return round(min(7.0, max(1.5, fip)), 2)
+
+
+# ── Team offense (hitter-xwOBA probe) ─────────────────────────────────────────
+def team_xwoba_window(
+    db: Session, team_abbr: str, as_of: date, lookback_days: int = _DEFAULT_LOOKBACK_DAYS
+) -> Optional[float]:
+    """Team xwOBA-on-contact over (as_of - lookback, as_of], or None if thin."""
+    start = as_of - timedelta(days=lookback_days)
+    bb, xws = db.execute(
+        select(
+            func.coalesce(func.sum(StatcastTeamOffenseGame.batted_balls), 0),
+            func.coalesce(func.sum(StatcastTeamOffenseGame.xwoba_contact_sum), 0.0),
+        ).where(
+            StatcastTeamOffenseGame.team_abbr == team_abbr,
+            StatcastTeamOffenseGame.game_date > start,
+            StatcastTeamOffenseGame.game_date <= as_of,
+        )
+    ).one()
+    if bb < _MIN_BATTED_BALLS:
+        return None
+    return xws / bb
+
+
+@lru_cache(maxsize=8)
+def _offense_anchors(as_of_iso: str, lookback_days: int) -> dict:
+    """League mean/std of team xwOBA-on-contact over qualified teams (cached)."""
+    from app.database import SessionLocal
+    import statistics as stats
+
+    as_of = date.fromisoformat(as_of_iso)
+    db = SessionLocal()
+    try:
+        abbrs = db.execute(select(StatcastTeamOffenseGame.team_abbr).distinct()).scalars().all()
+        vals = []
+        for ab in abbrs:
+            v = team_xwoba_window(db, ab, as_of, lookback_days)
+            if v is not None:
+                vals.append(v)
+    finally:
+        db.close()
+    if len(vals) < 5:
+        return {"m": 0.368, "s": 0.02, "n": len(vals)}
+    return {"m": stats.fmean(vals), "s": (stats.pstdev(vals) or 0.02), "n": len(vals)}
+
+
+def effective_team_woba(
+    db: Session, team_abbr: str, as_of: date, lookback_days: int = _DEFAULT_LOOKBACK_DAYS
+) -> Optional[float]:
+    """xStat-derived effective team wOBA (wOBA scale), or None if thin.
+
+    effective_woba = LEAGUE_WOBA + offense_z * WOBA_PER_OFF_SD, where offense_z is
+    league-relative team xwOBA-on-contact. Clamped to a sane wOBA range.
+    """
+    v = team_xwoba_window(db, team_abbr, as_of, lookback_days)
+    if v is None:
+        return None
+    a = _offense_anchors(as_of.isoformat(), lookback_days)
+    z = (v - a["m"]) / a["s"]
+    woba = _LEAGUE_WOBA + z * _WOBA_PER_OFF_SD
+    return round(min(0.400, max(0.260, woba)), 3)

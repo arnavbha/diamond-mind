@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Date, Float, Integer, Index
+from sqlalchemy import Date, Float, Integer, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -49,4 +49,27 @@ class StatcastPitcherGame(Base):
 
     __table_args__ = (
         Index("ix_statcast_pitcher_date", "pitcher_id", "game_date", unique=True),
+    )
+
+
+class StatcastTeamOffenseGame(Base):
+    """Per-team, per-game offensive Statcast aggregate (batting team's batted balls).
+
+    Upserted by (team_abbr, game_date). xwoba_contact_sum / batted_balls = team
+    xwOBA-on-contact, an expected-offense signal that leads runs/wOBA. Windows
+    summed game_date <= as_of (leak-safe).
+    """
+
+    __tablename__ = "statcast_team_offense_games"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_abbr: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    game_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+
+    batted_balls: Mapped[int] = mapped_column(Integer, default=0)
+    xwoba_contact_sum: Mapped[float] = mapped_column(Float, default=0.0)
+    hard_hit: Mapped[int] = mapped_column(Integer, default=0)   # launch_speed >= 95 mph
+
+    __table_args__ = (
+        Index("ix_statcast_team_off_date", "team_abbr", "game_date", unique=True),
     )

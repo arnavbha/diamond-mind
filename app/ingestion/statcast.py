@@ -26,7 +26,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.statcast import StatcastPitcherGame
+from app.models.statcast import StatcastPitcherGame, StatcastTeamOffenseGame
 
 log = logging.getLogger("ingestion.statcast")
 
@@ -100,6 +100,58 @@ def aggregate_pitcher_games(df) -> dict[tuple[int, date], dict]:
     return out
 
 
+def aggregate_team_offense(df) -> dict[tuple[str, date], dict]:
+    """Pure aggregation: pitch-level DataFrame -> {(team_abbr, game_date): offense sums}.
+
+    Batting team = away_team if inning_topbot startswith 'T' else home_team.
+    Only batted balls (type=='X') with a non-null xwOBA estimate count.
+    """
+    out: dict[tuple[str, date], dict] = {}
+    if df is None or len(df) == 0:
+        return out
+    if "estimated_woba_using_speedangle" not in df.columns:
+        return out
+    for row in df.itertuples(index=False):
+        if getattr(row, "type", None) != "X":
+            continue
+        xw = _num(getattr(row, "estimated_woba_using_speedangle", None))
+        if xw is None:
+            continue
+        topbot = str(getattr(row, "inning_topbot", "") or "")
+        home_t = getattr(row, "home_team", None)
+        away_t = getattr(row, "away_team", None)
+        bat_team = away_t if topbot[:1].upper() == "T" else home_t
+        if not bat_team:
+            continue
+        gd = getattr(row, "game_date", None)
+        if gd is None:
+            continue
+        gd = gd.date() if hasattr(gd, "date") else date.fromisoformat(str(gd)[:10])
+        key = (str(bat_team), gd)
+        agg = out.setdefault(key, dict(batted_balls=0, xwoba_contact_sum=0.0, hard_hit=0))
+        agg["batted_balls"] += 1
+        agg["xwoba_contact_sum"] += xw
+        ls = _num(getattr(row, "launch_speed", None))
+        if ls is not None and ls >= 95.0:
+            agg["hard_hit"] += 1
+    return out
+
+
+def upsert_team_offense_game(session: Session, team_abbr: str, game_date: date, agg: dict) -> None:
+    existing = session.execute(
+        select(StatcastTeamOffenseGame).where(
+            StatcastTeamOffenseGame.team_abbr == team_abbr,
+            StatcastTeamOffenseGame.game_date == game_date,
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = StatcastTeamOffenseGame(team_abbr=team_abbr, game_date=game_date)
+        session.add(existing)
+    existing.batted_balls = agg["batted_balls"]
+    existing.xwoba_contact_sum = round(agg["xwoba_contact_sum"], 4)
+    existing.hard_hit = agg["hard_hit"]
+
+
 def upsert_pitcher_game(session: Session, pitcher_id: int, game_date: date, agg: dict) -> None:
     existing = session.execute(
         select(StatcastPitcherGame).where(
@@ -127,6 +179,9 @@ def ingest_statcast_range(session: Session, start: date, end: date) -> int:
     aggs = aggregate_pitcher_games(df)
     for (pid, gd), agg in aggs.items():
         upsert_pitcher_game(session, pid, gd, agg)
+    off = aggregate_team_offense(df)
+    for (team, gd), agg in off.items():
+        upsert_team_offense_game(session, team, gd, agg)
     session.commit()
-    log.info("Statcast upserted %d (pitcher, game) rows.", len(aggs))
+    log.info("Statcast upserted %d pitcher-game + %d team-offense rows.", len(aggs), len(off))
     return len(aggs)
