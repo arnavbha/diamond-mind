@@ -54,9 +54,9 @@ a deliberate, repeatable motif.
 
 ## 4. Baseball identity layer (refined, not kitsch)
 
-- `.diamond-watermark` — a single 200×200 SVG diamond wireframe (the infield),
-  `opacity 0.03`, fixed bottom-right, `aria-hidden`, `pointer-events:none`,
-  `z-index:0`. Decorative texture only; never competes with data.
+- ~~`.diamond-watermark`~~ — **removed in the 2026-06-15 de-slop pass** (see §9).
+  The single scanline texture (`body::before`) is now the *only* background
+  decoration. Do not re-introduce full-page decorative layers.
 - `.box-score-grid` — ruled grid header on `--surface-2`, the canonical layout
   for any tabular metric block.
 - `.stat-pill-grass` / `.stat-pill-clay` — small uppercase status pills
@@ -99,5 +99,34 @@ sectioned (Quant Terms / Recommendation Tiers / Model Components).
 - [x] Tailwind defaults unused — bespoke tokens, mono type, custom shadows
 - [x] Real type scale + one confident accent (clay) + intentional rhythm
 - [x] Charts are hand-rolled, every one has a designed empty state
+
+## 9. De-slop pass (2026-06-15)
+
+The terminal bones were strong but buried under decoration that read as
+"vibe-coded." This pass subtracted, it did not redesign. Verified with the
+impeccable detector: **0 anti-patterns** across `app/` + `components/`.
+
+**Removed (do not re-add):**
+- Background effect-soup. Deleted `DotGrid`, `NoiseOverlay`, `DitherHeader`
+  (3 WebGL shader banners), `diamond-watermark`, and `liquid-chrome-bg`.
+  The **scanline `body::before` is now the single signature texture.**
+- Decorative motion. `DecryptedText` scramble on the nav wordmark (now plain
+  text); per-card `spotlight-card` / `glare-card` / `potd-card` grain.
+  Kept all *state* motion: `live-dot` pulse, `fillBar`, `chartDraw`, skeletons.
+- Gradient text. `shiny-text` no longer uses `background-clip:text`; it is a
+  solid `--green` + bold. (Absolute ban: gradient text.)
+- Side-stripe borders (absolute ban). `border-left: 2–3px` colored accents on
+  cards/rows/callouts are gone:
+  - bet-result rows → flat even background tint (label carries meaning).
+  - slate tier accents → full hairline ring (`box-shadow inset 0 0 0 1px`);
+    PASS de-emphasised via opacity.
+  - formula block, ErrorBanner, tools honesty callouts → full hairline border.
+
+**Page headers:** the 3 dither banners became flat `.infield-divider` headers
+(display h1 + mono meta) — keeps baseball identity, drops the canvas.
+
+**Deliberately kept (NOT side-tabs):** `paddingLeft + borderLeft` blockquote /
+caveat-note indents on prose (markdown blockquote, verify plugs, track-record
+footnotes, quant explainer). The ban targets cards/callouts, not quotes.
 </content>
 </invoke>

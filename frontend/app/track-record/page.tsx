@@ -775,16 +775,6 @@ export default function TrackRecordPage() {
         }
       `}</style>
 
-      {/* decorative infield diamond watermark */}
-      <div className="diamond-watermark" aria-hidden="true">
-        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-          <polygon points="100,16 184,100 100,184 16,100" fill="none" stroke="var(--text)" strokeWidth={1} />
-          <polygon points="100,58 142,100 100,142 58,100" fill="none" stroke="var(--text)" strokeWidth={1} />
-          <line x1="100" y1="16" x2="100" y2="184" stroke="var(--text)" strokeWidth={1} />
-          <line x1="16" y1="100" x2="184" y2="100" stroke="var(--text)" strokeWidth={1} />
-        </svg>
-      </div>
-
       {/* header */}
       <div
         className="infield-divider"

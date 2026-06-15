@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { api, todayET, getAdminToken, type BetRecord, type TrackerSummary, type TrackerSummaryGroup } from "@/lib/api";
 import AdminGate from "@/components/AdminGate";
 import CountUp from "@/components/count-up";
-import { DitherHeader } from "@/components/dither-header";
 import {
   Card,
   Button,
@@ -536,46 +535,25 @@ export default function TrackerPage() {
         }
       `}</style>
 
-      {/* Dither banner */}
-      <div style={{ position: "relative", borderRadius: "var(--r-md)", overflow: "hidden", border: "1px solid var(--clay)" }}>
-        <DitherHeader
-          color={[0.95, 0.55, 0.1]}
-          colorNum={8}
-          amplitude={0.3}
-          frequency={3}
-          speed={0.03}
-          height={110}
-        />
-        <div
+      {/* Page header */}
+      <div className="infield-divider" style={{ paddingBottom: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
+        <h1
           style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "flex-end",
-            padding: "0 var(--sp-5) var(--sp-3)",
-            background: "linear-gradient(to right, var(--scrim-2) 0%, var(--scrim-1) 60%, var(--scrim-2) 100%)",
+            fontFamily: "var(--font-display)",
+            fontWeight: "var(--weight-display)",
+            fontSize: "var(--fs-headline)",
+            margin: 0,
+            textTransform: "uppercase",
+            color: "var(--text)",
           }}
         >
-          <div>
-            <h1
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: "var(--weight-display)",
-                fontSize: "var(--fs-headline)",
-                margin: 0,
-                textTransform: "uppercase",
-                color: "var(--text)",
-              }}
-            >
-              Picks Tracker
-            </h1>
-            <div
-              className="num"
-              style={{ fontSize: "var(--fs-meta)", color: "var(--text)", marginTop: "var(--sp-1)", textShadow: "0 1px 4px var(--scrim-3)" }}
-            >
-              Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
-            </div>
-          </div>
+          Picks Tracker
+        </h1>
+        <div
+          className="num"
+          style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}
+        >
+          Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
         </div>
       </div>
 

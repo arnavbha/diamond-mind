@@ -5,8 +5,6 @@ import Link from "next/link";
 import { api, todayET, getAdminToken, type GameAnalysis } from "@/lib/api";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
-import { DitherHeader } from "@/components/dither-header";
-import { PICKS_DITHER_COLOR } from "@/lib/visual-tokens";
 import {
   Card,
   Button,
@@ -321,7 +319,6 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
     <Card
       variant="strong-lean"
       pad={false}
-      className="potd-card glare-card"
       style={{ marginBottom: "var(--sp-6)", overflow: "hidden" }}
     >
       {/* Label bar */}
@@ -457,17 +454,6 @@ function PickCard({
   const totalTrackKey = `${pick.game_id}-total`;
   const mlTracked = trackedIds.has(mlTrackKey);
 
-  function onSlabMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    const el = e.currentTarget;
-    const rect = el.getBoundingClientRect();
-    el.style.setProperty("--mouse-x", `${e.clientX - rect.left}px`);
-    el.style.setProperty("--mouse-y", `${e.clientY - rect.top}px`);
-  }
-  const isActionable = isMlAction || isTotalAction;
-  const spotlightColor = isMlAction
-    ? "var(--green-tint)"
-    : isTotalAction ? "var(--lean-tint)" : undefined;
-
   // Card variant: strong-lean glow only when the ML side is actionable.
   const variant = pick.ml_tier === "STRONG LEAN"
     ? "strong-lean"
@@ -495,12 +481,10 @@ function PickCard({
         variant={variant}
         pad={false}
         interactive
-        className={`fade-up glare-card${isActionable ? " spotlight-card" : ""}`}
+        className="fade-up"
         style={{
           "--delay": `${Math.min(index, 12) * 25}ms`,
-          ...(spotlightColor ? { "--spotlight-color": spotlightColor } : {}),
         } as React.CSSProperties}
-        onMouseMove={isActionable ? onSlabMouseMove : undefined}
       >
         <div style={{ padding: "var(--sp-3) var(--sp-4)" }}>
           {/* Top: matchup + per-side tier badges. The previous design showed a
@@ -701,35 +685,16 @@ export default function PicksPage() {
         />
       )}
 
-      {/* Header with dither canvas as background */}
-      <div style={{
-        position: "relative",
-        overflow: "hidden",
-        borderRadius: "var(--r-lg)",
-        marginBottom: 0,
-        border: "1px solid var(--pos)",
-      }}>
-        <DitherHeader height={120} color={PICKS_DITHER_COLOR} speed={0.05} colorNum={4} pixelSize={2} />
-        {/* Title anchored to bottom-left — editorial banner style */}
-        <div style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "flex-end",
-          padding: "0 var(--sp-5) var(--sp-4)",
-          background: "linear-gradient(to right, var(--scrim-2) 0%, var(--scrim-1) 60%, var(--scrim-2) 100%)",
-        }}>
-          <div>
-            <h1 style={{ fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)", letterSpacing: "var(--tracking-num)", margin: 0, textTransform: "uppercase", textShadow: "0 2px 8px var(--scrim-3)" }}>
-              Daily Picks
-            </h1>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text)", marginTop: "var(--sp-1)", display: "flex", alignItems: "center", gap: "var(--sp-2)", textShadow: "0 1px 4px var(--scrim-3)" }}>
-              <span className="live-dot" />
-              {picks
-                ? `${picks.length} games · ${actionable.length} actionable (ML + O/U) · Shin + Bayesian quant · ${date}`
-                : `Shin + Bayesian quant model · ${date}`}
-            </div>
-          </div>
+      {/* Page header */}
+      <div className="infield-divider" style={{ paddingBottom: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)", letterSpacing: "var(--tracking-num)", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
+          Daily Picks
+        </h1>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)", display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+          <span className="live-dot" />
+          {picks
+            ? `${picks.length} games · ${actionable.length} actionable (ML + O/U) · Shin + Bayesian quant · ${date}`
+            : `Shin + Bayesian quant model · ${date}`}
         </div>
       </div>
 

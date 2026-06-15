@@ -80,8 +80,7 @@ export function ErrorBanner({
         gap: "var(--sp-3)",
         padding: "var(--sp-3) var(--sp-4)",
         borderRadius: "var(--r-md)",
-        border: "1px solid var(--border)",
-        borderLeft: `3px solid ${color}`,
+        border: `1px solid ${color}`,
         background: "var(--surface)",
         ...style,
       }}

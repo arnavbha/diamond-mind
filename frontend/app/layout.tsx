@@ -4,10 +4,6 @@ import { Inter, JetBrains_Mono, Syne } from "next/font/google";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
-import DecryptedText from "@/components/decrypted-text";
-import NoiseOverlay from "@/components/noise-overlay";
-import DotGrid from "@/components/dot-grid";
-import { HEX } from "@/lib/visual-tokens";
 import "./globals.css";
 
 // ── Font loading ────────────────────────────────────────────────────────────
@@ -77,14 +73,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           ["--shell-h" as string]: "calc(52px + 36px)",
         }}
       >
-        <DotGrid
-          dotSize={2}
-          gap={22}
-          baseColor={HEX.surface3}
-          activeColor={HEX.lean}
-          proximity={120}
-          shockStrength={10}
-        />
         <nav className="app-nav" style={{
           borderBottom: "1px solid var(--border)",
           padding: "0 24px",
@@ -108,21 +96,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               textTransform: "uppercase",
               whiteSpace: "nowrap",
             }}>
-              <DecryptedText
-                text="Diamond Mind"
-                animateOn="view"
-                sequential
-                revealDirection="start"
-                speed={80}
-                characters="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%"
-              />
+              Diamond Mind
             </span>
           </div>
           <div style={{ width: "1px", height: "16px", background: "var(--border-2)" }} />
           <NavLinks />
           <GlossaryButton />
         </nav>
-        <NoiseOverlay patternAlpha={12} patternRefreshInterval={3} />
         <ScoreTicker />
         <main style={{ maxWidth: "1120px", margin: "0 auto", padding: "28px 24px", position: "relative", zIndex: "var(--z-content)" as unknown as number }}>
           {children}

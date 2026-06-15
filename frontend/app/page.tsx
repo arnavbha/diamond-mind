@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis, type Movement } from "@/lib/api";
-import { DitherHeader } from "@/components/dither-header";
 import { GameDetailPanel } from "@/components/game-detail-panel";
 import { LiveAlert } from "@/components/live-alert";
 import {
@@ -508,39 +507,14 @@ function SlatePageInner() {
 
   return (
     <div style={{ position: "relative" }}>
-      <div className="diamond-watermark" aria-hidden="true">
-        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-          <polygon points="100,16 184,100 100,184 16,100" fill="none" stroke="var(--text)" strokeWidth={1} />
-          <polygon points="100,58 142,100 100,142 58,100" fill="none" stroke="var(--text)" strokeWidth={1} />
-          <line x1="100" y1="16" x2="100" y2="184" stroke="var(--text)" strokeWidth={1} />
-          <line x1="16" y1="100" x2="184" y2="100" stroke="var(--text)" strokeWidth={1} />
-        </svg>
-      </div>
-      {/* Dither banner */}
-      <div style={{ position: "relative", borderRadius: "var(--r-md)", overflow: "hidden", marginBottom: 0, border: "1px solid var(--border)" }}>
-        <DitherHeader
-          color={[0.2, 0.5, 0.95]}
-          colorNum={8}
-          amplitude={0.3}
-          frequency={3}
-          speed={0.03}
-          height={110}
-        />
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "flex-end",
-          padding: "0 var(--sp-5) var(--sp-3)",
-          background: "linear-gradient(to right, var(--scrim-2) 0%, var(--scrim-1) 60%, var(--scrim-2) 100%)",
-        }}>
-          <div>
-            <h1 style={{
-              fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)",
-              letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
-            }}>Daily Slate</h1>
-            <div className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text)", marginTop: "var(--sp-1)", textShadow: "0 1px 4px var(--scrim-black-3)" }}>
-              {date}
-            </div>
-          </div>
+      {/* Page header */}
+      <div className="infield-divider" style={{ paddingBottom: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
+        <h1 style={{
+          fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)",
+          letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
+        }}>Daily Slate</h1>
+        <div className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>
+          {date}
         </div>
       </div>
 

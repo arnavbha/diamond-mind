@@ -394,33 +394,13 @@ body::before {
   opacity: 1;
 }
 
-/* ── Shiny text (one-shot shimmer sweep) ───────── */
-@keyframes shinySwipe {
-  0%   { background-position: -200% center; }
-  100% { background-position:  200% center; }
-}
+/* ── Emphasis text ──────────────────────────────
+ * Was "shiny-text": a clipped, animated colour sweep over the glyphs (an
+ * anti-pattern — decorative, never meaningful). Now a solid accent with
+ * weight for emphasis. Class name kept so call sites need no change. */
 .shiny-text {
-  background: linear-gradient(
-    90deg,
-    var(--green) 20%,
-    rgba(200,255,210,0.95) 45%,
-    rgba(200,255,210,0.95) 55%,
-    var(--green) 80%
-  );
-  background-size: 200% auto;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shinySwipe 1.0s var(--ease-out) 0.4s 1 forwards;
-  background-position: -200% center;
-}
-@media (prefers-reduced-motion: reduce) {
-  .shiny-text {
-    animation: none;
-    background: none;
-    -webkit-text-fill-color: var(--green);
-    color: var(--green);
-  }
+  color: var(--green);
+  font-weight: var(--weight-bold);
 }
 
 /* ── Glare hover (reactbits.dev/animations/glare-hover) ── */
@@ -554,9 +534,8 @@ body::before {
   font-size: 11px;
   color: var(--blue);
   background: rgba(88,166,255,0.05);
-  border: 1px solid rgba(88,166,255,0.12);
-  border-left: 2px solid var(--blue);
-  border-radius: 0 3px 3px 0;
+  border: 1px solid rgba(88,166,255,0.18);
+  border-radius: var(--r-sm);
   padding: 8px 12px;
   white-space: pre;
   overflow-x: auto;
@@ -909,22 +888,20 @@ body::before {
 }
 
 /* ── Bet row result states ────────────────────── */
-/* Left border accent + faint background tint */
+/* De-slopped: no side-stripe, no directional gradient. A flat, even
+ * background tint encodes the result; the WIN/LOSS/PUSH text label carries
+ * the meaning for color-blind users. */
 .bet-result-win {
-  border-left: 2px solid var(--green) !important;
-  background: linear-gradient(90deg, rgba(63,185,80,0.06) 0%, var(--surface) 50%) !important;
+  background: var(--green-tint) !important;
 }
 .bet-result-loss {
-  border-left: 2px solid var(--red) !important;
-  background: linear-gradient(90deg, rgba(248,81,73,0.06) 0%, var(--surface) 50%) !important;
+  background: rgba(248,81,73,0.06) !important;
 }
 .bet-result-push {
-  border-left: 2px solid var(--text-3) !important;
   background: var(--surface) !important;
 }
 .bet-result-pending {
-  border-left: 2px solid var(--amber) !important;
-  background: linear-gradient(90deg, rgba(210,153,34,0.05) 0%, var(--surface) 50%) !important;
+  background: var(--amber-tint) !important;
 }
 
 /* ── Date group header in tracker ─────────────── */
@@ -950,15 +927,18 @@ body::before {
   letter-spacing: -0.01em;
 }
 
-/* ── Tier left-accent on slate cards ──────────── */
+/* ── Tier accent on slate cards ────────────────
+ * De-slopped: no side-stripe. STRONG LEAN / LEAN get a full hairline ring
+ * (matches the actionable-card glow vocabulary); PASS is simply de-emphasised
+ * by lowering opacity. Tier is also labelled by the tier-badge text. */
 .game-card-tier-sl {
-  border-left: 3px solid var(--green) !important;
+  box-shadow: inset 0 0 0 1px var(--green);
 }
 .game-card-tier-l {
-  border-left: 3px solid var(--blue) !important;
+  box-shadow: inset 0 0 0 1px rgba(88,166,255,0.5);
 }
 .game-card-tier-pass {
-  border-left: 3px solid var(--border) !important;
+  opacity: 0.72;
 }
 
 /* ── Utility ──────────────────────────────────── */

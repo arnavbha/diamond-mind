@@ -559,7 +559,7 @@ function ParlayResult({ res }: { res: ParlayEv }) {
         <Card
           variant="inset"
           style={{
-            borderLeft: "3px solid var(--neg)",
+            borderColor: "var(--neg)",
             marginBottom: "var(--sp-4)",
           }}
         >
@@ -1149,7 +1149,7 @@ function BankrollResult({ res }: { res: BankrollRisk }) {
         <Card
           variant="inset"
           style={{
-            borderLeft: "3px solid var(--hold)",
+            borderColor: "var(--hold)",
             marginTop: "var(--sp-4)",
           }}
         >
