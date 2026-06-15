@@ -128,5 +128,65 @@ impeccable detector: **0 anti-patterns** across `app/` + `components/`.
 **Deliberately kept (NOT side-tabs):** `paddingLeft + borderLeft` blockquote /
 caveat-note indents on prose (markdown blockquote, verify plugs, track-record
 footnotes, quant explainer). The ban targets cards/callouts, not quotes.
-</content>
-</invoke>
+
+## 10. Design overhaul — Abyssal Observatory (2026-06-15)
+
+**Scene:** a serious bettor at 6am in a dark room, three hours before lineups
+set, scanning edges across 8 games. Not here to be impressed — here to extract
+information fast. The interface must feel like professional equipment: lit from
+within the dark, every signal color sharp enough to read without a second look.
+
+**Direction — Abyssal Observatory** (instrument-panel terminal). The prior
+"quant terminal" bones were kept; this round pushed the base toward true
+near-black so the chrome reads as equipment lit from within, and turned the
+signal colors *louder* so STRONG-LEAN green / AVOID red pop from two feet like
+LED indicators. Clay (`#C6701F`) is the **single identity trim** — measurement
+brackets, the `infield-divider` tab, the active nav border, the wordmark
+diamond. refero.design references that informed the move: dark trading/observatory
+dashboards (pressurised near-black surfaces, ruled grids as structure, hot
+single-hue signal accents), and instrument/console UIs (corner-bracket reticles,
+tick-rule legends) — not the glassmorphic-SaaS or neon-cyberpunk dark themes.
+
+**What changed, per layer:**
+
+- **Tokens (prior agent — `globals.css`, do not re-touch):** base deepened to
+  `--bg #05080B` (+ `--surface #0A0F15` / `-2 #11171F` / `-3 #1A222D`); signals
+  hotter — `--green #34D399`, `--red #FF5C5C`, `--blue #5BB0FF`; field trim
+  warmer — `--grass #2A8C3D`, `--clay #C6701F`. Wider label tracking
+  (`--tracking-label .11em` / `--tracking-wide .16em`), bigger hierarchy jumps
+  (`--fs-headline 1.625rem`, `--fs-hero 2.875rem`), sharper radii (cards `4px`,
+  bars square). New `.slab` / reticle / `ruled-head` instrument chrome; glow
+  tokens wired to tier cards. Scanline `body::before` preserved.
+
+- **Components (this agent):** the component library was *already* fully
+  token-driven from the B0 migration — every card/badge/bar/stat consumes the
+  semantic `var(--…)` names, so the new token values cascaded automatically and
+  needed no per-component rework. The targeted change was the nav: the active
+  link's underline moved from `--blue` → **`--clay`** (the active-state trim is
+  now the identity color, not the market-blue). `glossary-panel` tier swatches
+  were single-sourced through `tierColor()` so the legend can never drift from
+  the live tier palette.
+
+- **Pages (this agent):** the `layout` wordmark gained a leading clay `◆` glyph
+  and `--tracking-wide`. `verify` (the one page that predated the token
+  migration) was aligned to the semantic vocabulary every other page already
+  used — raw `--green/--red/--blue/--amber` → `--pos/--neg/--lean/--warn`, its
+  verdict color single-sourced through `tierColor()`, decoration-only `--text-3`
+  captions lifted to `--text-2` for legibility, and a clay `infield-divider`
+  header. `tools` got the same clay header and its "read before sizing" caveat
+  callout moved off the reserved `--hold` orange to a proper `--warn` border +
+  `--amber-tint` wash. `edge`'s inline CLV link uses the semantic `--lean`.
+
+**Kept from the prior system:** the whole B0 component library + `visual-tokens`
+typed color maps (the single source of truth for tier/odds/result/heat colors);
+the de-slop bans (no gradient text, no side-stripe accents, no effect-soup, one
+scanline texture); `--purple` as ACE's identity hue; the `paddingLeft +
+borderLeft` prose-indent exception. `lib/visual-tokens.ts` `HEX` (canvas-only
+mirror of `:root`, currently unconsumed) was refreshed to the Abyssal values to
+keep the documented "in sync with globals.css" contract honest.
+
+**Verified:** impeccable detector **0 anti-patterns** across `app/` +
+`components/`; `tsc --noEmit` clean. (`next lint` is removed in Next 16 — the
+project lints via `eslint` flat config; this overhaul added no new findings over
+the pre-existing baseline.)
+

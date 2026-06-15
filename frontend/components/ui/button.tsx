@@ -30,9 +30,9 @@ function variantStyle(variant: ButtonVariant, active: boolean): React.CSSPropert
   switch (variant) {
     case "primary":
       return {
-        background: "var(--lean)",
-        color: "var(--surface)",
-        border: "1px solid var(--lean)",
+        background: "var(--clay)",
+        color: "var(--bg)",
+        border: "1px solid var(--clay)",
       };
     case "track":
       return active

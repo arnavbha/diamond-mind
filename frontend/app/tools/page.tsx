@@ -1144,12 +1144,14 @@ function BankrollResult({ res }: { res: BankrollRisk }) {
         </div>
       )}
 
-      {/* Honesty caveats — verbatim from the backend, surfaced prominently. */}
+      {/* Honesty caveats — verbatim from the backend, surfaced prominently.
+          Advisory framing: full --warn border + --amber-tint wash (NOT the
+          reserved --hold orange, which is vig/hold% only). */}
       {res.caveats.length > 0 && (
         <Card
-          variant="inset"
           style={{
-            borderColor: "var(--hold)",
+            borderColor: "var(--warn)",
+            background: "var(--amber-tint)",
             marginTop: "var(--sp-4)",
           }}
         >
@@ -1160,7 +1162,7 @@ function BankrollResult({ res }: { res: BankrollRisk }) {
               fontSize: "var(--fs-meta)",
               textTransform: "uppercase",
               letterSpacing: "var(--tracking-label)",
-              color: "var(--hold)",
+              color: "var(--warn)",
               marginBottom: "var(--sp-2)",
             }}
           >
@@ -1195,10 +1197,10 @@ export default function ToolsPage() {
   return (
     <div>
       <div
+        className="infield-divider"
         style={{
           marginBottom: "var(--sp-5)",
           paddingBottom: "var(--sp-4)",
-          borderBottom: "1px solid var(--border)",
         }}
       >
         <h1
@@ -1209,6 +1211,7 @@ export default function ToolsPage() {
             letterSpacing: "var(--tracking-num)",
             margin: 0,
             textTransform: "uppercase",
+            color: "var(--text)",
           }}
         >
           Tools

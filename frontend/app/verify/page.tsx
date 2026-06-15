@@ -5,6 +5,7 @@ import { api, type QuantVerify } from "@/lib/api";
 import { Gauge, DuelBar, HudChip, pPlusColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
 import { NumberField, ErrorBanner } from "@/components/ui";
+import { tierColor } from "@/lib/visual-tokens";
 
 function Formula({ title, body, plug, term }: { title: string; body: string; plug: string; term?: string }) {
   return (
@@ -14,7 +15,7 @@ function Formula({ title, body, plug, term }: { title: string; body: string; plu
         {term && <ExplainTooltip term={term} />}
       </div>
       <div className="formula-block">{body}</div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--green)", marginTop: "6px", paddingLeft: "8px", borderLeft: "2px solid var(--green)" }}>{plug}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--pos)", marginTop: "6px", paddingLeft: "8px", borderLeft: "2px solid var(--pos)" }}>{plug}</div>
     </div>
   );
 }
@@ -40,15 +41,18 @@ export default function VerifyPage() {
     return () => clearTimeout(t);
   }, [modelProb, sideOdds, otherOdds, evidence]);
 
-  const tc = q ? (q.recommendation === "STRONG LEAN" ? "var(--green)" : q.recommendation === "LEAN" ? "var(--blue)" : q.recommendation === "AVOID" ? "var(--red)" : "var(--text-3)") : "var(--text-3)";
+  // Single-sourced through the typed token map (STRONG LEAN→pos, LEAN→lean,
+  // PASS→text-2, AVOID→neg, NEED MORE INFO→warn) — same vocabulary as every
+  // other page, now on the Abyssal signal palette.
+  const tc = q ? tierColor(q.recommendation) : "var(--text-2)";
 
   return (
     <div>
-      <div style={{ marginBottom: "22px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase" }}>
+      <div className="infield-divider" style={{ marginBottom: "22px", paddingBottom: "16px" }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
           Bet Verifier
         </h1>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-3)", marginTop: "4px" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "4px" }}>
           Live quant pipeline · Shin devig → Bayesian shrink → edge posterior → uncertainty Kelly
         </div>
       </div>
@@ -123,9 +127,9 @@ export default function VerifyPage() {
               </span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
-              <HudChip k="EV / $1" v={`${q.ev_per_dollar >= 0 ? "+" : ""}${(q.ev_per_dollar * 100).toFixed(1)}¢`} color={q.ev_per_dollar >= 0 ? "var(--green)" : "var(--red)"} />
-              <HudChip k="honest edge" v={`${q.edge_quant >= 0 ? "+" : ""}${(q.edge_quant * 100).toFixed(2)}%`} color={q.edge_quant >= 0 ? "var(--green)" : "var(--red)"} />
-              <HudChip k="log-growth / bet" v={q.growth_rate > 0 ? `+${(q.growth_rate * 100).toFixed(3)}%` : "0%"} color={q.growth_rate > 0 ? "var(--green)" : "var(--text-3)"} />
+              <HudChip k="EV / $1" v={`${q.ev_per_dollar >= 0 ? "+" : ""}${(q.ev_per_dollar * 100).toFixed(1)}¢`} color={q.ev_per_dollar >= 0 ? "var(--pos)" : "var(--neg)"} />
+              <HudChip k="honest edge" v={`${q.edge_quant >= 0 ? "+" : ""}${(q.edge_quant * 100).toFixed(2)}%`} color={q.edge_quant >= 0 ? "var(--pos)" : "var(--neg)"} />
+              <HudChip k="log-growth / bet" v={q.growth_rate > 0 ? `+${(q.growth_rate * 100).toFixed(3)}%` : "0%"} color={q.growth_rate > 0 ? "var(--pos)" : "var(--text-muted)"} />
               <HudChip k="Kelly stake" v={pc(q.kelly_sized, 2)} color="var(--purple)" />
             </div>
           </div>
@@ -133,26 +137,26 @@ export default function VerifyPage() {
           <div className="vs-grid" style={{ marginBottom: "8px" }}>
             <div className="vs-col naive">
               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Sonnet 4.6 theory</div>
-              <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 10 }}>proportional devig · point edge · ¼-Kelly</div>
+              <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 10 }}>proportional devig · point edge · ¼-Kelly</div>
               <Cmp k="vig-free implied" v={pc(q.prop_vig_free)} />
-              <Cmp k="edge" v={`${q.edge_naive >= 0 ? "+" : ""}${(q.edge_naive * 100).toFixed(2)}%`} c={q.edge_naive >= 0 ? "var(--green)" : "var(--red)"} />
-              <Cmp k="confidence in edge" v="not modeled" c="var(--text-3)" />
-              <Cmp k="Kelly mult" v="0.25 (assumed)" c="var(--text-3)" />
+              <Cmp k="edge" v={`${q.edge_naive >= 0 ? "+" : ""}${(q.edge_naive * 100).toFixed(2)}%`} c={q.edge_naive >= 0 ? "var(--pos)" : "var(--neg)"} />
+              <Cmp k="confidence in edge" v="not modeled" c="var(--text-muted)" />
+              <Cmp k="Kelly mult" v="0.25 (assumed)" c="var(--text-muted)" />
             </div>
             <div className="vs-spine"><span>VS</span></div>
             <div className="vs-col quant">
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--green)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Opus 4.7 quant</div>
-              <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 10 }}>Shin devig · Bayesian shrink · posterior Kelly</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pos)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Opus 4.7 quant</div>
+              <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 10 }}>Shin devig · Bayesian shrink · posterior Kelly</div>
               <Cmp k={`Shin vig-free (z=${q.shin_z.toFixed(3)})`} v={pc(q.shin_vig_free)} />
-              <Cmp k="edge (shrunk)" v={`${q.edge_quant >= 0 ? "+" : ""}${(q.edge_quant * 100).toFixed(2)}%`} c={q.edge_quant >= 0 ? "var(--green)" : "var(--red)"} />
+              <Cmp k="edge (shrunk)" v={`${q.edge_quant >= 0 ? "+" : ""}${(q.edge_quant * 100).toFixed(2)}%`} c={q.edge_quant >= 0 ? "var(--pos)" : "var(--neg)"} />
               <Cmp k="P(edge > 0)" v={pc(q.prob_positive)} c={pPlusColor(q.prob_positive)} />
-              <Cmp k="Kelly mult (derived)" v={q.kelly_multiplier.toFixed(3)} c="var(--blue)" />
+              <Cmp k="Kelly mult (derived)" v={q.kelly_multiplier.toFixed(3)} c="var(--lean)" />
             </div>
           </div>
-          <div style={{ marginBottom: "26px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-2)", paddingLeft: 8, borderLeft: "2px solid var(--amber)" }}>
-            Naive devig + point edge would tell you to bet <strong style={{ color: "var(--amber)" }}>{(q.edge_naive * 100).toFixed(2)}%</strong>.
+          <div style={{ marginBottom: "26px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-2)", paddingLeft: 8, borderLeft: "2px solid var(--warn)" }}>
+            Naive devig + point edge would tell you to bet <strong style={{ color: "var(--warn)" }}>{(q.edge_naive * 100).toFixed(2)}%</strong>.
             The quant path strips the favorite–longshot bias, shrinks the lone model toward the market, and prices in estimation noise —
-            leaving an honest <strong style={{ color: q.edge_quant >= 0 ? "var(--green)" : "var(--red)" }}>{(q.edge_quant * 100).toFixed(2)}%</strong> you are{" "}
+            leaving an honest <strong style={{ color: q.edge_quant >= 0 ? "var(--pos)" : "var(--neg)" }}>{(q.edge_quant * 100).toFixed(2)}%</strong> you are{" "}
             <strong style={{ color: pPlusColor(q.prob_positive) }}>{pc(q.prob_positive)}</strong> sure is real.
           </div>
 
@@ -225,7 +229,7 @@ export default function VerifyPage() {
 function Cmp({ k, v, c }: { k: string; v: string; c?: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "5px 0", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ fontSize: 10, color: "var(--text-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{k}</span>
+      <span style={{ fontSize: 10, color: "var(--text-2)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{k}</span>
       <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 13, color: c ?? "var(--text)" }}>{v}</span>
     </div>
   );

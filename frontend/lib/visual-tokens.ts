@@ -220,18 +220,20 @@ export type ResultKey = keyof typeof RESULT_COLOR;
  * variables. Keep in sync with globals.css :root. Prefer var() tokens elsewhere.
  * ────────────────────────────────────────────────────────────────────────── */
 export const HEX = {
-  bg: "#080C10",
-  surface: "#0D1117",
-  surface2: "#161B22",
-  surface3: "#1C2330",
-  pos: "#3FB950",
-  neg: "#F85149",
-  lean: "#58A6FF",
-  warn: "#D29922",
-  hold: "#F0883E",
-  purple: "#BC8CFF",
-  grass: "#1A6B2A",
-  clay: "#B5651D",
+  // Mirrors globals.css :root after the 2026-06-15 Abyssal Observatory overhaul.
+  // Kept in sync so any future canvas/WebGL surface reads the live palette.
+  bg: "#05080B",
+  surface: "#0A0F15",
+  surface2: "#11171F",
+  surface3: "#1A222D",
+  pos: "#34D399",
+  neg: "#FF5C5C",
+  lean: "#5BB0FF",
+  warn: "#E0A93A",
+  hold: "#FF9B45",
+  purple: "#C49BFF",
+  grass: "#2A8C3D",
+  clay: "#C6701F",
 } as const;
 
 /** Normalized [r,g,b] in 0..1 (the form OGL/three shaders expect). */

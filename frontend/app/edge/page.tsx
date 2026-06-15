@@ -419,7 +419,7 @@ export default function EdgePage() {
           shows up as closing-line value —{" "}
           <Link
             href="/track-record"
-            style={{ color: "var(--blue)", textDecoration: "underline", fontWeight: "var(--weight-semibold)" }}
+            style={{ color: "var(--lean)", textDecoration: "underline", fontWeight: "var(--weight-semibold)" }}
           >
             see the Track Record CLV
           </Link>

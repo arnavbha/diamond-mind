@@ -29,7 +29,7 @@ function Badge({ color = "var(--text-2)", fill = false, style, children, ...rest
         textTransform: "uppercase",
         lineHeight: 1,
         padding: "var(--sp-1) var(--sp-2)",
-        borderRadius: "var(--r-sm)",
+        borderRadius: "var(--r-xs)",
         color,
         border: "1px solid currentColor",
         background: fill ? "color-mix(in srgb, currentColor 12%, transparent)" : "transparent",

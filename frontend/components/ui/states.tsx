@@ -38,7 +38,11 @@ export function EmptyState({
         ...style,
       }}
     >
-      {icon != null && <div style={{ color: "var(--text-muted)" }}>{icon}</div>}
+      {icon != null ? (
+        <div style={{ color: "var(--text-muted)" }}>{icon}</div>
+      ) : (
+        <div aria-hidden="true" style={{ fontSize: "var(--fs-stat)", color: "var(--clay)", lineHeight: 1 }}>◇</div>
+      )}
       <div style={{ fontSize: "var(--fs-data)", color: "var(--text)", fontWeight: "var(--weight-medium)" }}>
         {title}
       </div>

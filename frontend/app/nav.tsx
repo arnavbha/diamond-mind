@@ -47,7 +47,7 @@ function NavLinkPill({
         fontSize: "13px",
         color: active ? "var(--text)" : "var(--text-2)",
         borderBottom: active
-          ? "2px solid var(--blue)"
+          ? "2px solid var(--clay)"
           : "2px solid transparent",
         paddingBottom: "2px",
         textDecoration: "none",

@@ -88,14 +88,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="app-nav-brand" style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "8px", flexShrink: 0 }}>
             <Image src="/logo.ico" alt="Diamond Mind" width={22} height={22} style={{ display: "block" }} />
             <span className="app-nav-brand-text" style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
               fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: "14px",
               color: "var(--text)",
-              letterSpacing: "0.02em",
+              letterSpacing: "var(--tracking-wide)",
               textTransform: "uppercase",
               whiteSpace: "nowrap",
             }}>
+              {/* Clay diamond — the single identity trim, marking the wordmark like an instrument legend. */}
+              <span aria-hidden="true" style={{ color: "var(--clay)", fontSize: "10px", lineHeight: 1 }}>◆</span>
               Diamond Mind
             </span>
           </div>

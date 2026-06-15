@@ -103,7 +103,7 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
             {gameIsFinal(game.status) && <StatusBadge status="FINAL" style={{ marginLeft: "var(--sp-1)" }} />}
           </div>
           {game.venue && (
-            <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>{game.venue}</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>{game.venue}</div>
           )}
         </div>
 

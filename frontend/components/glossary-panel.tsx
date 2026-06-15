@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { GLOSSARY, termLabel } from "./explain";
+import { tierColor } from "@/lib/visual-tokens";
 
 type Props = {
   open: boolean;
@@ -49,31 +50,29 @@ const MODEL_TERMS = ["fip", "xfip"];
  * consistent with the canonical `tiers` glossary entry; NEED MORE INFO is
  * described as a data-sufficiency state.
  */
-const TIERS: { name: string; copy: string; color: string }[] = [
+// Tier swatch color is single-sourced through tierColor() (the same map the
+// badges, slate cards, and edge board use) so the glossary legend can never
+// drift from the live tier palette.
+const TIERS: { name: string; copy: string }[] = [
   {
     name: "STRONG LEAN",
     copy: "Meaningful edge with high confidence in the estimate. The model's signal clears the strong threshold; still a probabilistic read, not certainty.",
-    color: "var(--green)",
   },
   {
     name: "LEAN",
     copy: "Moderate edge. The model favors a side but with less margin or less confidence than a strong lean.",
-    color: "var(--blue)",
   },
   {
     name: "PASS",
     copy: "No clear edge. The model's estimate is too close to the vig-free market to express a side.",
-    color: "var(--text-3)",
   },
   {
     name: "AVOID",
     copy: "Edge against. The model reads the priced side as worse than the market implies — a flag to stay off, not a side to take.",
-    color: "var(--red)",
   },
   {
     name: "NEED MORE INFO",
     copy: "Inputs are incomplete (missing starter, odds, or sample). The model withholds a verdict rather than estimate on thin data.",
-    color: "var(--amber)",
   },
 ];
 
@@ -174,7 +173,7 @@ export function GlossaryPanel({ open, onClose }: Props) {
         <SectionHead>Recommendation Tiers</SectionHead>
         {TIERS.map((tier) => (
           <div className="glossary-entry" key={tier.name}>
-            <div className="ge-term" style={{ color: tier.color }}>
+            <div className="ge-term" style={{ color: tierColor(tier.name) }}>
               {tier.name}
             </div>
             <div className="ge-copy">{tier.copy}</div>
