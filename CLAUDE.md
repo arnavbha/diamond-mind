@@ -29,6 +29,10 @@ You are an AI agent (Claude, or otherwise) working on **diamond-mind**, an AI-na
 3. Run tests. Report what passes and what's stubbed.
 4. Don't push or merge without the human asking.
 
+## Commit style
+
+All commit messages must read as written by a human developer. Never include AI attribution footers (`Co-Authored-By: Claude`, `Co-Authored-By: Anthropic`, or similar). Write concise imperative subject lines and plain-English body text. No sign-off lines, no automation markers.
+
 ## What gstack / other skills are for
 
 The repo owner (Arnav) has gstack skills installed in Claude Code. They are **dev workflow tools only** — never add gstack as a runtime dependency. Skills like `/office-hours`, `/plan-eng-review`, `/review`, `/qa`, `/document-generate` are useful at phase boundaries. Don't invoke them unprompted.
