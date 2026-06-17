@@ -94,12 +94,48 @@ _TABLE_CREATIONS: List[Tuple[str, str]] = [
 
 
 def apply_lightweight_migrations(engine: Engine) -> None:
-    """Apply additive ALTER TABLE statements to existing prod tables.
+    """Apply additive ALTER TABLE statements to existing tables.
 
-    Postgres-only. Silently no-ops on SQLite (local dev) where the ORM
-    `create_all` already produced the up-to-date schema on first run.
+    Runs on both Postgres (prod) and SQLite (local dev).
+
+    On SQLite the old assumption — "create_all already produced the up-to-date
+    schema" — is false: create_all makes any MISSING tables but never adds new
+    COLUMNS to a table that already exists. So when a column is added to an ORM
+    model after its table was first created locally, the dev DB silently drifts
+    and every query selecting the new column 500s. (This is exactly what broke
+    the tracker: bet_records was missing model_prob and the whole CLV column
+    set, so /tracker/bets, /tracker/summary and /tracker/track-record all 500'd.)
+    SQLite also has no "ADD COLUMN IF NOT EXISTS", so we diff against
+    PRAGMA table_info and add only what's missing.
     """
     dialect = engine.dialect.name
+
+    if dialect == "sqlite":
+        with engine.begin() as conn:
+            for table, column, coltype in _COLUMN_ADDITIONS:
+                existing = {
+                    row[1]
+                    for row in conn.execute(text(f'PRAGMA table_info("{table}")'))
+                }
+                # Empty → table doesn't exist yet (create_all owns it); skip.
+                if not existing or column in existing:
+                    continue
+                try:
+                    # SQLite has lenient type affinity, so the Postgres coltype
+                    # strings ("DOUBLE PRECISION", "TIMESTAMPTZ", …) are accepted
+                    # as-is; only IF NOT EXISTS is unsupported (handled by the
+                    # PRAGMA diff above).
+                    conn.execute(
+                        text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {coltype}')
+                    )
+                    log.info("SQLite migration: added %s.%s", table, column)
+                except Exception as exc:
+                    log.exception(
+                        "SQLite migration failed: %s.%s (%s) — %s",
+                        table, column, coltype, exc,
+                    )
+        return
+
     if dialect != "postgresql":
         log.debug("Skipping lightweight migrations on dialect=%s", dialect)
         return
