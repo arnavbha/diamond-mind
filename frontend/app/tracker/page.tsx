@@ -396,12 +396,14 @@ function GroupBar({ children }: { children: React.ReactNode }) {
         alignItems: "center",
         justifyContent: "space-between",
         gap: "var(--sp-2)",
-        padding: "var(--sp-1) var(--sp-4)",
+        padding: "var(--sp-2) var(--sp-4)",
         background: "var(--surface-2)",
-        fontSize: "var(--fs-caption)",
-        fontWeight: "var(--weight-bold)",
-        letterSpacing: "var(--tracking-label)",
-        textTransform: "uppercase",
+        // Sentence case, matching SectionHeader — these group dividers ("Settled
+        // ledger", "Pending") no longer shout in caps alongside everything else.
+        fontSize: "var(--fs-meta)",
+        fontWeight: "var(--weight-semibold)",
+        letterSpacing: "normal",
+        textTransform: "none",
         borderBottom: "1px solid var(--border)",
       }}
     >

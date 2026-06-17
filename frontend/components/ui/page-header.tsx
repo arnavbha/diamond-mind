@@ -11,7 +11,7 @@ import React from "react";
  * bracket, here widened to a 48×3 clay tab (vs the 36×2 inline-section default)
  * so the top of the page reads as the heaviest legend mark on the screen.
  *
- *  - title    Syne 800, up to 2rem, uppercase, tight -0.02em tracking, --text.
+ *  - title    display font (IBM Plex Sans Condensed 700), up to 2rem, uppercase, --text.
  *  - subtitle mono (--font-mono), --fs-meta, --text-2 (status / count / date line).
  *  - action   optional right-aligned slot (a button, a count chip, a control).
  */
@@ -54,7 +54,9 @@ export function PageHeader({
             // ceiling so the page title outranks every section header below it.
             fontSize: "clamp(var(--fs-headline), 4vw, 2rem)",
             lineHeight: "var(--lh-tight)",
-            letterSpacing: "-0.02em",
+            // Condensed caps are already narrow — keep tracking neutral (the prior
+            // -0.02em was tuned for the wide Syne and crowds the condensed face).
+            letterSpacing: "0",
             textTransform: "uppercase",
             color: "var(--text)",
           }}

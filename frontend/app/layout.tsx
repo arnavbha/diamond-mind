@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Sans_Condensed, Syne } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Sans_Condensed } from "next/font/google";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
@@ -12,23 +12,17 @@ import "./globals.css";
 // family exposes a CSS variable wired into the existing token names on <body>
 // below, so every `var(--font-*)` consumer keeps working.
 //
-// Type system (sportsbook / trading-terminal identity, all-Plex working text):
-//   Syne (display)             → logo + page titles. KEPT — it's the brand.
-//   IBM Plex Mono (mono/ui)    → odds, units, %, timestamps, nav, labels.
-//   IBM Plex Sans (body)       → prose / descriptions / explanations.
-//   IBM Plex Sans Condensed    → dense table text (numbers stay Plex Mono via .num).
+// Type system — all IBM Plex, sportsbook / trading-terminal identity:
+//   IBM Plex Sans Condensed → logo + page titles (700) AND dense table text
+//                             (500/600). Condensed caps read like a broadcast
+//                             scoreboard — replaced Syne, which was too wide/techno.
+//   IBM Plex Mono (mono/ui) → odds, units, %, timestamps, nav, labels.
+//   IBM Plex Sans (body)    → prose / descriptions / explanations.
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
   variable: "--dm-font-mono",
-});
-
-const syne = Syne({
-  subsets: ["latin"],
-  weight: ["700", "800"],
-  display: "swap",
-  variable: "--dm-font-display",
 });
 
 const plexSans = IBM_Plex_Sans({
@@ -38,9 +32,12 @@ const plexSans = IBM_Plex_Sans({
   variable: "--dm-font-body",
 });
 
+// One condensed load serves both the display tier (700, page titles + logo) and
+// dense tables (500/600). --font-display / --font-scoreboard / --font-condensed
+// all point at this on <body> below.
 const plexCondensed = IBM_Plex_Sans_Condensed({
   subsets: ["latin"],
-  weight: ["500", "600"],
+  weight: ["500", "600", "700"],
   display: "swap",
   variable: "--dm-font-condensed",
 });
@@ -63,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${plexMono.variable} ${syne.variable} ${plexSans.variable} ${plexCondensed.variable}`}
+      className={`${plexMono.variable} ${plexSans.variable} ${plexCondensed.variable}`}
     >
       <body
         style={{
@@ -74,8 +71,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           // un-styled if next/font's variable is somehow absent.
           ["--font-mono" as string]: "var(--dm-font-mono), 'IBM Plex Mono', monospace",
           ["--font-ui" as string]: "var(--dm-font-mono), 'IBM Plex Mono', monospace",
-          ["--font-display" as string]: "var(--dm-font-display), 'Syne', system-ui, sans-serif",
-          ["--font-scoreboard" as string]: "var(--dm-font-display), 'Syne', system-ui, sans-serif",
+          ["--font-display" as string]: "var(--dm-font-condensed), 'IBM Plex Sans Condensed', system-ui, sans-serif",
+          ["--font-scoreboard" as string]: "var(--dm-font-condensed), 'IBM Plex Sans Condensed', system-ui, sans-serif",
           ["--font-body" as string]: "var(--dm-font-body), 'IBM Plex Sans', system-ui, sans-serif",
           ["--font-condensed" as string]: "var(--dm-font-condensed), 'IBM Plex Sans Condensed', system-ui, sans-serif",
           // Shell-height tokens so Chat (and anything else) can stop hard-coding
@@ -104,7 +101,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           zIndex: "var(--z-nav)" as unknown as number,
         }}>
           {/* Brand lockup — now a Link home. The clay ◆ is the single identity
-              trim; the wordmark is Syne 800, uppercase, wide-tracked. */}
+              trim; the wordmark is condensed 700, uppercase, wide-tracked. */}
           <Link
             href="/"
             className="app-nav-brand"
@@ -117,7 +114,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               alignItems: "center",
               gap: "6px",
               fontFamily: "var(--font-display)",
-              fontWeight: 800,
+              fontWeight: 700,
               fontSize: "14px",
               color: "var(--text)",
               letterSpacing: "var(--tracking-wide)",
