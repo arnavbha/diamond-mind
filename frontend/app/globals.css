@@ -285,6 +285,36 @@ body::before {
   border-width: 0 0 1px 1px;
 }
 
+/* Slab — the "actionable pick" marker. A lighter sibling of .verdict-slab
+   (which is the heavy single-readout instrument on /verify): instead of a
+   filled gradient panel, .slab pins four corner brackets to an existing card
+   so a STRONG-LEAN / LEAN pick reads as "framed in the scope" without a
+   colored side-stripe (the banned pattern). --slab-color trims the brackets;
+   it inherits the card's own border + glow. Apply to a position:relative
+   surface (Card is one). All four corners come from one element via ::before
+   (TL+BR) and a layered conic-free box-shadow-free pseudo on ::after (TR+BL),
+   matching the .reticle vocabulary so the language stays consistent. */
+.slab { position: relative; }
+.slab::before,
+.slab::after {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+  border-color: var(--slab-color, var(--clay));
+  border-style: solid;
+  z-index: 1;
+}
+.slab::before {            /* top-left + (via border sides) reads as a bracket */
+  top: 6px; left: 6px;
+  border-width: 1px 0 0 1px;
+}
+.slab::after {            /* bottom-right bracket */
+  bottom: 6px; right: 6px;
+  border-width: 0 1px 1px 0;
+}
+
 /* Tick-rule section head: an uppercase legend with a baseline rule that
    carries a short clay tick at its start — the canonical "console legend"
    header for the overhaul. Pairs label + optional right-side meta. */
@@ -535,15 +565,17 @@ body::before {
 
 /* ── Nav ──────────────────────────────────────── */
 .nav-link {
-  color: var(--text-muted);
   text-decoration: none;
-  transition: color var(--motion-quick) var(--ease-out);
-  font-size: 11px;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  transition: color var(--motion-quick) var(--ease-out),
+              background var(--motion-quick) var(--ease-out);
 }
-.nav-link:hover { color: var(--text-2); }
-.nav-link.active { color: var(--text); }
+/* Inactive pill hover: lift the text and wash in a faint surface chip so the
+   whole hit area responds, matching the active pill's anchored feel. The
+   active pill (clay text on --surface-2) is set inline and stays put. */
+.nav-link:not(.nav-link-active):hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+}
 
 /* ── Tier badge ───────────────────────────────── */
 .tier-badge {
@@ -829,8 +861,11 @@ body::before {
   position: absolute;
   left: 0;
   bottom: -1px;
-  width: 36px;
-  height: 2px;
+  /* Tab geometry is variable so a page-level header can show a heavier
+     measurement bracket (48×3) while every inline section divider keeps the
+     default 36×2. Defaults preserve the prior look exactly. */
+  width: var(--divider-tab-w, 36px);
+  height: var(--divider-tab-h, 2px);
   background: var(--clay);
 }
 
@@ -1069,6 +1104,14 @@ body::before {
   .data-table-mobile  { display: flex; }
 }
 
+/* Row hover. Untinted rows (edge / tools tables) wash to --surface-2; the
+   tracker's bet-result rows already carry an !important tint, so for those we
+   layer a faint inset highlight that reads as hover ON TOP of the tint instead
+   of fighting it. Both give the same "this row is live" feedback. */
+.data-table-row { transition: background var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out); }
+.data-table-row:hover { background: var(--surface-2); }
+.data-table-row:hover { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--surface-3) 22%, transparent); }
+
 /* ── Responsive grids ─────────────────────────────
  * The codebase was written desktop-first with inline CSS-in-JS grids.
  * These classes give us a deterministic mobile breakpoint without touching
@@ -1159,6 +1202,11 @@ body::before {
   .nav-label-short             { display: inline !important; }
   /* Mobile: hide secondary links inline; the ••• popover takes over. */
   .nav-secondary-desktop { display: none !important; }
+  /* The primary/secondary group divider separates nothing once the secondary
+     links collapse into the ••• popover — drop it on phones. */
+  .nav-group-divider { display: none !important; }
+  /* Let the primary group shrink/wrap-free within the tight mobile row. */
+  .nav-group { gap: 0 !important; }
   /* Push the overflow button to the right edge of the nav. */
   .nav-overflow {
     display: inline-flex !important;

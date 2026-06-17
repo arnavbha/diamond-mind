@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { Inter, JetBrains_Mono, Syne } from "next/font/google";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
@@ -79,14 +80,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           height: "var(--nav-h)",
           display: "flex",
           alignItems: "center",
-          gap: "24px",
-          background: "var(--surface)",
+          gap: "20px",
+          // Frosted navigation chrome: content scrolls UNDER a translucent,
+          // blurred nav rather than vanishing behind an opaque bar. This is
+          // purposeful navigation chrome (a fixed instrument header), not
+          // decorative glassmorphism on content surfaces.
+          background: "rgba(5, 8, 11, 0.85)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
           position: "sticky",
           top: 0,
           zIndex: "var(--z-nav)" as unknown as number,
         }}>
-          <div className="app-nav-brand" style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "8px", flexShrink: 0 }}>
-            <Image src="/logo.ico" alt="Diamond Mind" width={22} height={22} style={{ display: "block" }} />
+          {/* Brand lockup — now a Link home. The clay ◆ is the single identity
+              trim; the wordmark is Syne 800, uppercase, wide-tracked. */}
+          <Link
+            href="/"
+            className="app-nav-brand"
+            aria-label="Diamond Mind — home"
+            style={{ display: "flex", alignItems: "center", gap: "8px", marginRight: "4px", flexShrink: 0, textDecoration: "none" }}
+          >
+            <Image src="/logo.ico" alt="" width={22} height={22} style={{ display: "block" }} />
             <span className="app-nav-brand-text" style={{
               display: "inline-flex",
               alignItems: "center",
@@ -99,11 +113,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               textTransform: "uppercase",
               whiteSpace: "nowrap",
             }}>
-              {/* Clay diamond — the single identity trim, marking the wordmark like an instrument legend. */}
               <span aria-hidden="true" style={{ color: "var(--clay)", fontSize: "10px", lineHeight: 1 }}>◆</span>
               Diamond Mind
             </span>
-          </div>
+          </Link>
           <div style={{ width: "1px", height: "16px", background: "var(--border-2)" }} />
           <NavLinks />
           <GlossaryButton />

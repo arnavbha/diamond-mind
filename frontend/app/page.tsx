@@ -19,6 +19,7 @@ import {
   ErrorBanner,
   SkeletonCard,
   Loading,
+  PageHeader,
 } from "@/components/ui";
 import { tierColor, heatColorFor, HOLD_COLOR } from "@/lib/visual-tokens";
 
@@ -56,11 +57,23 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
 
   // Stagger cap: don't let a long slate's bottom cards wait ~½s (drop multiplier past ~12).
   const delay = Math.min(index, 12) * 25;
-  const variant = analysis?.ml_tier === "STRONG LEAN" ? "strong-lean"
-    : analysis?.ml_tier === "LEAN" ? "lean"
+  const isStrong = analysis?.ml_tier === "STRONG LEAN";
+  const isLean = analysis?.ml_tier === "LEAN";
+  const variant = isStrong ? "strong-lean"
+    : isLean ? "lean"
     : "default";
 
   const isPass = !hasTier;
+
+  // Compose the card chrome by tier:
+  //  - STRONG LEAN: keep the glow ring AND add a left inset accent (inset
+  //    box-shadow is the sanctioned alternative to a banned colored border-left).
+  //  - the .slab class pins corner brackets on any actionable pick so it reads
+  //    as "framed in the scope" — the visual marker that this game is playable.
+  const actionable = hasTier && (isStrong || isLean);
+  const composedShadow = isStrong
+    ? "var(--glow-pos), inset 4px 0 0 var(--pos)"
+    : undefined; // LEAN keeps the variant's --glow-lean ring as-is
 
   return (
     <Card
@@ -68,17 +81,21 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
       interactive
       variant={variant}
       onClick={onClick}
-      className="fade-up infield-divider slate-card"
+      className={`fade-up infield-divider slate-card${actionable ? " slab" : ""}`}
       style={{
         "--delay": `${delay}ms`,
         "--clay": hasTier ? tc : "var(--border)",
+        "--slab-color": "var(--clay)",
+        ...(composedShadow ? { boxShadow: composedShadow } : {}),
         width: "100%",
         textAlign: "left",
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
         gap: 0,
-        opacity: isPass ? 0.62 : 1,
+        // PASS games recede further than before (was 0.62) so the actionable
+        // slate floats clearly above the noise.
+        opacity: isPass ? 0.55 : 1,
       } as React.CSSProperties}
     >
       {/* Main row: matchup · signal · bullpen */}
@@ -118,15 +135,21 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
                   <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-body)", color: "var(--text)" }}>
                     {leanAbbr} to win
                   </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
-                    <span className="num" style={{ color: "var(--text)" }}>
-                      {Math.round(analysis!.ml_confidence * 100)}%
-                    </span>{" "}
-                    ·{" "}
-                    <span className="num" style={{ color: "var(--text)" }}>
-                      {(analysis!.ml_kelly_fraction * 100).toFixed(1)}%
-                    </span>{" "}
-                    K
+                  {/* Confidence + Kelly are the card's key figures — render them
+                      at HUD stat size so they read first inside the column. */}
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-3)", fontFamily: "var(--font-mono)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
+                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+                        {Math.round(analysis!.ml_confidence * 100)}%
+                      </span>
+                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>conf</span>
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
+                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+                        {(analysis!.ml_kelly_fraction * 100).toFixed(1)}%
+                      </span>
+                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>kelly</span>
+                    </span>
                   </div>
                 </div>
               ) : trackedML ? (
@@ -148,15 +171,19 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
                   <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-body)", color: "var(--text)" }}>
                     {totalLabel}
                   </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
-                    <span className="num" style={{ color: "var(--text)" }}>
-                      {Math.round(analysis!.total_confidence * 100)}%
-                    </span>{" "}
-                    ·{" "}
-                    <span className="num" style={{ color: "var(--text)" }}>
-                      {(analysis!.total_kelly_fraction * 100).toFixed(1)}%
-                    </span>{" "}
-                    K
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-3)", fontFamily: "var(--font-mono)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
+                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+                        {Math.round(analysis!.total_confidence * 100)}%
+                      </span>
+                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>conf</span>
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
+                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+                        {(analysis!.total_kelly_fraction * 100).toFixed(1)}%
+                      </span>
+                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>kelly</span>
+                    </span>
                   </div>
                 </div>
               ) : trackedTotal ? (
@@ -504,28 +531,29 @@ function SlatePageInner() {
   function changeDate(d: string) { setGames(null); setError(false); setDate(d); }
 
   const sortedGames = games ? [...games].sort((a, b) => sortRank(a) - sortRank(b)) : null;
+  // Actionable = any game whose ML or total is a LEAN / STRONG LEAN (sortRank
+  // 0 or 1). Surfaced in the header subtitle as the at-a-glance slate summary.
+  const actionableCount = games ? games.filter((g) => sortRank(g) <= 1).length : 0;
 
   return (
     <div style={{ position: "relative" }}>
-      {/* Page header */}
-      <div className="infield-divider" style={{ paddingBottom: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
-        <h1 style={{
-          fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)",
-          letterSpacing: "-0.01em", margin: 0, textTransform: "uppercase", color: "var(--text)",
-        }}>Daily Slate</h1>
-        <div className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>
-          {date}
-        </div>
-      </div>
-
-      {/* Date nav row */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "flex-end",
-        padding: "var(--sp-2) 0", marginBottom: "var(--sp-5)",
-        borderBottom: "1px solid var(--border)",
-      }}>
-        <DateNav value={date} onChange={changeDate} />
-      </div>
+      <PageHeader
+        title="Daily Slate"
+        subtitle={
+          games
+            ? <>
+                <span>{date}</span>
+                <span style={{ color: "var(--border-strong)" }}>·</span>
+                <span>{games.length} games</span>
+                <span style={{ color: "var(--border-strong)" }}>·</span>
+                <span style={{ color: actionableCount > 0 ? "var(--pos)" : "var(--text-2)" }}>
+                  {actionableCount} actionable
+                </span>
+              </>
+            : date
+        }
+        action={<DateNav value={date} onChange={changeDate} />}
+      />
 
       {error && (
         <ErrorBanner

@@ -103,7 +103,7 @@ export function DataTable<T>({
           <div
             key={rowKey(row, i)}
             role="row"
-            className={rowClassName?.(row, i)}
+            className={["data-table-row", rowClassName?.(row, i)].filter(Boolean).join(" ")}
             onClick={onRowClick ? () => onRowClick(row, i) : undefined}
             style={{
               display: "grid",

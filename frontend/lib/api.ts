@@ -34,19 +34,76 @@ function adminHeaders(extra?: Record<string, string>): Record<string, string> {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// Client-side GET cache (in-memory, module-scoped)
 // ---------------------------------------------------------------------------
-async function get<T>(path: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API}${path}`, { next: { revalidate: 60 } });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
+// Every page in this app is a "use client" component fetching through useEffect,
+// so Next's `{ next: { revalidate } }` (a Server-Component fetch-cache control)
+// never engages — each mount hit the backend cold. This module-level Map gives
+// those client fetches a real TTL cache. Keyed by the full path + query string
+// (the same string passed to `get`). A second in-flight map de-dupes concurrent
+// identical requests (e.g. React 19 StrictMode's double-mount in dev, or two
+// components asking for the same slate) into a single network round-trip.
+type CacheEntry = { data: unknown; ts: number };
+const _cache = new Map<string, CacheEntry>();
+const _inflight = new Map<string, Promise<unknown | null>>();
+
+// TTLs (ms). Slate/picks/edge/report data is fine slightly stale; tracker bets
+// change on every settle/track so they get a shorter window; mutations never
+// read or write the cache.
+const TTL_DEFAULT = 60_000; // slate, picks, edge, report, analysis, fair-value …
+const TTL_TRACKER = 30_000; // tracker bets / summary / track-record
+const TTL_NONE = 0;         // mutations + anything that must always be fresh
+
+/** Drop every cached + in-flight entry whose key starts with any given prefix.
+ *  Called after a mutation so the next read re-fetches the affected resource. */
+function bust(...prefixes: string[]): void {
+  for (const key of _cache.keys()) {
+    if (prefixes.some((p) => key.startsWith(p))) _cache.delete(key);
+  }
+  for (const key of _inflight.keys()) {
+    if (prefixes.some((p) => key.startsWith(p))) _inflight.delete(key);
   }
 }
 
-async function post<T>(path: string, body: unknown): Promise<T | null> {
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+async function get<T>(path: string, ttl: number = TTL_DEFAULT): Promise<T | null> {
+  const now = Date.now();
+
+  // Fresh cache hit → return without touching the network. (Honors ttl=0 as
+  // "never cache": the entry is skipped both on read and on write.)
+  if (ttl > 0) {
+    const hit = _cache.get(path);
+    if (hit && now - hit.ts < ttl) return hit.data as T;
+
+    // A matching request is already in flight — share it instead of firing a
+    // second identical fetch.
+    const pending = _inflight.get(path);
+    if (pending) return pending as Promise<T | null>;
+  }
+
+  const req = (async (): Promise<T | null> => {
+    try {
+      const res = await fetch(`${API}${path}`, { next: { revalidate: 60 } });
+      if (!res.ok) return null;
+      const data = (await res.json()) as T;
+      if (ttl > 0) _cache.set(path, { data, ts: Date.now() });
+      return data;
+    } catch {
+      return null;
+    } finally {
+      _inflight.delete(path);
+    }
+  })();
+
+  if (ttl > 0) _inflight.set(path, req as Promise<unknown | null>);
+  return req;
+}
+
+// Mutations never read or write the GET cache. On success they purge any cached
+// reads that the write could have invalidated (passed as path-prefix `bustKeys`).
+async function post<T>(path: string, body: unknown, bustKeys?: string[]): Promise<T | null> {
   try {
     const res = await fetch(`${API}${path}`, {
       method: "POST",
@@ -54,13 +111,14 @@ async function post<T>(path: string, body: unknown): Promise<T | null> {
       body: JSON.stringify(body),
     });
     if (!res.ok) return null;
+    if (bustKeys) bust(...bustKeys);
     return res.json();
   } catch {
     return null;
   }
 }
 
-async function patch<T>(path: string, body: unknown): Promise<T | null> {
+async function patch<T>(path: string, body: unknown, bustKeys?: string[]): Promise<T | null> {
   try {
     const res = await fetch(`${API}${path}`, {
       method: "PATCH",
@@ -68,23 +126,31 @@ async function patch<T>(path: string, body: unknown): Promise<T | null> {
       body: JSON.stringify(body),
     });
     if (!res.ok) return null;
+    if (bustKeys) bust(...bustKeys);
     return res.json();
   } catch {
     return null;
   }
 }
 
-async function del(path: string): Promise<boolean> {
+async function del(path: string, bustKeys?: string[]): Promise<boolean> {
   try {
     const res = await fetch(`${API}${path}`, {
       method: "DELETE",
       headers: adminHeaders(),
     });
-    return res.ok || res.status === 204;
+    const ok = res.ok || res.status === 204;
+    if (ok && bustKeys) bust(...bustKeys);
+    return ok;
   } catch {
     return false;
   }
 }
+
+// Path-prefix groups for cache invalidation. A tracker write changes the bets
+// list + summary + the live track-record, and also the slate/picks pages, which
+// each seed their "Tracked ✓" state from /tracker/bets. Bust all of them.
+const TRACKER_BUST = ["/tracker/", "/games/slate", "/games/picks"];
 
 export type Game = {
   game_id: number;
@@ -760,7 +826,8 @@ export const api = {
   games: (date: string) => get<Game[]>(`/games?game_date=${date}`),
   slate: (date: string) => get<SlateGame[]>(`/games/slate?game_date=${date}`),
   bundle: (gameId: number, asOf: string) => get<GameBundle>(`/games/${gameId}/bundle?as_of=${asOf}`),
-  live: (gameId: number) => get<LiveState>(`/games/${gameId}/live`),
+  // Live in-game state is polled on a short interval — never cache it.
+  live: (gameId: number) => get<LiveState>(`/games/${gameId}/live`, TTL_NONE),
   weather: (gameId: number) => get<WeatherData>(`/games/${gameId}/weather`),
   odds: (gameId: number) => get<unknown[]>(`/games/${gameId}/odds`),
   bullpen: (teamId: number, date: string) =>
@@ -814,35 +881,39 @@ export const api = {
     if (params?.date_to) qs.set("date_to", params.date_to);
     if (params?.market) qs.set("market", params.market);
     const q = qs.toString();
-    return get<BetRecord[]>(`/tracker/bets${q ? "?" + q : ""}`);
+    return get<BetRecord[]>(`/tracker/bets${q ? "?" + q : ""}`, TTL_TRACKER);
   },
   trackerCreateBet: (payload: BetCreatePayload) =>
-    post<BetRecord>("/tracker/bets", payload),
+    post<BetRecord>("/tracker/bets", payload, TRACKER_BUST),
   trackerSettleBet: (id: number, result: "WIN" | "LOSS" | "PUSH", units_returned?: number) =>
-    patch<BetRecord>(`/tracker/bets/${id}`, { result, units_returned }),
-  trackerDeleteBet: (id: number) => del(`/tracker/bets/${id}`),
+    patch<BetRecord>(`/tracker/bets/${id}`, { result, units_returned }, TRACKER_BUST),
+  trackerDeleteBet: (id: number) => del(`/tracker/bets/${id}`, TRACKER_BUST),
   trackerSummary: (params?: { date_from?: string; date_to?: string }) => {
     const qs = new URLSearchParams();
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);
     const q = qs.toString();
-    return get<TrackerSummary>(`/tracker/summary${q ? "?" + q : ""}`);
+    return get<TrackerSummary>(`/tracker/summary${q ? "?" + q : ""}`, TTL_TRACKER);
   },
   trackerAutoTrack: (date: string) =>
     post<{ created: number; skipped: number; date: string }>(
       `/tracker/auto-track?game_date=${date}`,
       {},
+      TRACKER_BUST,
     ),
   trackerAutoSettle: (date: string) =>
     post<{ date: string; settled: number; skipped_not_final: number; skipped_no_score: number; bets: object[] }>(
       `/tracker/auto-settle?game_date=${date}`,
       {},
+      TRACKER_BUST,
     ),
   adminRunIngestion: (date: string) =>
     post<{ job_id: string; as_of: string; status: string }>(
       `/admin/run-ingestion?game_date=${date}`,
       {},
+      ["/admin/ingestion-jobs"],
     ),
+  // Job status + job list are polled while a run is in flight — always fresh.
   adminIngestionStatus: (jobId: string, tail?: number) =>
     get<{
       job_id: string;
@@ -852,7 +923,7 @@ export const api = {
       error: string | null;
       log_lines_total: number;
       log_tail: string[];
-    }>(`/admin/ingestion-status/${jobId}${tail ? `?tail=${tail}` : ""}`),
+    }>(`/admin/ingestion-status/${jobId}${tail ? `?tail=${tail}` : ""}`, TTL_NONE),
   adminIngestionJobs: () =>
     get<
       Array<{
@@ -863,7 +934,7 @@ export const api = {
         log_lines_total: number;
         error: string | null;
       }>
-    >(`/admin/ingestion-jobs`),
+    >(`/admin/ingestion-jobs`, TTL_NONE),
   backtest: (start: string, end: string) =>
     get<BacktestResult>(`/backtest?start=${start}&end=${end}`),
   trackRecord: (start?: string, end?: string) => {
@@ -871,7 +942,7 @@ export const api = {
     if (start) qs.set("start", start);
     if (end) qs.set("end", end);
     const q = qs.toString();
-    return get<TrackRecordResult>(`/tracker/track-record${q ? "?" + q : ""}`);
+    return get<TrackRecordResult>(`/tracker/track-record${q ? "?" + q : ""}`, TTL_TRACKER);
   },
   chat: (message: string, date?: string) =>
     post<{ answer: string; intent: string; sources_count: number }>(

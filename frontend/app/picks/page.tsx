@@ -10,6 +10,7 @@ import {
   Button,
   Badge,
   SectionHeader,
+  PageHeader,
   DateNav,
   TeamLogo,
   Dialog,
@@ -221,13 +222,21 @@ function TotalBadge({
         </span>
         <Badge color={tc}>{pick.total_tier}</Badge>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
-        <div style={{ textAlign: "right" }}>
-          <div className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
-            P(+) {(pick.qt_prob_positive * 100).toFixed(0)}%
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-4)" }}>
+        {/* P(+EV) and Kelly are the total pick's decision numbers — HUD stat
+            size, with a quiet uppercase caption beneath. */}
+        <div style={{ display: "flex", gap: "var(--sp-4)", textAlign: "right" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+              {(pick.qt_prob_positive * 100).toFixed(0)}%
+            </span>
+            <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>P(+EV)</span>
           </div>
-          <div className="num" style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)" }}>
-            Kelly {(pick.qt_kelly_sized * 100).toFixed(1)}%
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+              {(pick.qt_kelly_sized * 100).toFixed(1)}%
+            </span>
+            <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>kelly</span>
           </div>
         </div>
         <Button
@@ -319,7 +328,15 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
     <Card
       variant="strong-lean"
       pad={false}
-      style={{ marginBottom: "var(--sp-6)", overflow: "hidden" }}
+      className="slab"
+      style={{
+        marginBottom: "var(--sp-6)",
+        overflow: "hidden",
+        // The featured pick is the page's dominant surface: the glow ring plus
+        // corner-bracket reticle (.slab) frame it as the headline readout.
+        "--slab-color": "var(--clay)",
+        boxShadow: "var(--glow-pos)",
+      } as React.CSSProperties}
     >
       {/* Label bar */}
       <div
@@ -459,6 +476,15 @@ function PickCard({
     ? "strong-lean"
     : pick.ml_tier === "LEAN" ? "lean" : "default";
 
+  // Left inset accent, composed on top of the variant's glow ring. Inset
+  // box-shadow is the sanctioned stand-in for a (banned) colored border-left:
+  // STRONG LEAN reads emerald, LEAN reads blue, matching the tier palette.
+  const accentShadow = pick.ml_tier === "STRONG LEAN"
+    ? "var(--glow-pos), inset 4px 0 0 var(--pos)"
+    : pick.ml_tier === "LEAN"
+      ? "var(--glow-lean), inset 4px 0 0 var(--lean)"
+      : undefined;
+
   function handleMlTrack(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -484,6 +510,7 @@ function PickCard({
         className="fade-up"
         style={{
           "--delay": `${Math.min(index, 12) * 25}ms`,
+          ...(accentShadow ? { boxShadow: accentShadow } : {}),
         } as React.CSSProperties}
       >
         <div style={{ padding: "var(--sp-3) var(--sp-4)" }}>
@@ -685,30 +712,26 @@ export default function PicksPage() {
         />
       )}
 
-      {/* Page header */}
-      <div className="infield-divider" style={{ paddingBottom: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)", letterSpacing: "var(--tracking-num)", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
-          Daily Picks
-        </h1>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)", display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
-          <span className="live-dot" />
-          {picks
-            ? `${picks.length} games · ${actionable.length} actionable (ML + O/U) · Shin + Bayesian quant · ${date}`
-            : `Shin + Bayesian quant model · ${date}`}
-        </div>
-      </div>
-
-      {/* Date nav row — separate from decorative header */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "flex-end",
-        padding: "var(--sp-2) 0",
-        marginBottom: "var(--sp-5)",
-        borderBottom: "1px solid var(--border)",
-      }}>
-        <DateNav value={date} onChange={changeDate} />
-      </div>
+      <PageHeader
+        title="Daily Picks"
+        subtitle={
+          <>
+            <span className="live-dot" />
+            {picks
+              ? <>
+                  <span>{picks.length} games</span>
+                  <span style={{ color: "var(--border-strong)" }}>·</span>
+                  <span style={{ color: actionable.length > 0 ? "var(--pos)" : "var(--text-2)" }}>{actionable.length} actionable</span>
+                  <span style={{ color: "var(--border-strong)" }}>·</span>
+                  <span>Shin + Bayesian quant</span>
+                  <span style={{ color: "var(--border-strong)" }}>·</span>
+                  <span>{date}</span>
+                </>
+              : <><span>Shin + Bayesian quant model</span><span style={{ color: "var(--border-strong)" }}>·</span><span>{date}</span></>}
+          </>
+        }
+        action={<DateNav value={date} onChange={changeDate} />}
+      />
 
       {error && (
         <ErrorBanner

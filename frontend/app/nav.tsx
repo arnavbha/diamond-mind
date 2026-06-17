@@ -40,18 +40,23 @@ function NavLinkPill({
     <Link
       href={link.href}
       onClick={onClick}
-      className="nav-link"
+      aria-current={active ? "page" : undefined}
+      className={`nav-link${active ? " nav-link-active" : ""}`}
       style={{
+        // Active = a surface-2 chip in the clay identity color (not a bottom
+        // underline). The pill gives the current page a solid, hit-area-sized
+        // anchor in the row instead of a 2px hairline.
         fontFamily: "var(--font-ui)",
-        fontWeight: active ? 600 : 500,
-        fontSize: "13px",
-        color: active ? "var(--text)" : "var(--text-2)",
-        borderBottom: active
-          ? "2px solid var(--clay)"
-          : "2px solid transparent",
-        paddingBottom: "2px",
+        fontWeight: active ? 700 : 500,
+        fontSize: "12px",
+        color: active ? "var(--clay)" : "var(--text-2)",
+        background: active ? "var(--surface-2)" : "transparent",
+        borderRadius: "var(--r-sm)",
+        padding: "6px 10px",
         textDecoration: "none",
         whiteSpace: "nowrap",
+        textTransform: "uppercase",
+        letterSpacing: "var(--tracking-label)",
       }}
     >
       <span className="nav-label-full">{link.label}</span>
@@ -224,11 +229,22 @@ export function NavLinks() {
   const path = usePathname();
   return (
     <>
-      {PRIMARY_LINKS.map((link) => (
-        <NavLinkPill key={link.href} link={link} path={path} />
-      ))}
+      {/* Primary group sits flush-left after the brand. */}
+      <span className="nav-group" style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+        {PRIMARY_LINKS.map((link) => (
+          <NavLinkPill key={link.href} link={link} path={path} />
+        ))}
+      </span>
+      {/* Faint divider separating daily-use primary nav from low-frequency
+          secondary nav. Desktop only — on mobile the secondary links collapse
+          into the ••• popover, so the divider would separate nothing. */}
+      <span
+        className="nav-group-divider"
+        aria-hidden="true"
+        style={{ width: "1px", height: "16px", background: "var(--border-2)", flexShrink: 0 }}
+      />
       {/* Desktop: secondary links inline. Mobile: hidden via .nav-secondary-desktop. */}
-      <span className="nav-secondary-desktop" style={{ display: "contents" }}>
+      <span className="nav-secondary-desktop nav-group" style={{ display: "flex", alignItems: "center", gap: "2px" }}>
         {SECONDARY_LINKS.map((link) => (
           <NavLinkPill key={link.href} link={link} path={path} />
         ))}

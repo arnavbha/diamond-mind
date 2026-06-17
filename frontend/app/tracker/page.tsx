@@ -16,6 +16,9 @@ import {
   EmptyState,
   ErrorBanner,
   Loading,
+  PageHeader,
+  StatCell,
+  StatGroup,
   Tabs,
   type Column,
   type TabItem,
@@ -112,8 +115,9 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
   }, [g.units_net]);
 
   const netColor = g.units_net >= 0 ? "var(--pos)" : "var(--neg)";
-  const winRate = g.wins + g.losses > 0
-    ? ((g.wins / (g.wins + g.losses)) * 100).toFixed(0) + "%"
+  const settledN = g.wins + g.losses;
+  const winRate = settledN > 0
+    ? ((g.wins / settledN) * 100).toFixed(0) + "%"
     : "—";
   return (
     <Card
@@ -133,6 +137,7 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
       >
         {label}
       </div>
+      {/* Headline P&L — the one big animated scoreboard figure per group. */}
       <div
         className="num"
         style={{
@@ -147,33 +152,19 @@ function SummaryGroup({ label, g }: { label: string; g: TrackerSummaryGroup }) {
         <CountUp to={g.units_net} from={from} direction="up" duration={1.2} delay={0.1} />
         u
       </div>
-      <div style={{ marginTop: "var(--sp-2)", display: "flex", gap: "var(--sp-3)", flexWrap: "wrap" }}>
-        {[
-          ["Bets", g.bets],
-          ["W", g.wins],
-          ["L", g.losses],
-          ["P", g.pushes],
-          ["Pend", g.pending],
-          ["W%", winRate],
-          ["Wagered", g.units_wagered.toFixed(1) + "u"],
-        ].map(([k, v]) => (
-          <div key={k as string} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            <span
-              style={{
-                fontSize: "var(--fs-micro)",
-                color: "var(--text-muted)",
-                textTransform: "uppercase",
-                letterSpacing: "var(--tracking-label)",
-              }}
-            >
-              {k}
-            </span>
-            <span className="num" style={{ fontSize: "var(--fs-body)", fontWeight: "var(--weight-semibold)", color: "var(--text)" }}>
-              {v}
-            </span>
-          </div>
-        ))}
-      </div>
+      {/* Win rate + units staked + W/L/P/pending breakdown, laid out on the
+          shared StatGroup/StatCell primitives (plain variant — no nested boxes
+          inside this already-boxed summary card). */}
+      <StatGroup min="58px" style={{ marginTop: "var(--sp-3)" }}>
+        <StatCell variant="plain" emphasis="data" label="Win %" value={winRate}
+          color={settledN > 0 ? (g.wins / settledN >= 0.524 ? "var(--pos)" : "var(--text)") : "var(--text-muted)"} />
+        <StatCell variant="plain" emphasis="data" label="Staked" value={`${g.units_wagered.toFixed(1)}u`} />
+        <StatCell variant="plain" emphasis="data" label="Bets" value={g.bets} />
+        <StatCell variant="plain" emphasis="data" label="W / L" value={`${g.wins}–${g.losses}`} />
+        <StatCell variant="plain" emphasis="data" label="Push" value={g.pushes} color="var(--text-2)" />
+        <StatCell variant="plain" emphasis="data" label="Pend" value={g.pending}
+          color={g.pending > 0 ? "var(--warn)" : "var(--text-2)"} />
+      </StatGroup>
     </Card>
   );
 }
@@ -436,20 +427,40 @@ export default function TrackerPage() {
 
   const today = todayET();
 
-  const load = useCallback(async () => {
+  // ── Tracker double-render fix ──────────────────────────────────────────────
+  // Symptom: tracked bets briefly rendered twice. Root cause was the initial
+  // load firing TWICE and committing two separate result arrays. React 19
+  // StrictMode mounts each effect twice in dev (mount → cleanup → mount); the
+  // effect below ran `load()` on both passes. The original effect had NO cleanup
+  // and NO alive-guard, so both passes resolved and each called setBets() with a
+  // fresh, non-identical array — two commits, a visible flash of doubled rows.
+  // (The sibling slate/picks loaders already guard with a per-effect `alive`
+  // flag; the tracker loader was the one missing it.)
+  //
+  // The fix mirrors that idiom exactly: a per-invocation `alive` closure. The
+  // FIRST StrictMode pass's cleanup sets ITS OWN `alive=false`, so when that
+  // pass's load resolves it bails before committing — only the surviving second
+  // pass writes state. That single-commit guarantee holds regardless of fetch
+  // timing (it does not depend on response identity). The same flag also blocks
+  // any late settle/delete refresh from writing after unmount. `queueMicrotask`
+  // keeps the state writes out of the synchronous effect body.
+  // `alive` lets the mount effect cancel a stale StrictMode pass; user-action
+  // callers (auto-track) omit it — the component is mounted when they fire.
+  const load = useCallback(async (alive: () => boolean = () => true) => {
     const [b, s] = await Promise.all([
       api.trackerBets(),
       api.trackerSummary(),
     ]);
+    if (!alive()) return;
     if (b === null) { setError(true); return; }
     setBets(b);
     setSummary(s);
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      void load();
-    });
+    let alive = true;
+    queueMicrotask(() => { void load(() => alive); });
+    return () => { alive = false; };
   }, [load]);
 
   async function handleAutoTrack() {
@@ -535,64 +546,53 @@ export default function TrackerPage() {
         }
       `}</style>
 
-      {/* Page header */}
-      <div className="infield-divider" style={{ paddingBottom: "var(--sp-3)", marginBottom: "var(--sp-5)" }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: "var(--weight-display)",
-            fontSize: "var(--fs-headline)",
-            margin: 0,
-            textTransform: "uppercase",
-            color: "var(--text)",
-          }}
-        >
-          Picks Tracker
-        </h1>
-        <div
-          className="num"
-          style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}
-        >
-          Performance log · {s.combined.bets} tracked · {s.combined.pending} pending
-        </div>
-      </div>
+      <PageHeader
+        title="Picks Tracker"
+        subtitle={
+          <>
+            <span>Performance log</span>
+            <span style={{ color: "var(--border-strong)" }}>·</span>
+            <span>{s.combined.bets} tracked</span>
+            <span style={{ color: "var(--border-strong)" }}>·</span>
+            <span style={{ color: s.combined.pending > 0 ? "var(--warn)" : "var(--text-2)" }}>
+              {s.combined.pending} pending
+            </span>
+          </>
+        }
+        action={
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <AdminGate onUnlocked={() => setUnlocked(true)} />
+            <Button
+              variant="primary"
+              onClick={handleAutoTrack}
+              disabled={autoTracking || !unlocked}
+              aria-label={`Auto-track today's picks for ${today}`}
+              style={(autoTracking || !unlocked) ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+            >
+              {autoTracking ? "Tracking…" : `⚡ Auto-track ${today}`}
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Controls row */}
-      <div
-        className="infield-divider"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          gap: "var(--sp-2)",
-          flexWrap: "wrap",
-          padding: "var(--sp-3) 0",
-          marginBottom: "var(--sp-5)",
-        }}
-      >
-        <AdminGate onUnlocked={() => setUnlocked(true)} />
-        <Button
-          variant="primary"
-          onClick={handleAutoTrack}
-          disabled={autoTracking || !unlocked}
-          aria-label={`Auto-track today's picks for ${today}`}
-          style={(autoTracking || !unlocked) ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
-        >
-          {autoTracking ? "Tracking…" : `⚡ Auto-track ${today}`}
-        </Button>
-        {autoResult && (
-          <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: autoResult.created > 0 ? "var(--pos)" : "var(--text-2)" }}>
-            {autoResult.created > 0
-              ? `+${autoResult.created} logged · ${autoResult.skipped} already tracked`
-              : `All picks already tracked (${autoResult.skipped} skipped)`}
-          </div>
-        )}
-        {autoError && (
-          <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--hold)" }}>
-            {autoError}
-          </div>
-        )}
-      </div>
+      {/* Auto-track result / error status line (kept below the header so a long
+          message never stretches the title row). */}
+      {(autoResult || autoError) && (
+        <div style={{ marginTop: "calc(-1 * var(--sp-3))", marginBottom: "var(--sp-4)", textAlign: "right" }}>
+          {autoResult && (
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: autoResult.created > 0 ? "var(--pos)" : "var(--text-2)" }}>
+              {autoResult.created > 0
+                ? `+${autoResult.created} logged · ${autoResult.skipped} already tracked`
+                : `All picks already tracked (${autoResult.skipped} skipped)`}
+            </span>
+          )}
+          {autoError && (
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--hold)" }}>
+              {autoError}
+            </span>
+          )}
+        </div>
+      )}
 
       {settleError && (
         <ErrorBanner
@@ -647,64 +647,66 @@ export default function TrackerPage() {
         />
       )}
 
-      {visible.length > 0 && (
+      {/* Pending and Settled are now two SEPARATE cards with a gap between them
+          — the live watchlist (open bets, warn-accented header) reads as its
+          own block above the settled ledger rather than sharing one frame. */}
+      {pending.length > 0 && (
         <Card
           pad={false}
-          style={{ marginTop: "var(--sp-3)", overflow: "hidden", border: "1px solid var(--border)" }}
+          style={{ marginTop: "var(--sp-3)", overflow: "hidden", border: "1px solid var(--warn)", boxShadow: "inset 4px 0 0 var(--warn)" }}
         >
-          {pending.length > 0 && (
-            <>
-              <GroupBar>
-                <span style={{ color: "var(--warn)" }}>▸ Pending</span>
-                <span className="num" style={{ color: "var(--text-2)" }}>{pending.length}</span>
-              </GroupBar>
-              <DataTable
-                columns={columns}
-                rows={pending}
-                rowKey={(b) => b.id}
-                rowClassName={(b) => rowAccentClass(b.result)}
-                caption="Pending tracked bets"
-              />
-            </>
-          )}
+          <GroupBar>
+            <span style={{ color: "var(--warn)" }}>▸ Pending — open watchlist</span>
+            <span className="num" style={{ color: "var(--text-2)" }}>{pending.length}</span>
+          </GroupBar>
+          <DataTable
+            columns={columns}
+            rows={pending}
+            rowKey={(b) => b.id}
+            rowClassName={(b) => rowAccentClass(b.result)}
+            caption="Pending tracked bets"
+          />
+        </Card>
+      )}
 
-          {settledByDate.length > 0 && (
-            <>
-              <GroupBar>
-                <span style={{ color: "var(--text-2)" }}>▸ Settled</span>
-                <span className="num" style={{ color: "var(--text-2)" }}>{settled.length}</span>
-              </GroupBar>
-              {settledByDate.map(([date, dateBets]) => {
-                const dayNet = dateBets.reduce((sum, b) => sum + (b.units_returned ?? 0), 0);
-                const wins = dateBets.filter((b) => b.result === "WIN").length;
-                const losses = dateBets.filter((b) => b.result === "LOSS").length;
-                return (
-                  <div key={date}>
-                    <div className="date-group-header">
-                      <span className="num">{date}</span>
-                      <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center" }}>
-                        <span className="num" style={{ color: "var(--text-2)" }}>{wins}W–{losses}L</span>
-                        <SemanticValue
-                          value={dayNet}
-                          mode="units"
-                          digits={2}
-                          suffix="u"
-                          className="dgh-pnl"
-                        />
-                      </div>
-                    </div>
-                    <DataTable
-                      columns={columns}
-                      rows={dateBets}
-                      rowKey={(b) => b.id}
-                      rowClassName={(b) => rowAccentClass(b.result)}
-                      caption={`Settled tracked bets for ${date}`}
+      {settledByDate.length > 0 && (
+        <Card
+          pad={false}
+          style={{ marginTop: "var(--sp-4)", overflow: "hidden", border: "1px solid var(--border)" }}
+        >
+          <GroupBar>
+            <span style={{ color: "var(--text-2)" }}>▸ Settled ledger</span>
+            <span className="num" style={{ color: "var(--text-2)" }}>{settled.length}</span>
+          </GroupBar>
+          {settledByDate.map(([date, dateBets]) => {
+            const dayNet = dateBets.reduce((sum, b) => sum + (b.units_returned ?? 0), 0);
+            const wins = dateBets.filter((b) => b.result === "WIN").length;
+            const losses = dateBets.filter((b) => b.result === "LOSS").length;
+            return (
+              <div key={date}>
+                <div className="date-group-header">
+                  <span className="num">{date}</span>
+                  <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center" }}>
+                    <span className="num" style={{ color: "var(--text-2)" }}>{wins}W–{losses}L</span>
+                    <SemanticValue
+                      value={dayNet}
+                      mode="units"
+                      digits={2}
+                      suffix="u"
+                      className="dgh-pnl"
                     />
                   </div>
-                );
-              })}
-            </>
-          )}
+                </div>
+                <DataTable
+                  columns={columns}
+                  rows={dateBets}
+                  rowKey={(b) => b.id}
+                  rowClassName={(b) => rowAccentClass(b.result)}
+                  caption={`Settled tracked bets for ${date}`}
+                />
+              </div>
+            );
+          })}
         </Card>
       )}
     </div>

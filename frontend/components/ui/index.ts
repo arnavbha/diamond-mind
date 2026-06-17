@@ -24,6 +24,8 @@ export type { OddsRowItem } from "./odds-row";
 
 export { SectionHeader } from "./section-header";
 
+export { PageHeader } from "./page-header";
+
 export { EmptyState, ErrorBanner, Skeleton, SkeletonText, SkeletonCard, Loading } from "./states";
 
 export { Accruing, SampleSize } from "./accruing";
