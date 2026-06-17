@@ -3,9 +3,13 @@
 import React from "react";
 
 /**
- * SectionHeader — wraps the old .section-label with the .infield-divider clay
- * accent and standardized uppercase label tracking. Optional right-aligned
- * action slot (controls, counts).
+ * SectionHeader — a quiet structural subhead on the .infield-divider clay
+ * accent, with an optional right-aligned action slot (controls, counts).
+ *
+ * Sentence case (not uppercase): caps + wide tracking are reserved for the loud
+ * tier — nav, page titles, badges. Section heads repeat all over the app
+ * ("Bankroll math", "Devig engine", "Actionable"), so shouting them too made
+ * every screen feel uniformly intense; this keeps them legible but subordinate.
  */
 export function SectionHeader({
   children,
@@ -38,10 +42,10 @@ export function SectionHeader({
       <Heading
         style={{
           margin: 0,
-          fontSize: "var(--fs-caption)",
-          fontWeight: "var(--weight-bold)",
-          letterSpacing: "var(--tracking-label)",
-          textTransform: "uppercase",
+          fontSize: "var(--fs-meta)",
+          fontWeight: "var(--weight-semibold)",
+          letterSpacing: "normal",
+          textTransform: "none",
           color: "var(--text-2)",
         }}
       >

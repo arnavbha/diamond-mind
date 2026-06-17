@@ -22,9 +22,11 @@
 
   --text:      #DCE6F0;   /* primary read — slightly brighter on the deeper bg */
   --text-2:    #8492A1;   /* secondary / labels — lifted for legibility */
-  --text-muted:#62707E;   /* ~3.4:1 — smallest-size REAL content: captions,
-                             sample sizes, data-labels (referenced by the @/components/ui
-                             library). Lifted with the deeper base. */
+  --text-muted:#788694;   /* ~4.8–5.4:1 across panel surfaces — passes WCAG AA
+                             for the smallest-size REAL content (captions, sample
+                             sizes, data-labels, table column heads). Bumped from
+                             #62707E (~3.4:1, which failed AA). Still recedes
+                             below --text-2 so the text hierarchy holds. */
   --text-3:    #3E4B58;   /* DECORATION ONLY (axis ticks, reticle 123, dividers). */
 
   --blue:      #5BB0FF;   /* market / informational — a hair more luminous */
