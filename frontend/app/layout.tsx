@@ -1,20 +1,23 @@
 import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { Inter, JetBrains_Mono, Syne } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Sans_Condensed, Syne } from "next/font/google";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
 import "./globals.css";
 
 // ── Font loading ────────────────────────────────────────────────────────────
-// Self-hosted via next/font (replaces the render-blocking @import that used to
-// sit at globals.css line 1 + the runtime <link> to fonts.googleapis.com). All
-// three families load through one path, weight-subset to exactly what the design
-// system uses. Each exposes a CSS variable; we wire those into the existing
-// token names (--font-mono / --font-display / --font-body) on <body> below so
-// every `var(--font-*)` consumer keeps working with no globals.css change.
-const jetbrainsMono = JetBrains_Mono({
+// Self-hosted via next/font, weight-subset to what the design system uses. Each
+// family exposes a CSS variable wired into the existing token names on <body>
+// below, so every `var(--font-*)` consumer keeps working.
+//
+// Type system (sportsbook / trading-terminal identity, all-Plex working text):
+//   Syne (display)             → logo + page titles. KEPT — it's the brand.
+//   IBM Plex Mono (mono/ui)    → odds, units, %, timestamps, nav, labels.
+//   IBM Plex Sans (body)       → prose / descriptions / explanations.
+//   IBM Plex Sans Condensed    → dense table text (numbers stay Plex Mono via .num).
+const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
@@ -28,11 +31,18 @@ const syne = Syne({
   variable: "--dm-font-display",
 });
 
-const inter = Inter({
+const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   display: "swap",
   variable: "--dm-font-body",
+});
+
+const plexCondensed = IBM_Plex_Sans_Condensed({
+  subsets: ["latin"],
+  weight: ["500", "600"],
+  display: "swap",
+  variable: "--dm-font-condensed",
 });
 
 export const metadata: Metadata = {
@@ -53,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${jetbrainsMono.variable} ${syne.variable} ${inter.variable}`}
+      className={`${plexMono.variable} ${syne.variable} ${plexSans.variable} ${plexCondensed.variable}`}
     >
       <body
         style={{
@@ -62,11 +72,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           // globals.css :root without editing that (out-of-bucket) file.
           // The fallback mirrors the original token so a deploy never ships
           // un-styled if next/font's variable is somehow absent.
-          ["--font-mono" as string]: "var(--dm-font-mono), 'JetBrains Mono', monospace",
-          ["--font-ui" as string]: "var(--dm-font-mono), 'JetBrains Mono', monospace",
+          ["--font-mono" as string]: "var(--dm-font-mono), 'IBM Plex Mono', monospace",
+          ["--font-ui" as string]: "var(--dm-font-mono), 'IBM Plex Mono', monospace",
           ["--font-display" as string]: "var(--dm-font-display), 'Syne', system-ui, sans-serif",
           ["--font-scoreboard" as string]: "var(--dm-font-display), 'Syne', system-ui, sans-serif",
-          ["--font-body" as string]: "var(--dm-font-body), 'Inter', system-ui, sans-serif",
+          ["--font-body" as string]: "var(--dm-font-body), 'IBM Plex Sans', system-ui, sans-serif",
+          ["--font-condensed" as string]: "var(--dm-font-condensed), 'IBM Plex Sans Condensed', system-ui, sans-serif",
           // Shell-height tokens so Chat (and anything else) can stop hard-coding
           // the nav(52) + ticker(36) offsets in magic calc() expressions.
           ["--nav-h" as string]: "52px",

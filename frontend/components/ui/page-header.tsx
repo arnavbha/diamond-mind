@@ -12,7 +12,7 @@ import React from "react";
  * so the top of the page reads as the heaviest legend mark on the screen.
  *
  *  - title    Syne 800, up to 2rem, uppercase, tight -0.02em tracking, --text.
- *  - subtitle JetBrains Mono, --fs-meta, --text-2 (status / count / date line).
+ *  - subtitle mono (--font-mono), --fs-meta, --text-2 (status / count / date line).
  *  - action   optional right-aligned slot (a button, a count chip, a control).
  */
 export function PageHeader({
