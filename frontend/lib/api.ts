@@ -54,6 +54,105 @@ const TTL_DEFAULT = 60_000; // slate, picks, edge, report, analysis, fair-value 
 const TTL_TRACKER = 30_000; // tracker bets / summary / track-record
 const TTL_NONE = 0;         // mutations + anything that must always be fresh
 
+// ---------------------------------------------------------------------------
+// Session-scoped persistence for the GET cache
+// ---------------------------------------------------------------------------
+// The Map above is wiped on a full page reload (module re-init), so a refresh
+// re-hit the backend cold — and the backend's cold analysis compute is ~3-4s
+// for a slate. Mirror cache writes into sessionStorage and re-hydrate the Map
+// from it on load, so a reload reuses still-fresh data instead of recomputing.
+//
+// sessionStorage (not localStorage): per-tab, cleared on tab close — the right
+// lifetime for live-ish betting data; we don't want a stale slate persisting
+// across days. The `_inflight` promise map is NEVER persisted. Everything here
+// is best-effort: private mode / quota / disabled storage degrades silently to
+// memory-only. Bump the version in the prefix to invalidate an old cache shape.
+const SS_PREFIX = "dm:apicache:v1:";
+
+function _ss(): Storage | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Drop our entire namespace — used as a release valve when a write hits quota. */
+function _ssClear(ss: Storage): void {
+  const doomed: string[] = [];
+  for (let i = 0; i < ss.length; i++) {
+    const k = ss.key(i);
+    if (k && k.startsWith(SS_PREFIX)) doomed.push(k);
+  }
+  doomed.forEach((k) => ss.removeItem(k));
+}
+
+/** Write-through: persist one entry, stamping an absolute expiry for self-prune. */
+function _ssSet(path: string, entry: CacheEntry, ttl: number): void {
+  const ss = _ss();
+  if (!ss) return;
+  try {
+    ss.setItem(SS_PREFIX + path, JSON.stringify({ ...entry, exp: entry.ts + ttl }));
+  } catch {
+    // Most likely a quota error — clear our namespace so one oversized payload
+    // doesn't wedge every future write, then give up on this entry.
+    try { _ssClear(ss); } catch { /* ignore */ }
+  }
+}
+
+/** Delete persisted entries whose path starts with any given prefix (mutation bust). */
+function _ssDeleteByPrefix(prefixes: string[]): void {
+  const ss = _ss();
+  if (!ss) return;
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < ss.length; i++) {
+      const k = ss.key(i);
+      if (!k || !k.startsWith(SS_PREFIX)) continue;
+      const p = k.slice(SS_PREFIX.length);
+      if (prefixes.some((pre) => p.startsWith(pre))) doomed.push(k);
+    }
+    doomed.forEach((k) => ss.removeItem(k));
+  } catch {
+    /* ignore */
+  }
+}
+
+// Hydrate the in-memory Map from sessionStorage once at module init (browser
+// only). Entries already past their stored expiry are pruned here so the cache
+// self-cleans on every reload; the per-read TTL check in `get` is still the
+// authority for freshness.
+(function _hydrate(): void {
+  const ss = _ss();
+  if (!ss) return;
+  const now = Date.now();
+  try {
+    const expired: string[] = [];
+    for (let i = 0; i < ss.length; i++) {
+      const k = ss.key(i);
+      if (!k || !k.startsWith(SS_PREFIX)) continue;
+      const raw = ss.getItem(k);
+      if (!raw) continue;
+      let parsed: { data: unknown; ts: number; exp?: number };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        expired.push(k); // corrupt → drop
+        continue;
+      }
+      if (parsed.exp != null && now > parsed.exp) {
+        expired.push(k);
+        continue;
+      }
+      _cache.set(k.slice(SS_PREFIX.length), { data: parsed.data, ts: parsed.ts });
+    }
+    expired.forEach((k) => ss.removeItem(k));
+  } catch {
+    /* ignore corrupt cache */
+  }
+})();
+
 /** Drop every cached + in-flight entry whose key starts with any given prefix.
  *  Called after a mutation so the next read re-fetches the affected resource. */
 function bust(...prefixes: string[]): void {
@@ -63,6 +162,7 @@ function bust(...prefixes: string[]): void {
   for (const key of _inflight.keys()) {
     if (prefixes.some((p) => key.startsWith(p))) _inflight.delete(key);
   }
+  _ssDeleteByPrefix(prefixes);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +188,11 @@ async function get<T>(path: string, ttl: number = TTL_DEFAULT): Promise<T | null
       const res = await fetch(`${API}${path}`, { next: { revalidate: 60 } });
       if (!res.ok) return null;
       const data = (await res.json()) as T;
-      if (ttl > 0) _cache.set(path, { data, ts: Date.now() });
+      if (ttl > 0) {
+        const entry: CacheEntry = { data, ts: Date.now() };
+        _cache.set(path, entry);
+        _ssSet(path, entry, ttl); // mirror to sessionStorage so a reload reuses it
+      }
       return data;
     } catch {
       return null;
