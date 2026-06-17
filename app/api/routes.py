@@ -11,6 +11,7 @@ Run with:
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import math
 import os
@@ -48,6 +49,7 @@ from app.models.entities import Player, Team
 from app.models.games import Game, PitcherGameLog, PlayerGameLog, TeamGameLog
 from app.models.live import LiveGameState
 from app.models.tracker import BetRecord, ExcludedPick, compute_units_returned
+from app.models.analysis_cache import AnalysisCacheRow
 from app.betting.clv import apply_clv_to_bet, compute_clv_for_bet
 from app.betting.implied_probability import implied_probability
 from app.live.alerts import derive_live_alert
@@ -132,6 +134,11 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 _ANALYSIS_CACHE: Dict[Tuple[int, date], Tuple[Any, float]] = {}
 _CACHE_TTL_SECONDS = 300
+
+# A FINAL game's analysis is immutable, so it also gets a DB-persistent cache
+# (app/models/analysis_cache.py) that survives restarts and the today-only
+# startup warmup. MLB terminal statuses:
+_FINAL_STATUSES = frozenset({"Final", "Game Over", "Completed Early"})
 
 def _cache_get(game_id: int, as_of: date) -> Optional[Any]:
     entry = _ANALYSIS_CACHE.get((game_id, as_of))
@@ -375,10 +382,16 @@ def health_detailed(db: Session = Depends(_get_db)):
 
 
 @app.post("/cache/clear", tags=["meta"])
-def clear_cache():
-    """Flush the analysis result cache (call after ingestion runs)."""
+def clear_cache(db: Session = Depends(_get_db)):
+    """Flush the analysis result cache (call after ingestion runs).
+
+    Clears both tiers — the in-memory TTL cache and the DB-persistent final-game
+    cache — so a re-ingest that changes a settled game forces a full recompute.
+    """
     evicted = _cache_invalidate_all()
-    return {"evicted": evicted}
+    persisted = db.execute(delete(AnalysisCacheRow)).rowcount
+    db.commit()
+    return {"evicted": evicted, "persisted_evicted": persisted}
 
 
 @app.get("/model/constants", tags=["meta"])
@@ -1163,15 +1176,52 @@ def _build_analysis(game_id: int, as_of: date, db: Session):
 
 
 def _build_analysis_cached(game_id: int, as_of: date, db: Session) -> Optional[dict]:
-    """Cache-wrapped version of _build_analysis. Returns a dict (already serialized)."""
+    """Cache-wrapped version of _build_analysis. Returns a dict (already serialized).
+
+    Two tiers:
+      1. 5-minute in-memory cache for everything (live games included).
+      2. DB-persistent cache for FINAL games only — their analysis is immutable,
+         so it survives restarts and the today-only startup warmup, turning a
+         cold ~3-4s slate recompute into an instant read for past dates.
+    """
     cached = _cache_get(game_id, as_of)
     if cached is not None:
         return cached
+
+    # Persistent tier (final games only). A final game's inputs are frozen, so a
+    # stored payload is always valid — reuse it and re-warm the in-memory tier.
+    game = db.get(Game, game_id)
+    is_final = game is not None and game.status in _FINAL_STATUSES
+    if is_final:
+        row = db.get(AnalysisCacheRow, (game_id, as_of))
+        if row is not None:
+            try:
+                data = json.loads(row.payload)
+                _cache_set(game_id, as_of, data)
+                return data
+            except (ValueError, TypeError):
+                pass  # corrupt payload → fall through and recompute
+
     result = _build_analysis(game_id, as_of, db)
     if result is None:
         return None
     serialized = _dc(result)
     _cache_set(game_id, as_of, serialized)
+
+    if is_final:
+        # Best-effort persist. Under SQLite the slate's 8-thread fan-out serializes
+        # writes on the busy timeout; a lost race just means a recompute next time.
+        try:
+            db.merge(AnalysisCacheRow(
+                game_id=game_id,
+                as_of=as_of,
+                payload=json.dumps(serialized),
+                created_at=datetime.utcnow(),
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return serialized
 
 

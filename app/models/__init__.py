@@ -24,8 +24,10 @@ from app.models.live import LiveGameState
 from app.models.odds import OddsSnapshotRow, WeatherSnapshotRow
 from app.models.reports import BetEvaluationRow, ModelRun, ObsidianExportRow
 from app.models.statcast import StatcastPitcherGame, StatcastTeamOffenseGame
+from app.models.analysis_cache import AnalysisCacheRow
 
 __all__ = [
+    "AnalysisCacheRow",
     "Team",
     "Player",
     "Game",
