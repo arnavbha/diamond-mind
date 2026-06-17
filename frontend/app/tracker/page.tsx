@@ -535,16 +535,10 @@ export default function TrackerPage() {
 
   return (
     <div>
-      {/* Scoped responsive toggle for the DataTable (table on desktop, card
-          list on phones). The shared globals.css doesn't yet define these, so
-          we wire the breakpoint here without touching the component. */}
-      <style>{`
-        .data-table-mobile { display: none; }
-        @media (max-width: 640px) {
-          .data-table-desktop { display: none; }
-          .data-table-mobile { display: flex; }
-        }
-      `}</style>
+      {/* DataTable's desktop/mobile toggle now lives in globals.css
+          (.data-table-desktop / .data-table-mobile). The old scoped <style>
+          here was redundant — and the component's inline display was shadowing
+          both, which double-rendered every row on desktop. */}
 
       <PageHeader
         title="Picks Tracker"

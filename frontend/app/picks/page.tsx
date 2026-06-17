@@ -471,18 +471,15 @@ function PickCard({
   const totalTrackKey = `${pick.game_id}-total`;
   const mlTracked = trackedIds.has(mlTrackKey);
 
-  // Card variant: strong-lean glow only when the ML side is actionable.
-  const variant = pick.ml_tier === "STRONG LEAN"
-    ? "strong-lean"
-    : pick.ml_tier === "LEAN" ? "lean" : "default";
-
-  // Left inset accent, composed on top of the variant's glow ring. Inset
-  // box-shadow is the sanctioned stand-in for a (banned) colored border-left:
-  // STRONG LEAN reads emerald, LEAN reads blue, matching the tier palette.
+  // Card chrome: the Pick of the Day hero (rendered above the list) is the
+  // page's single glowing standout. The list cards stay QUIET — a tier-colored
+  // left accent only, no glow ring — so a column of equally-glowing boxes
+  // doesn't drown out the hero. STRONG LEAN reads emerald, LEAN reads blue.
+  const variant = "default";
   const accentShadow = pick.ml_tier === "STRONG LEAN"
-    ? "var(--glow-pos), inset 4px 0 0 var(--pos)"
+    ? "inset 3px 0 0 var(--pos)"
     : pick.ml_tier === "LEAN"
-      ? "var(--glow-lean), inset 4px 0 0 var(--lean)"
+      ? "inset 3px 0 0 var(--lean)"
       : undefined;
 
   function handleMlTrack(e: React.MouseEvent) {

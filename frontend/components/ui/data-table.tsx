@@ -128,8 +128,13 @@ export function DataTable<T>({
         ))}
       </div>
 
-      {/* ── Mobile: real card list (every column becomes a labeled row) ── */}
-      <div className="data-table-mobile" style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+      {/* ── Mobile: real card list (every column becomes a labeled row) ──
+          NOTE: do NOT set `display` inline here. The desktop/mobile toggle lives
+          in globals.css (.data-table-desktop / .data-table-mobile media query);
+          an inline `display:flex` would beat that class at every width, so BOTH
+          layouts rendered at once → every row shown twice on desktop. Layout
+          props that only matter once visible (flex-direction/gap) stay inline. */}
+      <div className="data-table-mobile" style={{ flexDirection: "column", gap: "var(--sp-2)" }}>
         {rows.map((row, i) => (
           <div
             key={rowKey(row, i)}

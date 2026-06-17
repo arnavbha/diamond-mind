@@ -197,7 +197,14 @@ body {
     radial-gradient(140% 120% at 50% 0%, #0A0F15 0%, var(--bg) 55%, #03060A 100%);
   background-attachment: fixed;
   color: var(--text);
-  font-family: var(--font-mono);
+  /* Body prose defaults to the sans body face (Inter) — the instrument identity
+     is carried by the parts that EXPLICITLY opt into mono: every number/data
+     cell via .num/.mono, the nav + uppercase legends via var(--font-ui), and
+     the code/formula wells. Previously this was var(--font-mono), which made
+     ~99% of the UI monospace (Inter loaded but never rendered) and flattened
+     all typographic hierarchy. Mono now reads as deliberate "data", sans as
+     "prose". */
+  font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.5;
   letter-spacing: 0;
@@ -1202,6 +1209,10 @@ body::before {
   .nav-label-short             { display: inline !important; }
   /* Mobile: hide secondary links inline; the ••• popover takes over. */
   .nav-secondary-desktop { display: none !important; }
+  /* Mobile: collapse the lower-priority primary links (ACE / Report / Track
+     Record) too — they move into the ••• popover so the core 4 links + ••• fit
+     a 390px row without clipping the overflow button off-screen. */
+  .nav-collapse-mobile { display: none !important; }
   /* The primary/secondary group divider separates nothing once the secondary
      links collapse into the ••• popover — drop it on phones. */
   .nav-group-divider { display: none !important; }

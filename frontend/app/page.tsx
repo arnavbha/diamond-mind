@@ -43,7 +43,7 @@ function VulnBar({ abbr, bp }: { abbr: string; bp: BullpenData }) {
   );
 }
 
-function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: SlateGame; index: number; onClick: () => void; trackedML?: boolean; trackedTotal?: boolean }) {
+function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false }: { game: SlateGame; index: number; onClick: () => void; trackedML?: boolean; trackedTotal?: boolean; hero?: boolean }) {
   const analysis: GameAnalysis | null = game.analysis;
   const hasTier = !!analysis && analysis.ml_tier !== "PASS" && analysis.ml_lean !== "PASS";
   const tc = hasTier ? tierColor(analysis!.ml_tier) : "var(--border)";
@@ -59,21 +59,26 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
   const delay = Math.min(index, 12) * 25;
   const isStrong = analysis?.ml_tier === "STRONG LEAN";
   const isLean = analysis?.ml_tier === "LEAN";
-  const variant = isStrong ? "strong-lean"
-    : isLean ? "lean"
-    : "default";
-
   const isPass = !hasTier;
-
-  // Compose the card chrome by tier:
-  //  - STRONG LEAN: keep the glow ring AND add a left inset accent (inset
-  //    box-shadow is the sanctioned alternative to a banned colored border-left).
-  //  - the .slab class pins corner brackets on any actionable pick so it reads
-  //    as "framed in the scope" — the visual marker that this game is playable.
   const actionable = hasTier && (isStrong || isLean);
-  const composedShadow = isStrong
-    ? "var(--glow-pos), inset 4px 0 0 var(--pos)"
-    : undefined; // LEAN keeps the variant's --glow-lean ring as-is
+
+  // ── Hierarchy by emphasis ──────────────────────────────────────────────────
+  // Only the single `hero` card (the slate's highest-conviction actionable pick,
+  // chosen in SlatePageInner) carries the full glow ring + corner-bracket slab.
+  // Every OTHER actionable card gets a quiet tier-colored left accent instead.
+  // Before this, ~all actionable cards glowed at once, so nothing read as the
+  // standout — the glow stopped meaning anything. One loud card, the rest quiet.
+  const variant = hero
+    ? (isStrong ? "strong-lean" : isLean ? "lean" : "default")
+    : "default";
+  const accentColor = isStrong ? "var(--pos)" : isLean ? "var(--lean)" : "var(--border)";
+  // hero STRONG → glow ring + 4px inset accent; hero LEAN → variant's glow ring.
+  // non-hero actionable → quiet 3px inset accent only (no ring). pass → nothing.
+  const composedShadow = hero
+    ? (isStrong ? "var(--glow-pos), inset 4px 0 0 var(--pos)" : undefined)
+    : (actionable ? `inset 3px 0 0 ${accentColor}` : undefined);
+  // Corner-bracket reticle is the "framed in the scope" hero marker — hero only.
+  const showSlab = hero && actionable;
 
   return (
     <Card
@@ -81,7 +86,7 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal }: { game: Sla
       interactive
       variant={variant}
       onClick={onClick}
-      className={`fade-up infield-divider slate-card${actionable ? " slab" : ""}`}
+      className={`fade-up infield-divider slate-card${showSlab ? " slab" : ""}`}
       style={{
         "--delay": `${delay}ms`,
         "--clay": hasTier ? tc : "var(--border)",
@@ -535,6 +540,23 @@ function SlatePageInner() {
   // 0 or 1). Surfaced in the header subtitle as the at-a-glance slate summary.
   const actionableCount = games ? games.filter((g) => sortRank(g) <= 1).length : 0;
 
+  // Hero = the single highest-conviction ML pick on the slate (STRONG outranks
+  // LEAN; ties broken by Kelly fraction). Only this card gets the loud glow +
+  // slab treatment in GameCard; every other actionable card stays quiet so the
+  // standout actually stands out. ML-keyed to match GameCard's own emphasis.
+  const heroId: number | null = (() => {
+    const acts = (sortedGames ?? []).filter(
+      (g) => g.analysis && (g.analysis.ml_tier === "STRONG LEAN" || g.analysis.ml_tier === "LEAN") && g.analysis.ml_lean !== "PASS",
+    );
+    if (acts.length === 0) return null;
+    const conviction = (g: SlateGame) => {
+      const a = g.analysis!;
+      const strong = a.ml_tier === "STRONG LEAN" ? 1 : 0;
+      return strong * 1000 + (a.ml_kelly_fraction ?? 0);
+    };
+    return acts.reduce((best, g) => (conviction(g) > conviction(best) ? g : best)).game_id;
+  })();
+
   return (
     <div style={{ position: "relative" }}>
       <PageHeader
@@ -582,6 +604,7 @@ function SlatePageInner() {
             key={g.game_id}
             game={g}
             index={i}
+            hero={g.game_id === heroId}
             onClick={() => openSidebar(g.game_id, g.game_date)}
             trackedML={trackedKeys.has(`${g.game_id}-moneyline`)}
             trackedTotal={trackedKeys.has(`${g.game_id}-total`)}

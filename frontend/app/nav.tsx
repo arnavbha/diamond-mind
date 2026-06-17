@@ -6,19 +6,26 @@ import { useEffect, useRef, useState } from "react";
 
 type NavLink = { href: string; label: string; shortLabel?: string };
 
-// Pages used daily. Stay in the main row at every viewport.
-const PRIMARY_LINKS: NavLink[] = [
+// Core pages — stay inline in the main row at EVERY viewport (incl. mobile).
+// Kept to four so the row + ••• button fit a 390px phone without clipping.
+const PRIMARY_CORE: NavLink[] = [
   { href: "/", label: "Slate" },
   { href: "/picks", label: "Picks" },
   { href: "/edge", label: "Edge" },
   { href: "/tracker", label: "Tracker" },
+];
+
+// Daily but lower-priority — inline on desktop, collapse into the ••• popover
+// on mobile (marked .nav-collapse-mobile). Previously these lived in the always-
+// inline row, which pushed the 7-link row past the phone width and shoved the
+// ••• overflow button (and everything in it) off-screen / unreachable.
+const PRIMARY_OVERFLOW: NavLink[] = [
   { href: "/chat", label: "ACE" },
   { href: "/report", label: "Report" },
   { href: "/track-record", label: "Track Record", shortLabel: "Record" },
 ];
 
-// Low-frequency pages. Live in the main row on desktop, behind a "•••"
-// popover on mobile (still accessible, just out of the way).
+// Low-frequency pages. Inline on desktop, behind the ••• popover on mobile.
 const SECONDARY_LINKS: NavLink[] = [
   { href: "/verify", label: "Verifier" },
   { href: "/tools", label: "Tools" },
@@ -29,10 +36,12 @@ function NavLinkPill({
   link,
   path,
   onClick,
+  extraClass,
 }: {
   link: NavLink;
   path: string;
   onClick?: () => void;
+  extraClass?: string;
 }) {
   const active =
     link.href === "/" ? path === "/" : path.startsWith(link.href);
@@ -41,7 +50,7 @@ function NavLinkPill({
       href={link.href}
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`nav-link${active ? " nav-link-active" : ""}`}
+      className={`nav-link${active ? " nav-link-active" : ""}${extraClass ? " " + extraClass : ""}`}
       style={{
         // Active = a surface-2 chip in the clay identity color (not a bottom
         // underline). The pill gives the current page a solid, hit-area-sized
@@ -69,7 +78,7 @@ function NavLinkPill({
 
 // Popover for the SECONDARY links on mobile. Hidden on desktop via CSS — the
 // desktop renders SECONDARY links inline instead.
-function NavOverflow({ path }: { path: string }) {
+function NavOverflow({ path, links }: { path: string; links: NavLink[] }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -109,7 +118,7 @@ function NavOverflow({ path }: { path: string }) {
     wasOpen.current = open;
   }, [open]);
 
-  const anyActive = SECONDARY_LINKS.some((l) =>
+  const anyActive = links.some((l) =>
     l.href === "/" ? path === "/" : path.startsWith(l.href),
   );
 
@@ -190,7 +199,7 @@ function NavOverflow({ path }: { path: string }) {
             zIndex: "var(--z-popover)" as unknown as number,
           }}
         >
-          {SECONDARY_LINKS.map((link) => {
+          {links.map((link) => {
             const active =
               link.href === "/" ? path === "/" : path.startsWith(link.href);
             return (
@@ -227,12 +236,20 @@ function NavOverflow({ path }: { path: string }) {
 
 export function NavLinks() {
   const path = usePathname();
+  // On mobile the ••• popover holds the lower-priority primary links AND the
+  // secondary links. On desktop ••• is hidden and all of these render inline.
+  const overflowLinks = [...PRIMARY_OVERFLOW, ...SECONDARY_LINKS];
   return (
     <>
-      {/* Primary group sits flush-left after the brand. */}
+      {/* Primary group sits flush-left after the brand. Core links stay inline
+          everywhere; the overflow-primary links are inline on desktop but
+          collapse into ••• on mobile via .nav-collapse-mobile. */}
       <span className="nav-group" style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-        {PRIMARY_LINKS.map((link) => (
+        {PRIMARY_CORE.map((link) => (
           <NavLinkPill key={link.href} link={link} path={path} />
+        ))}
+        {PRIMARY_OVERFLOW.map((link) => (
+          <NavLinkPill key={link.href} link={link} path={path} extraClass="nav-collapse-mobile" />
         ))}
       </span>
       {/* Faint divider separating daily-use primary nav from low-frequency
@@ -249,8 +266,9 @@ export function NavLinks() {
           <NavLinkPill key={link.href} link={link} path={path} />
         ))}
       </span>
-      {/* Mobile: ••• overflow popover. Hidden via CSS on desktop. */}
-      <NavOverflow path={path} />
+      {/* Mobile: ••• overflow popover (holds overflow-primary + secondary).
+          Hidden via CSS on desktop. */}
+      <NavOverflow path={path} links={overflowLinks} />
     </>
   );
 }
