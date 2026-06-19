@@ -22,10 +22,11 @@
 
   --text:      #DCE6F0;   /* primary read — slightly brighter on the deeper bg */
   --text-2:    #8492A1;   /* secondary / labels — lifted for legibility */
-  --text-muted:#788694;   /* ~4.8–5.4:1 across panel surfaces — passes WCAG AA
-                             for the smallest-size REAL content (captions, sample
-                             sizes, data-labels, table column heads). Bumped from
-                             #62707E (~3.4:1, which failed AA). Still recedes
+  --text-muted:#8D9BAA;   /* ~5.1–6.4:1 across ALL panel surfaces incl --surface-3
+                             — clears WCAG AA for the smallest REAL content
+                             (captions, sample sizes, data-labels, table heads).
+                             Bumped from #788694, which dropped to 4.30:1 on
+                             --surface-3 (failed AA at 9–10px). Still recedes
                              below --text-2 so the text hierarchy holds. */
   --text-3:    #3E4B58;   /* DECORATION ONLY (axis ticks, reticle 123, dividers). */
 
@@ -164,14 +165,17 @@
   /* ── Elevation ───────────────────────────────────────────────
      Deeper, tighter shadows (the panel floats over the abyss) + brighter
      1px signal rings on the new emerald/blue so actionable cards read at
-     a glance. The inset green wash is stronger for STRONG LEAN. */
+     a glance. Ring-only — no bloom or inset wash; the glow communicates
+     state (the one actionable hero), not atmosphere. Paired with the card's
+     colored border it reads as a crisp emphasized edge, not a "make it pop"
+     halo (the canonical AI colored-glow tell). */
   --shadow-sm:     0 1px 2px rgba(0,0,0,0.5);
   --shadow-md:     0 3px 12px rgba(0,0,0,0.55);
   --shadow-pop:    0 12px 36px rgba(0,0,0,0.62);   /* tooltips / drawers */
   --shadow-drawer: -12px 0 44px rgba(0,0,0,0.6);
-  --glow-pos:  0 0 0 1px var(--pos), 0 0 22px -6px var(--pos), inset 0 0 48px var(--green-tint-soft);
-  --glow-lean: 0 0 0 1px rgba(91,176,255,0.55), 0 0 18px -8px var(--lean);
-  --glow-warn: 0 0 0 1px rgba(224,169,58,0.5);
+  --glow-pos:  0 0 0 1px var(--pos);
+  --glow-lean: 0 0 0 1px var(--lean);
+  --glow-warn: 0 0 0 1px var(--warn);
 
   /* ── Z-index scale (fixes scanline painting over modals) ─── */
   --z-base:    0;    /* scanline body::before lives here */
@@ -249,55 +253,13 @@ body::before {
 
 /* ════════════════════════════════════════════════════════════
    SIGNATURE INSTRUMENT CHROME (2026-06-15 overhaul)
-   The reticle/bracket language replaces decoration with EQUIPMENT.
-   These are structural — corner brackets frame a hero surface the way
-   a scope frames a target; the tick-rule heads read like a console
-   legend. None of these paint a colored side-stripe on a card (the
-   reticle marks are CORNERS, not a left/right edge).
+   The corner-bracket language replaces decoration with EQUIPMENT: brackets
+   frame a hero surface the way a scope frames a target. The single surviving
+   primitive is .slab (below) — it pins to ONE standout pick, never a colored
+   side-stripe (the banned pattern); marks are CORNERS, not a left/right edge.
+   (The dead .reticle / .ruled-head / .scrim-grid vocabulary was pruned — it
+   had zero call sites; .slab was the only bracket that ever rendered.)
    ════════════════════════════════════════════════════════════ */
-
-/* Corner-bracket reticle frame. Apply to a position:relative surface;
-   four 1px L-brackets pin to the corners. --reticle-color trims them. */
-.reticle { position: relative; }
-.reticle::before,
-.reticle::after {
-  content: '';
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  pointer-events: none;
-  border-color: var(--reticle-color, var(--clay));
-  border-style: solid;
-  z-index: 1;
-}
-.reticle::before {            /* top-left bracket */
-  top: 7px; left: 7px;
-  border-width: 1px 0 0 1px;
-}
-.reticle::after {            /* bottom-right bracket */
-  bottom: 7px; right: 7px;
-  border-width: 0 1px 1px 0;
-}
-/* Second pair (top-right + bottom-left) via a child .reticle-corners span
-   so a single element can carry all four marks. */
-.reticle > .reticle-corners { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-.reticle > .reticle-corners::before,
-.reticle > .reticle-corners::after {
-  content: '';
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-color: var(--reticle-color, var(--clay));
-  border-style: solid;
-}
-.reticle > .reticle-corners::before {   /* top-right */
-  top: 7px; right: 7px;
-  border-width: 1px 1px 0 0;
-}
-.reticle > .reticle-corners::after {    /* bottom-left */
-  bottom: 7px; left: 7px;
-  border-width: 0 0 1px 1px;
-}
 
 /* Slab — the "actionable pick" marker. A lighter sibling of .verdict-slab
    (which is the heavy single-readout instrument on /verify): instead of a
@@ -306,8 +268,8 @@ body::before {
    colored side-stripe (the banned pattern). --slab-color trims the brackets;
    it inherits the card's own border + glow. Apply to a position:relative
    surface (Card is one). All four corners come from one element via ::before
-   (TL+BR) and a layered conic-free box-shadow-free pseudo on ::after (TR+BL),
-   matching the .reticle vocabulary so the language stays consistent. */
+   (TL+BR) and a layered box-shadow-free pseudo on ::after (TR+BL). This is
+   the only corner-bracket primitive in the system. */
 .slab { position: relative; }
 .slab::before,
 .slab::after {
@@ -329,45 +291,7 @@ body::before {
   border-width: 0 1px 1px 0;
 }
 
-/* Tick-rule section head: an uppercase legend with a baseline rule that
-   carries a short clay tick at its start — the canonical "console legend"
-   header for the overhaul. Pairs label + optional right-side meta. */
-.ruled-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding-bottom: var(--sp-2);
-  border-bottom: 1px solid var(--border-2);
-  position: relative;
-}
-.ruled-head::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: -1px;
-  width: 24px;
-  height: 2px;
-  background: var(--clay);
-}
 
-/* Faint engineering grid for hero/instrument surfaces — a 24px ruled mesh,
-   barely-there, that makes a big panel read like graph paper under glass.
-   Applied as a background layer on a position:relative element. */
-.scrim-grid::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background-image:
-    linear-gradient(var(--border-subtle) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
-  background-size: 24px 24px;
-  opacity: 0.35;
-  pointer-events: none;
-  -webkit-mask-image: radial-gradient(120% 100% at 50% 0%, #000 30%, transparent 80%);
-          mask-image: radial-gradient(120% 100% at 50% 0%, #000 30%, transparent 80%);
-}
 
 /* Custom scrollbar — thin, instrument-grey, square. */
 * {
@@ -569,13 +493,6 @@ body::before {
   font-weight: var(--weight-bold);
 }
 
-/* ── Actionable card glow ─────────────────────── */
-.card-strong-lean {
-  box-shadow: var(--glow-pos);
-}
-.card-lean {
-  box-shadow: var(--glow-lean);
-}
 
 /* ── Nav ──────────────────────────────────────── */
 .nav-link {
@@ -591,19 +508,6 @@ body::before {
   background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 }
 
-/* ── Tier badge ───────────────────────────────── */
-.tier-badge {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: var(--tracking-label);
-  border-radius: var(--r-sm);
-  padding: 2px 7px;
-  border: 1px solid currentColor;
-  text-transform: uppercase;
-}
 
 /* ── EV display ───────────────────────────────── */
 .ev-positive {
@@ -820,7 +724,7 @@ body::before {
  *  retired from markup in the de-slop pass and the rule was dead.) */
 .scoreboard-num {
   font-family: var(--font-scoreboard);
-  font-weight: 800;
+  font-weight: var(--weight-display);  /* 700 — Plex Condensed ceiling; 800 was unloaded → faux-bold */
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.05em;   /* tighter — reads as a packed stadium readout */
 }
@@ -842,26 +746,6 @@ body::before {
 .box-score-grid .bsg-cell:last-child { border-right: none; }
 .box-score-grid .bsg-row:last-child .bsg-cell { border-bottom: none; }
 
-.stat-pill-grass {
-  background: var(--grass-dim);
-  color: var(--grass);
-  border: 1px solid var(--grass);
-  border-radius: var(--r-sm);
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-.stat-pill-clay {
-  background: var(--clay-dim);
-  color: var(--clay);
-  border: 1px solid var(--clay);
-  border-radius: var(--r-sm);
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
 
 /* The page-header rule. A bottom hairline plus a short clay tick at its start
    AND a tiny end cap — reads like a measurement bracket on the console legend. */
@@ -915,7 +799,8 @@ body::before {
   align-items: center;
   justify-content: center;
   cursor: help;
-  color: var(--text-3);
+  color: var(--text-muted);   /* was --text-3 (2.15:1 — invisible until hover);
+                                 a clickable help glyph must be perceivable at rest */
   border: none;
   background: none;
   padding: 0;
@@ -991,7 +876,7 @@ body::before {
   background: var(--surface);
   color: var(--text-2);
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: var(--weight-display);  /* 700 — was 800 (unloaded → faux-bold) */
   font-size: 13px;
   cursor: pointer;
   display: grid;
@@ -1065,24 +950,11 @@ body::before {
 }
 .date-group-header .dgh-pnl {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: var(--weight-display);  /* 700 — was 800 (unloaded → faux-bold) */
   font-size: 12px;
   letter-spacing: -0.01em;
 }
 
-/* ── Tier accent on slate cards ────────────────
- * De-slopped: no side-stripe. STRONG LEAN / LEAN get a full hairline ring
- * (matches the actionable-card glow vocabulary); PASS is simply de-emphasised
- * by lowering opacity. Tier is also labelled by the tier-badge text. */
-.game-card-tier-sl {
-  box-shadow: var(--glow-pos);
-}
-.game-card-tier-l {
-  box-shadow: var(--glow-lean);
-}
-.game-card-tier-pass {
-  opacity: 0.66;
-}
 
 /* ── Utility ──────────────────────────────────── */
 .mono { font-family: var(--font-mono); }
