@@ -259,33 +259,32 @@ function TotalBadge({
 
 // ── Pick of the Day ───────────────────────────────────────────────────────────
 
-function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: string; unlocked: boolean }) {
+// POTD selection — shared by the card below AND the parent, which uses the id to
+// de-dupe this game out of the lists (the featured card IS the game's entry now,
+// so it links through to the same /game detail the list cards do — see below).
+// Best STRONG LEAN ML by Kelly, falling back to best STRONG LEAN total. Filters
+// on a real directional lean: ml_tier can read "STRONG LEAN" while ml_lean is
+// "PASS" (P(+EV) gated the bet after the tier was set), and the lean can arrive
+// as a team abbr ("WSH") rather than "HOME"/"AWAY".
+const potdHasMlLean = (p: GameAnalysis) => !!p.ml_lean && p.ml_lean !== "PASS";
+const potdHasTotalLean = (p: GameAnalysis) => p.total_lean === "OVER" || p.total_lean === "UNDER";
+
+function selectPotd(picks: GameAnalysis[]): { pick: GameAnalysis; market: "ml" | "total" } | null {
+  const slMl = picks
+    .filter((p) => p.ml_tier === "STRONG LEAN" && potdHasMlLean(p))
+    .sort((a, b) => b.ml_kelly_fraction - a.ml_kelly_fraction)[0] ?? null;
+  if (slMl) return { pick: slMl, market: "ml" };
+  const slTotal = picks
+    .filter((p) => p.total_tier === "STRONG LEAN" && potdHasTotalLean(p))
+    .sort((a, b) => b.total_kelly_fraction - a.total_kelly_fraction)[0] ?? null;
+  if (slTotal) return { pick: slTotal, market: "total" };
+  return null;
+}
+
+function PickOfTheDay({ picks, date, unlocked, tracked, onTrack }: { picks: GameAnalysis[]; date: string; unlocked: boolean; tracked: boolean; onTrack: (ctx: TrackCtx) => void }) {
   const [copied, setCopied] = useState(false);
 
-  // Best STRONG LEAN ML by Kelly, fall back to best STRONG LEAN total.
-  // CRITICAL: filter on a real directional lean — the data layer can have
-  // ml_tier="STRONG LEAN" with ml_lean="PASS" when P(+EV) failed the action
-  // gate after the tier was computed. The lean can also arrive as a team
-  // abbreviation directly (e.g. "WSH") rather than "HOME"/"AWAY".
-  const hasMlLean = (p: GameAnalysis) =>
-    !!p.ml_lean && p.ml_lean !== "PASS";
-  const hasTotalLean = (p: GameAnalysis) =>
-    p.total_lean === "OVER" || p.total_lean === "UNDER";
-
-  const potd = (() => {
-    const slMl = picks
-      .filter((p) => p.ml_tier === "STRONG LEAN" && hasMlLean(p))
-      .sort((a, b) => b.ml_kelly_fraction - a.ml_kelly_fraction)[0] ?? null;
-    if (slMl) return { pick: slMl, market: "ml" as const };
-
-    const slTotal = picks
-      .filter((p) => p.total_tier === "STRONG LEAN" && hasTotalLean(p))
-      .sort((a, b) => b.total_kelly_fraction - a.total_kelly_fraction)[0] ?? null;
-    if (slTotal) return { pick: slTotal, market: "total" as const };
-
-    return null;
-  })();
-
+  const potd = selectPotd(picks);
   if (!potd) return null;
 
   const { pick, market } = potd;
@@ -328,20 +327,60 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
     });
   }
 
+  // Track the POTD's own market. De-dup removed this game's detailed list card,
+  // which is where you'd normally track it — so the featured card carries it.
+  function handleTrack(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isMl) {
+      if (!leanAbbr) return;
+      onTrack({
+        game_id: pick.game_id,
+        game_date: pick.game_date ?? date,
+        market: "moneyline",
+        selection: leanAbbr,
+        american_odds: pick.ml_american_odds,
+        tier: pick.ml_tier,
+        home_team_abbr: pick.home_team_abbr,
+        away_team_abbr: pick.away_team_abbr,
+      });
+    } else {
+      onTrack({
+        game_id: pick.game_id,
+        game_date: pick.game_date ?? date,
+        market: "total",
+        selection: pick.total_lean === "OVER" ? "OVER" : "UNDER",
+        american_odds: -110,
+        tier: pick.total_tier,
+        home_team_abbr: pick.home_team_abbr,
+        away_team_abbr: pick.away_team_abbr,
+        total_line: pick.total_line ?? null,
+        projected_total: pick.projected_total ?? null,
+      });
+    }
+  }
+
   return (
-    <Card
-      variant="strong-lean"
-      pad={false}
-      className="slab"
-      style={{
-        marginBottom: "var(--sp-6)",
-        overflow: "hidden",
-        // The featured pick is the page's dominant surface: the glow ring plus
-        // corner-bracket reticle (.slab) frame it as the headline readout.
-        "--slab-color": "var(--clay)",
-        boxShadow: "var(--glow-pos)",
-      } as React.CSSProperties}
+    <Link
+      href={`/game/${pick.game_id}?date=${pick.game_date ?? date}`}
+      aria-label={`Open ${pick.away_team_abbr} at ${pick.home_team_abbr} game detail`}
+      style={{ textDecoration: "none", display: "block", marginBottom: "var(--sp-6)" }}
     >
+      <Card
+        variant="strong-lean"
+        pad={false}
+        interactive
+        className="slab"
+        style={{
+          overflow: "hidden",
+          // The featured pick is the page's dominant surface: the glow ring plus
+          // corner-bracket reticle (.slab) frame it as the headline readout. The
+          // whole card links through to the game detail (team-stats comparison),
+          // same as every list card — it's the de-duped game's only entry now.
+          "--slab-color": "var(--clay)",
+          boxShadow: "var(--glow-pos)",
+        } as React.CSSProperties}
+      >
       {/* Label bar */}
       <div
         className="infield-divider"
@@ -378,16 +417,27 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
             Highest Kelly · Strong Lean
           </span>
         </div>
-        {unlocked && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
           <Button
-            variant={copied ? "track" : "ghost"}
-            active={copied}
+            variant="track"
+            active={tracked}
             size="sm"
-            onClick={handleCopy}
+            aria-pressed={tracked}
+            onClick={tracked ? (e) => { e.preventDefault(); e.stopPropagation(); } : handleTrack}
           >
-            {copied ? "Copied ✓" : "Copy Tweet"}
+            {tracked ? "Tracked ✓" : "Track"}
           </Button>
-        )}
+          {unlocked && (
+            <Button
+              variant={copied ? "track" : "ghost"}
+              active={copied}
+              size="sm"
+              onClick={handleCopy}
+            >
+              {copied ? "Copied ✓" : "Copy Tweet"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Card body */}
@@ -448,7 +498,8 @@ function PickOfTheDay({ picks, date, unlocked }: { picks: GameAnalysis[]; date: 
           ))}
         </div>
       </div>
-    </Card>
+      </Card>
+    </Link>
   );
 }
 
@@ -714,7 +765,15 @@ export default function PicksPage() {
   const isAction = (p: GameAnalysis) =>
     p.ml_tier === "STRONG LEAN" || p.ml_tier === "LEAN" ||
     p.total_tier === "STRONG LEAN" || p.total_tier === "LEAN";
-  const actionable = picks?.filter(isAction) ?? [];
+  // The Pick of the Day is featured above as its own card; de-dupe its game out
+  // of the Actionable list so it doesn't appear twice. The featured card links
+  // through to the game detail + carries its own Track button, so nothing is
+  // lost. actionableAll keeps the true count for the header stat.
+  const potd = picks ? selectPotd(picks) : null;
+  const potdId = potd?.pick.game_id ?? null;
+  const potdTracked = potd ? trackedIds.has(`${potdId}-${potd.market}`) : false;
+  const actionableAll = picks?.filter(isAction) ?? [];
+  const actionable = actionableAll.filter((p) => p.game_id !== potdId);
   const rest = picks?.filter((p) => !isAction(p)) ?? [];
 
   return (
@@ -736,7 +795,7 @@ export default function PicksPage() {
               ? <>
                   <span>{picks.length} games</span>
                   <span style={{ color: "var(--border-strong)" }}>·</span>
-                  <span style={{ color: actionable.length > 0 ? "var(--pos)" : "var(--text-2)" }}>{actionable.length} actionable</span>
+                  <span style={{ color: actionableAll.length > 0 ? "var(--pos)" : "var(--text-2)" }}>{actionableAll.length} actionable</span>
                   <span style={{ color: "var(--border-strong)" }}>·</span>
                   <span>Shin + Bayesian quant</span>
                   <span style={{ color: "var(--border-strong)" }}>·</span>
@@ -771,7 +830,7 @@ export default function PicksPage() {
       )}
 
       {picks && picks.length > 0 && (
-        <PickOfTheDay picks={picks} date={date} unlocked={unlocked} />
+        <PickOfTheDay picks={picks} date={date} unlocked={unlocked} tracked={potdTracked} onTrack={handleOpenTrack} />
       )}
 
       {actionable.length > 0 && (
@@ -792,7 +851,7 @@ export default function PicksPage() {
 
       {rest.length > 0 && (
         <div>
-          {actionable.length > 0 && (
+          {actionableAll.length > 0 && (
             <SectionHeader action={<span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>{rest.length}</span>}>
               ▸ Rest of slate
             </SectionHeader>
