@@ -201,15 +201,14 @@ function TotalBadge({
   return (
     <div
       style={{
-        // De-boxed: was a full bordered+rounded chip; now a divider row with a
-        // left tier accent + faint tint, so it highlights without another box.
+        // De-boxed divider row: a top hairline separates the total pick from the
+        // ML verdict above. No left side-stripe or tint — tier is carried by the
+        // colored OVER/UNDER label + the tier Badge (the no-side-stripe pattern
+        // used on every other card this cycle).
         marginTop: "var(--sp-3)",
         paddingTop: "var(--sp-3)",
         paddingBottom: "var(--sp-1)",
         borderTop: "1px solid var(--border-subtle)",
-        boxShadow: `inset 3px 0 0 ${tc}`,
-        paddingLeft: "var(--sp-3)",
-        background: "color-mix(in srgb, " + tc + " 5%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
