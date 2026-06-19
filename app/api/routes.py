@@ -22,6 +22,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -79,14 +80,25 @@ app = FastAPI(
 )
 
 
-def _warmup_today() -> None:
-    """Pre-warm the analysis cache for today's slate in the background.
+def _et_today() -> date:
+    """Today's date in America/New_York — the date the slate/picks pages fetch.
 
-    Runs once at startup in a daemon thread so the first real request is served
-    from cache instead of computing everything cold. Uses the same parallelism
-    as the slate endpoint (ThreadPoolExecutor, one session per thread).
+    Using the server's date() (UTC on most hosts) would warm the wrong day in
+    the evening: UTC rolls to tomorrow at ~8pm ET, exactly when most MLB games
+    are live, so the warmup would target an empty date.
     """
-    today = date.today()
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _warmup_today(target: Optional[date] = None) -> None:
+    """Pre-warm the analysis cache for a date's slate in the background.
+
+    Runs at startup and from GET /warm (the keep-warm cron) in a daemon thread
+    so the first real request is served from cache instead of computing cold.
+    Uses the same parallelism as the slate endpoint (ThreadPoolExecutor, one
+    session per thread).
+    """
+    today = target or _et_today()
     try:
         with SessionLocal() as db:
             from app.models.games import Game as GameModel
@@ -118,6 +130,27 @@ async def startup_warmup() -> None:
     """Kick off cache warmup in a daemon thread — doesn't block server start."""
     t = threading.Thread(target=_warmup_today, daemon=True, name="cache-warmup")
     t.start()
+
+
+@app.get("/warm", tags=["meta"])
+def warm() -> dict:
+    """Keep-warm + pre-warm endpoint for an external cron (cron-job.org / UptimeRobot).
+
+    Ping this every ~10 min and it does two things:
+      1. The request itself resets the host's idle timer, so a free-tier instance
+         never sleeps → real users skip the 30-50s cold start.
+      2. It pre-computes today's (ET) slate analysis into the cache, so the first
+         real user hits warm data.
+
+    Non-blocking: the warmup runs in a daemon thread and this returns immediately,
+    so the cron never times out (a slow response would defeat purpose 1). Public
+    and idempotent — no mutation, no sensitive data.
+    """
+    today = _et_today()
+    threading.Thread(
+        target=_warmup_today, kwargs={"target": today}, daemon=True, name="warm-endpoint"
+    ).start()
+    return {"status": "warming", "date": today.isoformat()}
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,7 +205,7 @@ async def add_timing_header(request: Request, call_next):
 async def add_cache_control(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path in ("/health", "/cache/clear", "/backtest"):
+    if path in ("/health", "/cache/clear", "/backtest", "/warm"):
         response.headers["Cache-Control"] = "no-store"
     elif path == "/model/constants":
         response.headers["Cache-Control"] = "public, max-age=3600"
