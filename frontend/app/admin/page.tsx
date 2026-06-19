@@ -138,7 +138,7 @@ export default function AdminPage() {
       >
         <h1
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--font-display-serif)",
             fontSize: "var(--fs-headline)",
             fontWeight: "var(--weight-display)",
             color: "var(--text)",

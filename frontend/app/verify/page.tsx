@@ -49,7 +49,7 @@ export default function VerifyPage() {
   return (
     <div>
       <div className="infield-divider" style={{ marginBottom: "22px", paddingBottom: "16px" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
+        <h1 style={{ fontFamily: "var(--font-display-serif)", fontWeight: "var(--weight-display)", fontSize: "22px", letterSpacing: "0", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
           Bet Verifier
         </h1>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "4px" }}>

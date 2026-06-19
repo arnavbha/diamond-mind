@@ -1205,10 +1205,10 @@ export default function ToolsPage() {
       >
         <h1
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--font-display-serif)",
             fontWeight: "var(--weight-display)",
             fontSize: "var(--fs-headline)",
-            letterSpacing: "var(--tracking-num)",
+            letterSpacing: "0",
             margin: 0,
             textTransform: "uppercase",
             color: "var(--text)",

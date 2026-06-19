@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Sans_Condensed } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Sans_Condensed, IBM_Plex_Serif } from "next/font/google";
 import { NavLinks } from "./nav";
 import { GlossaryButton } from "./glossary-button";
 import { ScoreTicker } from "@/components/score-ticker";
@@ -42,6 +42,17 @@ const plexCondensed = IBM_Plex_Sans_Condensed({
   variable: "--dm-font-condensed",
 });
 
+// Display SERIF for page titles + brand wordmark ONLY (never scoreboard numerals
+// or dense tables — those stay Condensed). This is the serif-vs-sans contrast
+// that carries editorial authority; kept in the Plex family so there's no new
+// licensing/loading surface. Weight 600/700 to match the display tier.
+const plexSerif = IBM_Plex_Serif({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  display: "swap",
+  variable: "--dm-font-display-serif",
+});
+
 export const metadata: Metadata = {
   title: "Diamond Mind",
   description: "MLB Intelligence System",
@@ -60,7 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${plexMono.variable} ${plexSans.variable} ${plexCondensed.variable}`}
+      className={`${plexMono.variable} ${plexSans.variable} ${plexCondensed.variable} ${plexSerif.variable}`}
     >
       <body
         style={{
@@ -75,6 +86,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           ["--font-scoreboard" as string]: "var(--dm-font-condensed), 'IBM Plex Sans Condensed', system-ui, sans-serif",
           ["--font-body" as string]: "var(--dm-font-body), 'IBM Plex Sans', system-ui, sans-serif",
           ["--font-condensed" as string]: "var(--dm-font-condensed), 'IBM Plex Sans Condensed', system-ui, sans-serif",
+          ["--font-display-serif" as string]: "var(--dm-font-display-serif), 'IBM Plex Serif', Georgia, serif",
           // Shell-height tokens so Chat (and anything else) can stop hard-coding
           // the nav(52) + ticker(36) offsets in magic calc() expressions.
           ["--nav-h" as string]: "52px",
@@ -101,7 +113,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           zIndex: "var(--z-nav)" as unknown as number,
         }}>
           {/* Brand lockup — now a Link home. The clay ◆ is the single identity
-              trim; the wordmark is condensed 700, uppercase, wide-tracked. */}
+              trim; the wordmark is serif 700, uppercase, wide-tracked. */}
           <Link
             href="/"
             className="app-nav-brand"
@@ -113,7 +125,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              fontFamily: "var(--font-display)",
+              fontFamily: "var(--font-display-serif)",
               fontWeight: 700,
               fontSize: "14px",
               color: "var(--text)",

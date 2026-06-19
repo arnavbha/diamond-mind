@@ -11,7 +11,7 @@ import React from "react";
  * bracket, here widened to a 48×3 clay tab (vs the 36×2 inline-section default)
  * so the top of the page reads as the heaviest legend mark on the screen.
  *
- *  - title    display font (IBM Plex Sans Condensed 700), up to 2rem, uppercase, --text.
+ *  - title    display serif (IBM Plex Serif 700), up to 2rem, uppercase, --text.
  *  - subtitle mono (--font-mono), --fs-meta, --text-2 (status / count / date line).
  *  - action   optional right-aligned slot (a button, a count chip, a control).
  */
@@ -48,7 +48,7 @@ export function PageHeader({
         <h1
           style={{
             margin: 0,
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--font-display-serif)",
             fontWeight: "var(--weight-display)",
             // Push past the shared --fs-headline (26px) toward the spec's 2rem
             // ceiling so the page title outranks every section header below it.

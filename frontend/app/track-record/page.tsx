@@ -790,8 +790,7 @@ export default function TrackRecordPage() {
       >
         <div>
           <h1
-            className="scoreboard-num"
-            style={{ fontSize: "var(--fs-headline)", margin: 0, color: "var(--text)", textTransform: "uppercase", lineHeight: "var(--lh-tight)" }}
+            style={{ fontFamily: "var(--font-display-serif)", fontWeight: "var(--weight-display)", fontSize: "var(--fs-headline)", margin: 0, color: "var(--text)", textTransform: "uppercase", lineHeight: "var(--lh-tight)", letterSpacing: "0" }}
           >
             Track Record
           </h1>
