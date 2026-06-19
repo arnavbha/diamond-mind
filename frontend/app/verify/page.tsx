@@ -49,7 +49,7 @@ export default function VerifyPage() {
   return (
     <div>
       <div className="infield-divider" style={{ marginBottom: "22px", paddingBottom: "16px" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: "var(--weight-display)", fontSize: "22px", letterSpacing: "-0.02em", margin: 0, textTransform: "uppercase", color: "var(--text)" }}>
           Bet Verifier
         </h1>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-2)", marginTop: "4px" }}>
@@ -76,7 +76,7 @@ export default function VerifyPage() {
           <div className="verdict-slab" style={{ "--slab-color": tc, marginBottom: "20px" } as React.CSSProperties}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: "20px", alignItems: "center" }}>
               <div>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: "32px", fontWeight: 800, color: tc, textTransform: "uppercase", lineHeight: 1 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "32px", fontWeight: "var(--weight-display)", color: tc, textTransform: "uppercase", lineHeight: 1 }}>
                   {q.recommendation}
                 </div>
                 <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-2)", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>

@@ -131,8 +131,9 @@
   --lh-tight:  1.05;
   --lh-data:   1.3;
   --lh-prose:  1.55;
-  --tracking-label: 0.11em;  /* ONE value for all uppercase labels — wider,
-                                more "instrument legend" than the prior 0.08 */
+  --tracking-label: 0.06em;  /* ONE value for all uppercase labels. Pulled back
+                                from 0.11em (too loose, esp. at 9–10px — wide
+                                tracking there hurt word-shape recognition). */
   --tracking-num:  -0.025em;
   --tracking-wide:  0.16em;  /* reticle legends / hero eyebrows */
   --weight-normal:   400;
@@ -178,7 +179,7 @@
   --glow-warn: 0 0 0 1px var(--warn);
 
   /* ── Z-index scale (fixes scanline painting over modals) ─── */
-  --z-base:    0;    /* scanline body::before lives here */
+  --z-base:    0;    /* base layer (was the scanline body::before, now removed) */
   --z-content: 1;
   --z-nav:     100;
   --z-overlay: 200;
@@ -222,24 +223,13 @@ body {
 }
 
 
-/* ── Scanline texture — the signature "instrument readout" grain ──────────
-   Refined to a tighter 3px pitch with a hair more presence, so panels read
-   like a CRT/sonar console face rather than flat divs. The SINGLE background
-   decoration layer (no DotGrid / dither / noise — those stay deleted). */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.05) 3px,
-    rgba(0,0,0,0.05) 3px
-  );
-  pointer-events: none;
-  z-index: var(--z-base);  /* below --z-nav so it never paints over modals/drawers */
-}
+/* Scanline texture removed (2026-06-19). The global CRT grain encoded nothing
+   and read as costume on a betting product — the design review (vs Anthropic /
+   DraftKings) flagged it as the #1 "not-serious" tell. The neutral body vignette
+   already carries depth; the instrument identity now lives in MEANINGFUL chrome
+   (the clay divider tick, the .slab hero brackets, the data gauges), not a
+   screen-door over the numbers. To restore a whisper of it, re-add a body::before
+   repeating-linear-gradient at rgba(0,0,0,0.02). */
 
 /* ── Motion tokens ─────────────────────────────── */
 :root {
@@ -589,15 +579,8 @@ body::before {
   background: radial-gradient(closest-side, transparent 74%, rgba(0,0,0,0.4) 75%, transparent 78%);
   pointer-events: none;
 }
-.gauge::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  box-shadow: 0 0 18px -3px var(--gauge-color);
-  opacity: 0.55;
-  pointer-events: none;
-}
+/* .gauge::after (colored glow halo) removed — slop tell #8. The conic fill +
+   centered % readout carry the gauge; the groove (::before) gives it form. */
 .duel {
   position: relative;
   height: 26px;
@@ -669,15 +652,9 @@ body::before {
     radial-gradient(140% 120% at 0% 0%, color-mix(in srgb, var(--slab-color) 9%, transparent), transparent 55%),
     var(--surface);
   border: 1px solid var(--slab-color);
-  box-shadow: inset 0 0 60px -22px var(--slab-color), 0 0 0 1px var(--slab-color), var(--shadow-md);
-}
-/* Top edge bar — the instrument's status strip. */
-.verdict-slab::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--slab-color), transparent);
+  /* De-layered: the colored border + subtle radial wash carry the tier; the
+     inset bloom + double-ring (slop #8) were dropped, leaving only depth. */
+  box-shadow: var(--shadow-md);
 }
 /* Corner reticle ticks (top-left + bottom-right) framing the readout. */
 .verdict-slab::after {

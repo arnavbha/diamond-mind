@@ -199,7 +199,7 @@ function TickerItem({ game }: { game: TickerGame }) {
         {showScore && (
           <span style={{
             fontFamily: "var(--font-display)",
-            fontWeight: 800,
+            fontWeight: "var(--weight-display)",
             fontSize: "11px",
             marginLeft: 4,
             color: awayWins ? "var(--text)" : "var(--text-2)",
@@ -221,7 +221,7 @@ function TickerItem({ game }: { game: TickerGame }) {
         {showScore && (
           <span style={{
             fontFamily: "var(--font-display)",
-            fontWeight: 800,
+            fontWeight: "var(--weight-display)",
             fontSize: "11px",
             marginLeft: 4,
             color: homeWins ? "var(--text)" : "var(--text-2)",

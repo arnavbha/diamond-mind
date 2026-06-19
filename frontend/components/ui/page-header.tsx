@@ -40,7 +40,7 @@ export function PageHeader({
         gap: "var(--sp-4)",
         flexWrap: "wrap",
         paddingBottom: "var(--sp-4)",
-        marginBottom: "var(--sp-5)",
+        marginBottom: "var(--sp-8)",
         ...style,
       }}
     >

@@ -130,7 +130,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <GlossaryButton />
         </nav>
         <ScoreTicker />
-        <main style={{ maxWidth: "1120px", margin: "0 auto", padding: "28px 24px", position: "relative", zIndex: "var(--z-content)" as unknown as number }}>
+        <main style={{ maxWidth: "1120px", margin: "0 auto", padding: "40px 24px", position: "relative", zIndex: "var(--z-content)" as unknown as number }}>
           {children}
         </main>
       </body>
