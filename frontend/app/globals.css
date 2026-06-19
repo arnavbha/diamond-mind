@@ -195,11 +195,12 @@
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 body {
-  /* Abyssal depth: a cold pool of light bleeds down from the waterline at top,
-     and the room darkens toward the deep at the bottom/edges. This is the ONE
-     full-page atmospheric gradient (cheap, static — not an effect-soup layer). */
+  /* Abyssal depth: a neutral vertical vignette, dark at the waterline lifting to
+     the deep at the edges. Pure tonal depth — no colored bloom. The decorative
+     green radial that used to glow at the top was an "aurora background" tell
+     (signal color bleeding into chrome for atmosphere, not meaning); removed so
+     green only ever appears where it MEANS edge / STRONG LEAN. */
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(43,140,61,0.05) 0%, transparent 42%),
     radial-gradient(140% 120% at 50% 0%, #0A0F15 0%, var(--bg) 55%, #03060A 100%);
   background-attachment: fixed;
   color: var(--text);

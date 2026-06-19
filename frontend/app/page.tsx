@@ -21,7 +21,7 @@ import {
   Loading,
   PageHeader,
 } from "@/components/ui";
-import { tierColor, heatColorFor, HOLD_COLOR } from "@/lib/visual-tokens";
+import { heatColorFor, HOLD_COLOR } from "@/lib/visual-tokens";
 
 function vulnColor(score: number): string {
   // Continuous vulnerability gauge — heat ramp (low=fresh→high=gassed).
@@ -46,7 +46,6 @@ function VulnBar({ abbr, bp }: { abbr: string; bp: BullpenData }) {
 function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false }: { game: SlateGame; index: number; onClick: () => void; trackedML?: boolean; trackedTotal?: boolean; hero?: boolean }) {
   const analysis: GameAnalysis | null = game.analysis;
   const hasTier = !!analysis && analysis.ml_tier !== "PASS" && analysis.ml_lean !== "PASS";
-  const tc = hasTier ? tierColor(analysis!.ml_tier) : "var(--border)";
   const leanAbbr = analysis?.ml_lean === "HOME" ? game.home_team_abbr
     : analysis?.ml_lean === "AWAY" ? game.away_team_abbr
     : (analysis?.ml_lean && analysis.ml_lean !== "PASS") ? analysis.ml_lean
@@ -64,19 +63,16 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
 
   // ── Hierarchy by emphasis ──────────────────────────────────────────────────
   // Only the single `hero` card (the slate's highest-conviction actionable pick,
-  // chosen in SlatePageInner) carries the full glow ring + corner-bracket slab.
-  // Every OTHER actionable card gets a quiet tier-colored left accent instead.
-  // Before this, ~all actionable cards glowed at once, so nothing read as the
-  // standout — the glow stopped meaning anything. One loud card, the rest quiet.
-  const variant = hero
-    ? (isStrong ? "strong-lean" : isLean ? "lean" : "default")
-    : "default";
-  const accentColor = isStrong ? "var(--pos)" : isLean ? "var(--lean)" : "var(--border)";
-  // hero STRONG → glow ring + 4px inset accent; hero LEAN → variant's glow ring.
-  // non-hero actionable → quiet 3px inset accent only (no ring). pass → nothing.
+  // chosen in SlatePageInner) carries a glow RING + corner-bracket slab. The ring
+  // frames the whole card to mark THE standout — functional emphasis, not a
+  // colored side-stripe. Every other row stays unstriped: tier is read from the
+  // TierBadge + the "X to win" line, and PASS rows recede via opacity. We don't
+  // paint a tier-colored left-accent on each actionable row — a column of colored
+  // side-tabs is a vibe-coded tell and contradicts the no-side-stripe rule the
+  // glow vocabulary already set (see .game-card-tier-* in globals.css).
   const composedShadow = hero
-    ? (isStrong ? "var(--glow-pos), inset 4px 0 0 var(--pos)" : undefined)
-    : (actionable ? `inset 3px 0 0 ${accentColor}` : undefined);
+    ? (isStrong ? "var(--glow-pos)" : isLean ? "var(--glow-lean)" : undefined)
+    : undefined;
   // Corner-bracket reticle is the "framed in the scope" hero marker — hero only.
   const showSlab = hero && actionable;
 

@@ -250,7 +250,7 @@ function TotalBadge({
           aria-pressed={isTracked}
           onClick={isTracked ? (e) => { e.preventDefault(); e.stopPropagation(); } : handleTrack}
         >
-          {isTracked ? "Tracked ✓" : "＋ Track"}
+          {isTracked ? "Tracked ✓" : "Track"}
         </Button>
       </div>
     </div>
@@ -480,16 +480,12 @@ function PickCard({
   // collapses behind a toggle so it doesn't bury the actual call.
   const [mathOpen, setMathOpen] = useState(false);
 
-  // Card chrome: the Pick of the Day hero (rendered above the list) is the
-  // page's single glowing standout. The list cards stay QUIET — a tier-colored
-  // left accent only, no glow ring — so a column of equally-glowing boxes
-  // doesn't drown out the hero. STRONG LEAN reads emerald, LEAN reads blue.
-  const variant = "default";
-  const accentShadow = pick.ml_tier === "STRONG LEAN"
-    ? "inset 3px 0 0 var(--pos)"
-    : pick.ml_tier === "LEAN"
-      ? "inset 3px 0 0 var(--lean)"
-      : undefined;
+  // Card chrome: the Pick of the Day hero (rendered above the list) is the page's
+  // single glowing standout. List cards stay QUIET and UNSTRIPED — the tier is
+  // read from the per-side SideTierBadge and the colored verdict headline, not a
+  // painted left-accent. A column of tier-colored side-tabs is a vibe-coded tell
+  // (and contradicts the no-side-stripe rule the glow vocabulary already set), so
+  // the cards carry no boxShadow accent at all.
 
   function handleMlTrack(e: React.MouseEvent) {
     e.preventDefault();
@@ -510,13 +506,12 @@ function PickCard({
   return (
     <Link href={`/game/${pick.game_id}?date=${pick.game_date ?? ""}`} style={{ textDecoration: "none" }}>
       <Card
-        variant={variant}
+        variant="default"
         pad={false}
         interactive
         className="fade-up"
         style={{
           "--delay": `${Math.min(index, 12) * 25}ms`,
-          ...(accentShadow ? { boxShadow: accentShadow } : {}),
         } as React.CSSProperties}
       >
         <div style={{ padding: "var(--sp-3) var(--sp-4)" }}>
@@ -569,7 +564,7 @@ function PickCard({
                       aria-pressed={mlTracked}
                       onClick={mlTracked ? (e) => { e.preventDefault(); e.stopPropagation(); } : handleMlTrack}
                     >
-                      {mlTracked ? "Tracked ✓" : "＋ Track"}
+                      {mlTracked ? "Tracked ✓" : "Track"}
                     </Button>
                   </div>
                   <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-body)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>
