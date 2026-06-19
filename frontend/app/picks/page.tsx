@@ -475,6 +475,11 @@ function PickCard({
   const totalTrackKey = `${pick.game_id}-total`;
   const mlTracked = trackedIds.has(mlTrackKey);
 
+  // Decision-first: the verdict (pick · price · edge · gauge · stake button)
+  // stays visible; the deep quant — bankroll growth + devig engine + factors —
+  // collapses behind a toggle so it doesn't bury the actual call.
+  const [mathOpen, setMathOpen] = useState(false);
+
   // Card chrome: the Pick of the Day hero (rendered above the list) is the
   // page's single glowing standout. The list cards stay QUIET — a tier-colored
   // left accent only, no glow ring — so a column of equally-glowing boxes
@@ -611,39 +616,54 @@ function PickCard({
           />
         </div>
 
-        {/* ── Quant panel — a divided sub-section of THIS card, reads second.
-            Was a sunken well (its own inset bg + radii); flattened to a plain
-            top-divider section so the card isn't a box-inside-a-box. ── */}
-        <div
-          style={{
-            padding: "var(--sp-3) var(--sp-4)",
-            borderTop: "1px solid var(--border)",
-          }}
-        >
-          <SectionHeader
-            divider={false}
-            style={{ marginBottom: "var(--sp-2)" }}
-            action={<ExplainTooltip term="uncertainty-kelly" />}
+        {/* ── Quant panel — collapsed by default so the verdict above leads.
+            Expand for bankroll math + devig engine + key factors. ── */}
+        <div style={{ borderTop: "1px solid var(--border)" }}>
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMathOpen((v) => !v); }}
+            aria-expanded={mathOpen}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              cursor: "pointer",
+              background: "transparent",
+              border: "none",
+              padding: "var(--sp-2) var(--sp-4)",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--sp-2)",
+              fontFamily: "var(--font-body)",
+              fontSize: "var(--fs-meta)",
+              fontWeight: "var(--weight-semibold)",
+              color: "var(--text-2)",
+            }}
           >
-            Bankroll math
-          </SectionHeader>
+            <span style={{ color: "var(--text-muted)", width: "10px" }}>{mathOpen ? "▾" : "▸"}</span>
+            Bankroll math &amp; devig engine
+            <span style={{ marginLeft: "auto" }}><ExplainTooltip term="uncertainty-kelly" /></span>
+          </button>
 
-          <GrowthReadout a={pick} />
+          {mathOpen && (
+            <div style={{ padding: "0 var(--sp-4) var(--sp-3)" }}>
+              <GrowthReadout a={pick} />
 
-          {isMlAction && (
-            <div style={{ marginTop: "var(--sp-3)" }}>
-              <MethodCompare a={pick} />
-            </div>
-          )}
+              {isMlAction && (
+                <div style={{ marginTop: "var(--sp-3)" }}>
+                  <MethodCompare a={pick} />
+                </div>
+              )}
 
-          {pick.key_factors.length > 0 && (
-            <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-2)", borderTop: "1px solid var(--border-subtle)" }}>
-              {pick.key_factors.slice(0, 2).map((f, i) => (
-                <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginBottom: "var(--sp-1)", paddingLeft: "var(--sp-2)", borderLeft: "1px solid var(--border)", lineHeight: "var(--lh-data)" }}>{f}</div>
-              ))}
-              {pick.cautions.slice(0, 1).map((c, i) => (
-                <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--warn)", marginTop: "var(--sp-1)", paddingLeft: "var(--sp-2)", borderLeft: "1px solid var(--warn)", lineHeight: "var(--lh-data)" }}>{c}</div>
-              ))}
+              {pick.key_factors.length > 0 && (
+                <div style={{ marginTop: "var(--sp-3)", paddingTop: "var(--sp-2)", borderTop: "1px solid var(--border-subtle)" }}>
+                  {pick.key_factors.slice(0, 2).map((f, i) => (
+                    <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginBottom: "var(--sp-1)", paddingLeft: "var(--sp-2)", borderLeft: "1px solid var(--border)", lineHeight: "var(--lh-data)" }}>{f}</div>
+                  ))}
+                  {pick.cautions.slice(0, 1).map((c, i) => (
+                    <div key={i} style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--warn)", marginTop: "var(--sp-1)", paddingLeft: "var(--sp-2)", borderLeft: "1px solid var(--warn)", lineHeight: "var(--lh-data)" }}>{c}</div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

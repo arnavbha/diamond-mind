@@ -1129,6 +1129,14 @@ body::before {
 .data-table-row:hover { background: var(--surface-2); }
 .data-table-row:hover { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--surface-3) 22%, transparent); }
 
+/* ── Slate board rows ─────────────────────────────
+ * The slate is one bordered board; each game is a flat row with a bottom
+ * hairline. No per-row box. Hover wash for feedback; last row drops its divider
+ * so it doesn't double up with the board's own bottom border. */
+.slate-row { transition: background var(--motion-quick) var(--ease-out); }
+.slate-row:hover { background: var(--surface-2); }
+.slate-board > .slate-row:last-child { border-bottom: none !important; }
+
 /* ── Responsive grids ─────────────────────────────
  * The codebase was written desktop-first with inline CSS-in-JS grids.
  * These classes give us a deterministic mobile breakpoint without touching

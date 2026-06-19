@@ -81,16 +81,16 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
   const showSlab = hero && actionable;
 
   return (
-    <Card
-      as="button"
-      interactive
-      variant={variant}
+    <button
+      type="button"
       onClick={onClick}
-      className={`fade-up infield-divider slate-card${showSlab ? " slab" : ""}`}
+      className={`fade-up slate-row${showSlab ? " slab" : ""}`}
       style={{
         "--delay": `${delay}ms`,
-        "--clay": hasTier ? tc : "var(--border)",
         "--slab-color": "var(--clay)",
+        // Flat row in the shared board (no per-card box): transparent bg, no
+        // border/radius — just a bottom hairline divider. Tier still marked by
+        // the inset-left accent (composedShadow); hero keeps its glow.
         ...(composedShadow ? { boxShadow: composedShadow } : {}),
         width: "100%",
         textAlign: "left",
@@ -98,8 +98,12 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
         display: "flex",
         flexDirection: "column",
         gap: 0,
-        // PASS games recede further than before (was 0.62) so the actionable
-        // slate floats clearly above the noise.
+        background: "transparent",
+        border: "none",
+        borderBottom: "1px solid var(--border)",
+        padding: "var(--sp-3) var(--sp-4)",
+        color: "var(--text)",
+        // PASS games recede so the actionable slate floats above the noise.
         opacity: isPass ? 0.55 : 1,
       } as React.CSSProperties}
     >
@@ -207,13 +211,10 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
         </div>
       </div>
 
-      {/* Live monitoring — watchlist only (LEAN / STRONG LEAN). PASS games show nothing.
-          Delegates all alert markup + freshness/stale styling to the shared component. */}
-      {hasTier && <LiveAlert live={game.live ?? null} />}
-
-      {/* Live odds — inside the card */}
-      <LiveOddsRow game={game} />
-    </Card>
+      {/* Odds / fair value / line movement + live alerts now live in the detail
+          drawer (click the row) — keeping them off the board row is what makes
+          the slate a dense board instead of a stack of tall boxes. */}
+    </button>
   );
 }
 
@@ -598,19 +599,21 @@ function SlatePageInner() {
         <EmptyState title={`No games for ${date}.`} detail="Try another date with the stepper above." />
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
-        {sortedGames?.map((g, i) => (
-          <GameCard
-            key={g.game_id}
-            game={g}
-            index={i}
-            hero={g.game_id === heroId}
-            onClick={() => openSidebar(g.game_id, g.game_date)}
-            trackedML={trackedKeys.has(`${g.game_id}-moneyline`)}
-            trackedTotal={trackedKeys.has(`${g.game_id}-total`)}
-          />
-        ))}
-      </div>
+      {/* One bordered board; each game is a flat row with a hairline divider —
+          not nine separate boxes. Click a row to open the detail drawer. */}
+      {sortedGames && sortedGames.length > 0 && (
+        <div className="slate-board" style={{ border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+          {sortedGames.map((g, i) => (
+            <GameCard
+              key={g.game_id}
+              game={g}
+              index={i}
+              hero={g.game_id === heroId}
+              onClick={() => openSidebar(g.game_id, g.game_date)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Game detail drawer — focus-trapped Dialog (full-screen sheet on mobile) */}
       <Dialog

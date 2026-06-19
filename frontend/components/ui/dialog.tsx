@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback, useId } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Dialog / Drawer — accessible modal: role=dialog + aria-modal + focus trap +
@@ -97,7 +98,7 @@ export function Dialog({
 
   const isDrawer = variant === "drawer";
 
-  return (
+  const overlay = (
     <div
       style={{
         position: "fixed",
@@ -200,4 +201,10 @@ export function Dialog({
       </div>
     </div>
   );
+
+  // Portal to <body> so the overlay escapes <main>'s stacking context (main has
+  // position:relative + z-index:1, which trapped the drawer below the sticky
+  // ticker z99 / nav z100 despite its z300). `open` is only ever true after a
+  // client interaction, so document is defined here — no mount-state needed.
+  return typeof document !== "undefined" ? createPortal(overlay, document.body) : null;
 }
