@@ -201,11 +201,15 @@ function TotalBadge({
   return (
     <div
       style={{
+        // De-boxed: was a full bordered+rounded chip; now a divider row with a
+        // left tier accent + faint tint, so it highlights without another box.
         marginTop: "var(--sp-3)",
-        padding: "var(--sp-2) var(--sp-3)",
-        border: `1px solid ${tc}`,
-        borderRadius: "var(--r-sm)",
-        background: "color-mix(in srgb, " + tc + " 6%, transparent)",
+        paddingTop: "var(--sp-3)",
+        paddingBottom: "var(--sp-1)",
+        borderTop: "1px solid var(--border-subtle)",
+        boxShadow: `inset 3px 0 0 ${tc}`,
+        paddingLeft: "var(--sp-3)",
+        background: "color-mix(in srgb, " + tc + " 5%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -607,14 +611,13 @@ function PickCard({
           />
         </div>
 
-        {/* ── Quant panel — recessed well sub-section, reads second ── */}
+        {/* ── Quant panel — a divided sub-section of THIS card, reads second.
+            Was a sunken well (its own inset bg + radii); flattened to a plain
+            top-divider section so the card isn't a box-inside-a-box. ── */}
         <div
           style={{
             padding: "var(--sp-3) var(--sp-4)",
             borderTop: "1px solid var(--border)",
-            background: "var(--surface-inset)",
-            borderBottomLeftRadius: "var(--r-md)",
-            borderBottomRightRadius: "var(--r-md)",
           }}
         >
           <SectionHeader

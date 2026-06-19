@@ -719,14 +719,14 @@ body::before {
   background: var(--text);
   box-shadow: 0 0 6px var(--text);
 }
+/* Borderless stat cell (was a sunken box). These sit four-up inside already-
+   bordered readout sections, so their own box made it boxes-in-a-box; now they
+   read as columns separated by the grid gap. Numbers stay tabular mono via .v.num. */
 .hud-chip {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 9px 11px;
-  background: var(--surface-inset);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  gap: 2px;
+  padding: 0;
   min-width: 0;
 }
 .hud-chip .k {
@@ -789,9 +789,8 @@ body::before {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: stretch;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r-md);
-  overflow: hidden;
+  /* No outer box — the center .vs-spine divider + the quant column's green tint
+     carry the naive-vs-quant split without another bordered container. */
 }
 .vs-col { padding: 14px 16px; }
 .vs-col.naive  { background: var(--surface); }
