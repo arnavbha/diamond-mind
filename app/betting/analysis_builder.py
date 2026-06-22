@@ -210,6 +210,7 @@ def _latest_ml_odds_for_abbr(
     game_id: int,
     target_abbr: Optional[str],
     preferred_bookmaker: Optional[str],
+    before_utc: "Optional[datetime]" = None,
 ) -> Optional[int]:
     """Most-recent captured moneyline american price for `target_abbr`, or None.
 
@@ -231,6 +232,7 @@ def _latest_ml_odds_for_abbr(
     from sqlalchemy import desc as _desc
     from app.models.odds import OddsSnapshotRow
     from app.chat.classifier import TEAM_NAMES, ALL_ABBRS, ABBR_NORM
+    from app.betting.clv import _to_utc
 
     target = ABBR_NORM.get(target_abbr, target_abbr)
 
@@ -256,6 +258,12 @@ def _latest_ml_odds_for_abbr(
 
     def _scan(rows) -> Optional[int]:
         for row in rows:
+            # Anti-lookahead: drop snapshots at/after first pitch — an in-game or
+            # post-game price already encodes the result.
+            if before_utc is not None:
+                cap = _to_utc(row.captured_at)
+                if cap is None or cap >= before_utc:
+                    continue
             abbr = _resolve_to_abbr(row.selection)
             if abbr is None:
                 continue
@@ -511,26 +519,49 @@ def build_game_analysis(game_id: int, as_of: date, db: Session):
     _home_abbr = _team_abbr(home_id)
     _away_abbr = _team_abbr(away_id)
 
+    # Anti-lookahead odds gate: only use snapshots captured strictly BEFORE first
+    # pitch. Otherwise the "latest snapshot" can be an in-game/post-game price that
+    # already encodes the result (in-game ML collapses toward the leader), leaking
+    # the outcome into edge/tier/Kelly AND, in backtest, the payout. Mirrors
+    # clv.py's strict `captured_at < start_utc`. Null game_time (rare) -> no gate;
+    # live pregame snapshots are pre-pitch anyway.
+    from app.betting.clv import _to_utc as _to_utc_gate
+    _first_pitch_utc = _to_utc_gate(game.game_time_utc)
+
     def _get_ml_odds(side: str) -> Optional[int]:
         target = _home_abbr if side == "home" else _away_abbr
-        return _latest_ml_odds_for_abbr(db, game_id, target, _preferred)
+        return _latest_ml_odds_for_abbr(db, game_id, target, _preferred, before_utc=_first_pitch_utc)
 
     def _get_total_odds(selection: str) -> tuple[Optional[float], Optional[int]]:
-        """Return (line, american_odds) for the given total selection ('over'/'under')."""
+        """Return (line, american_odds) for the given total selection ('over'/'under').
+
+        Anti-lookahead: skips snapshots at/after first pitch (see _first_pitch_utc
+        above) so a post-pitch total can't leak the result.
+        """
         base_where = [
             OddsSnapshotRow.game_id == game_id,
             OddsSnapshotRow.market == "total",
             OddsSnapshotRow.selection == selection,
         ]
-        row = db.execute(
+        def _first_pre_pitch(rows):
+            for r in rows:
+                if _first_pitch_utc is not None:
+                    cap = _to_utc_gate(r.captured_at)
+                    if cap is None or cap >= _first_pitch_utc:
+                        continue
+                return r
+            return None
+        rows = db.execute(
             select(OddsSnapshotRow).where(*base_where, OddsSnapshotRow.bookmaker == _preferred)
-            .order_by(_desc(OddsSnapshotRow.captured_at)).limit(1)
-        ).scalar_one_or_none()
+            .order_by(_desc(OddsSnapshotRow.captured_at))
+        ).scalars().all()
+        row = _first_pre_pitch(rows)
         if row is None:
-            row = db.execute(
+            rows = db.execute(
                 select(OddsSnapshotRow).where(*base_where)
-                .order_by(_desc(OddsSnapshotRow.captured_at)).limit(1)
-            ).scalar_one_or_none()
+                .order_by(_desc(OddsSnapshotRow.captured_at))
+            ).scalars().all()
+            row = _first_pre_pitch(rows)
         return (row.line, row.american_odds) if row else (None, None)
 
     _total_line, _over_odds = _get_total_odds("over")
