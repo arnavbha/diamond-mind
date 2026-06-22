@@ -37,6 +37,7 @@ from app.database import SessionLocal
 from app.models.games import Game
 from app.models.tracker import BetRecord, compute_units_returned
 from app.models.entities import Team
+from app.betting.clv import apply_clv_to_bet, compute_clv_for_bet
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -177,6 +178,13 @@ def settle_range(
         if not dry_run:
             bet.result = result
             bet.units_returned = units_returned
+            # CLV is final once first pitch passes; capture it in the same pass so
+            # the manual script matches the /admin/run-settlement endpoint (which
+            # already wires this). Best-effort — never let CLV break settlement.
+            try:
+                apply_clv_to_bet(bet, compute_clv_for_bet(db, bet, game))
+            except Exception as exc:  # noqa: BLE001
+                print(f"    clv compute failed for bet #{bet.id}: {exc}")
             settled += 1
 
     if not dry_run:
