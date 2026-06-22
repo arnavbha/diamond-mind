@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import aliased
@@ -159,6 +160,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compress JSON responses over the wire. The slate/picks/batting payloads are
+# sizable and highly compressible; gzip typically cuts them 60-80%. minimum_size
+# skips tiny bodies where the gzip header would cost more than it saves.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # ---------------------------------------------------------------------------
 # Analysis result cache  (game_id, as_of_date) → (result_dict, expires_at)

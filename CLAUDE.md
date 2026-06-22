@@ -1,17 +1,11 @@
 # diamond-mind — agent bootstrap
 
-You are an AI agent (Claude, or otherwise) working on **diamond-mind**, an AI-native baseball intelligence system. Two humans collaborate on this repo: **Arnav** (Track A — data platform) and **Jack** (Track B — analysis & output). Each has their own agent. This file tells your agent how to get oriented at the start of every session.
+You are an AI agent (Claude, or otherwise) working on **diamond-mind**, an AI-native baseball intelligence system. **Arnav** owns this repo and drives all the work. You own the entire codebase — data platform, analysis, betting, reports, frontend — end to end. There is no second track to coordinate with or wait on. This file tells your agent how to get oriented at the start of every session.
 
 ## Read these in order before doing anything
 
 1. **`docs/PROJECT_BRIEF.md`** — the full project vision, MVP scope, build phases, formulas (bullpen fatigue, vulnerability, betting math), data contracts, and behavior rules. This is the source of truth for *what* we're building and *how*.
-2. **`docs/collab/README.md`** — collaboration protocol. How the two tracks coordinate via markdown.
-3. **Your track file:**
-   - If you're working for Arnav → `docs/collab/tracks/track-a-data.md`
-   - If you're working for Jack → `docs/collab/tracks/track-b-analysis.md`
-4. **`docs/collab/interfaces/`** — every file. These are contracts between the tracks. Re-read on every session; they evolve.
-5. **`docs/collab/handoffs/`** — newest files first. Anything addressed to your track that you haven't acted on yet.
-6. **`docs/collab/decisions/`** — durable cross-cutting decisions (tooling, schema choices, naming). Skim once; don't relitigate.
+2. **`docs/collab/decisions/`** — durable cross-cutting decisions (tooling, schema choices, naming). Skim once; don't relitigate. The rest of `docs/collab/` (tracks, interfaces, handoffs) is legacy from an earlier two-person split — treat it as historical reference, not as gating coordination. Don't block on it.
 
 ## Hard rules (from PROJECT_BRIEF.md, surfaced here so you can't miss them)
 
@@ -19,15 +13,12 @@ You are an AI agent (Claude, or otherwise) working on **diamond-mind**, an AI-na
 - **Deterministic logic first, LLM second.** The LLM interprets and writes; it never invents stats or replaces computed features.
 - **No fake data.** If an API key is missing, stub the client and document it. Never fabricate values to make a report look complete.
 - **Betting language: verification, not picks.** Use "Strong Lean / Lean / Pass / Avoid / Need More Info". Never "lock", "guaranteed", "hammer", "free money", "must bet".
-- **Stay in your track.** Don't edit files outside your track's scope without a handoff. Track A owns `app/ingestion/`, `app/models/`, `app/features/recent_form.py`. Track B owns `app/betting/`, `app/features/bullpen_*.py`, `app/reports/`, `app/obsidian/`.
-- **Interfaces require PR review from the other track.** If you need to change `docs/collab/interfaces/*`, that's a separate PR, tagged for the other side.
+- **The whole codebase is yours.** `app/ingestion/`, `app/models/`, `app/features/`, `app/betting/`, `app/reports/`, `app/obsidian/`, and `frontend/` — edit any of it directly when the work calls for it. No track scoping, no handoffs, no waiting on another agent.
 
 ## What to do when you finish a unit of work
 
-1. Update your track file's status checklist.
-2. If another track depends on what you just shipped, write a handoff: `docs/collab/handoffs/YYYY-MM-DD-short-slug.md`.
-3. Run tests. Report what passes and what's stubbed.
-4. Don't push or merge without the human asking.
+1. Run tests. Report what passes and what's stubbed.
+2. Don't push or merge without the human asking.
 
 ## Commit style
 

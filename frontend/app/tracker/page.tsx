@@ -481,22 +481,34 @@ export default function TrackerPage() {
 
   async function handleSettle(id: number, result: "WIN" | "LOSS" | "PUSH") {
     setSettleError(null);
+    // Optimistic: flip the row's result immediately so the click feels instant.
+    // Snapshot the prior bets so we can roll back if the API rejects the write.
+    // units_returned stays as-is until the server's computed value comes back.
+    const snapshot = bets;
+    setBets((prev) => prev?.map((b) => b.id === id ? { ...b, result } : b) ?? null);
     const updated = await api.trackerSettleBet(id, result);
     if (updated) {
       setBets((prev) => prev?.map((b) => b.id === id ? updated : b) ?? null);
       const s = await api.trackerSummary();
       if (s) setSummary(s);
     } else {
+      setBets(snapshot); // roll back the optimistic flip
       setSettleError(`Failed to settle bet #${id} — check admin token and API status.`);
     }
   }
 
   async function handleDelete(id: number) {
+    setSettleError(null);
+    // Optimistic: drop the row immediately, restore it if the delete fails.
+    const snapshot = bets;
+    setBets((prev) => prev?.filter((b) => b.id !== id) ?? null);
     const ok = await api.trackerDeleteBet(id);
     if (ok) {
-      setBets((prev) => prev?.filter((b) => b.id !== id) ?? null);
       const s = await api.trackerSummary();
       if (s) setSummary(s);
+    } else {
+      setBets(snapshot); // restore the row
+      setSettleError(`Failed to delete bet #${id} — check admin token and API status.`);
     }
   }
 
