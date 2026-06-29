@@ -55,8 +55,10 @@ function vulnColor(score: number) {
 
 function BullpenCard({ abbr, bp }: { abbr: string; bp: NonNullable<GameContext["home_bullpen"]> }) {
   const vc = vulnColor(bp.vulnerability_score);
+  // Near-flat: no card box. The vulnerability heat color survives as a top
+  // accent rule so the at-a-glance fresh→gassed signal is preserved.
   return (
-    <Card style={{ borderTop: `2px solid ${vc}` }}>
+    <div style={{ borderTop: `2px solid ${vc}`, paddingTop: "var(--sp-3)" }}>
       <Label>{abbr} Bullpen</Label>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-3)", marginBottom: "var(--sp-3)" }}>
         <div>
@@ -99,7 +101,7 @@ function BullpenCard({ abbr, bp }: { abbr: string; bp: NonNullable<GameContext["
       <div style={{ marginTop: "var(--sp-3)", fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", fontStyle: "italic", lineHeight: "var(--lh-prose)" }}>
         {bp.betting_implication}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -108,7 +110,7 @@ function StarterCard({ abbr, starter }: { abbr: string; starter: NonNullable<Gam
     ? starter.fip <= 3.20 ? "var(--pos)" : starter.fip >= 4.50 ? "var(--neg)" : "var(--text)"
     : "var(--text)";
   return (
-    <Card>
+    <div>
       <Label>{abbr} Starting Pitcher</Label>
       {starter ? (
         <>
@@ -147,7 +149,7 @@ function StarterCard({ abbr, starter }: { abbr: string; starter: NonNullable<Gam
       ) : (
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-muted)" }}>Starter not yet announced</div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -165,17 +167,17 @@ function windEffect(speedMph: number, deg: number): string {
 
 function WeatherCard({ w }: { w: WeatherData }) {
   if (w.is_dome) return (
-    <Card>
+    <div>
       <Label>Conditions</Label>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-2)" }}>Indoor venue — weather not a factor.</div>
-    </Card>
+    </div>
   );
   const tempNote = w.temperature_f != null
     ? w.temperature_f >= 85 ? " (hot)" : w.temperature_f <= 50 ? " (cold)" : "" : "";
   const windNote = w.wind_speed_mph != null && w.wind_direction_deg != null && w.wind_speed_mph >= 6
     ? windEffect(w.wind_speed_mph, w.wind_direction_deg) : null;
   return (
-    <Card>
+    <div>
       <Label>Conditions</Label>
       <StatRow label={`Temp${tempNote}`} value={w.temperature_f != null ? `${w.temperature_f}°F` : null} />
       {w.wind_speed_mph != null && (
@@ -185,7 +187,7 @@ function WeatherCard({ w }: { w: WeatherData }) {
         />
       )}
       <StatRow label="Precip chance" value={w.precipitation_chance != null ? `${w.precipitation_chance}%` : null} />
-    </Card>
+    </div>
   );
 }
 
@@ -230,7 +232,7 @@ function TeamStatsCard({ homeAbbr, awayAbbr, homeForm, awayForm, homeBatting, aw
   const af = awayForm as FormWindow | null;
   if (!hf && !af) return null;
   return (
-    <Card>
+    <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr", marginBottom: "var(--sp-3)" }}>
         <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-data)", color: "var(--text)", textAlign: "right", letterSpacing: "-0.01em" }}>{homeAbbr}</div>
         <div style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--weight-bold)", letterSpacing: "var(--tracking-label)", color: "var(--text-2)", textTransform: "uppercase", textAlign: "center", paddingTop: "var(--sp-1)" }}>L10</div>
@@ -258,7 +260,7 @@ function TeamStatsCard({ homeAbbr, awayAbbr, homeForm, awayForm, homeBatting, aw
           <span className="num" style={{ fontSize: "var(--fs-meta)", color: "var(--text-2)", textAlign: "left" }}>{af?.trend_label?.replace(/_/g, " ") ?? "—"}</span>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -585,7 +587,7 @@ function BoostEvWidget({ fv }: { fv: FairValueResult }) {
   });
 
   return (
-    <Card>
+    <div>
       <Label>Profit-Boost EV</Label>
       <div style={{ fontFamily: "var(--font-body)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginBottom: "var(--sp-3)", lineHeight: "var(--lh-prose)" }}>
         A profit boost lifts your winnings only (never the stake). Enter a boost % and a fair
@@ -639,7 +641,7 @@ function BoostEvWidget({ fv }: { fv: FairValueResult }) {
           <StatRow label="Boosted payout / $1" value={result.boosted_payout_per_unit.toFixed(3)} />
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -794,10 +796,10 @@ function MovementPanel({ fv }: { fv: FairValueResult }) {
         and whether it went toward or away from the model&apos;s leaned side. This is single-book
         line movement, not a cross-book market read; the price delta is for context only.
       </div>
-      <Card>
+      <div>
         <MovementMarketRow label="Moneyline" m={mlMove} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
         <MovementMarketRow label={`Total${totLine != null ? ` (${totLine})` : ""}`} m={totMove} homeAbbr={homeAbbr} awayAbbr={awayAbbr} />
-      </Card>
+      </div>
     </div>
   );
 }
@@ -828,11 +830,11 @@ function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
       </div>
 
       {!hasAnyOffered ? (
-        <Card style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-muted)" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", color: "var(--text-muted)" }}>
           No two-sided price captured for this game — fair value not available.
-        </Card>
+        </div>
       ) : (
-        <Card style={{ marginBottom: "var(--sp-3)" }}>
+        <div style={{ marginBottom: "var(--sp-3)" }}>
           <FairMarketRow
             label="Moneyline"
             offered={ml.offered ? { aTag: fv.away_team_abbr ?? "AWAY", a: ml.offered.away, bTag: fv.home_team_abbr ?? "HOME", b: ml.offered.home } : null}
@@ -853,7 +855,7 @@ function BeatTheBookPanel({ fv }: { fv: FairValueResult }) {
               vs no-vig <span className="num" style={{ color: "var(--text)", fontWeight: "var(--weight-semibold)" }}>{(modelVsMarket.market * 100).toFixed(1)}%</span>
             </div>
           )}
-        </Card>
+        </div>
       )}
 
       <BoostEvWidget fv={fv} />
@@ -1026,7 +1028,7 @@ export function GameDetailPanel({ gameId, date }: { gameId: number; date: string
         {fairLoading ? (
           <div style={{ marginBottom: "var(--sp-6)" }}>
             <SectionHeader>Beat the Book — fair value &amp; vig</SectionHeader>
-            <Card><SkeletonText lines={4} /></Card>
+            <SkeletonText lines={4} />
           </div>
         ) : fairValue ? (
           <>
