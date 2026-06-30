@@ -172,7 +172,7 @@ function TickerItem({ game }: { game: TickerGame }) {
       display: "inline-flex",
       alignItems: "center",
       gap: 5,
-      padding: "0 14px",
+      padding: "0 10px",
       whiteSpace: "nowrap",
     }}>
       {/* Live pulse dot */}
@@ -276,6 +276,17 @@ export function ScoreTicker() {
   const [scrolling, setScrolling] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [hidden, setHidden] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("dm-ticker-hidden") === "true";
+  });
+
+  function toggleHidden() {
+    const next = !hidden;
+    setHidden(next);
+    localStorage.setItem("dm-ticker-hidden", String(next));
+  }
+
   useEffect(() => {
     let active = true;
     // Async fetch — setState only runs after the await resolves (and only while
@@ -314,6 +325,25 @@ export function ScoreTicker() {
 
   // Don't render on server (uses ET date + fetch)
   if (!mounted || games.length === 0) return null;
+
+  // Collapsed state — show a 3px clay strip that expands on click
+  if (hidden) {
+    return (
+      <div
+        onClick={toggleHidden}
+        title="Show score ticker"
+        style={{
+          width: "100%",
+          height: "3px",
+          background: "var(--clay)",
+          cursor: "pointer",
+          position: "sticky",
+          top: "var(--nav-h)",
+          zIndex: 99,
+        }}
+      />
+    );
+  }
 
   // Speed: ~80px per second. Estimate item width at ~130px each.
   const totalPx = games.length * 130;
@@ -363,7 +393,7 @@ export function ScoreTicker() {
           animation: `scoreTicker ${durationSec}s linear infinite`,
           willChange: "transform",
           fontFamily: "var(--font-mono)",
-          fontSize: "var(--fs-body)",
+          fontSize: "var(--fs-meta)",
           letterSpacing: "0.02em",
         }}>
           {/* First copy */}
@@ -384,13 +414,34 @@ export function ScoreTicker() {
           alignItems: "center",
           whiteSpace: "nowrap",
           fontFamily: "var(--font-mono)",
-          fontSize: "var(--fs-body)",
+          fontSize: "var(--fs-meta)",
           letterSpacing: "0.02em",
         }}>
           {items}
           <Dot />
         </div>
       )}
+      {/* Collapse button — right edge of the ticker strip */}
+      <button
+        onClick={toggleHidden}
+        title="Hide ticker"
+        style={{
+          position: "absolute",
+          right: 0,
+          top: 0,
+          bottom: 0,
+          background: "var(--surface-2)",
+          border: "none",
+          borderLeft: "1px solid var(--border)",
+          color: "var(--text-3)",
+          fontSize: "9px",
+          padding: "0 6px",
+          cursor: "pointer",
+          fontFamily: "var(--font-mono)",
+        }}
+      >
+        ✕
+      </button>
     </div>
   );
 }

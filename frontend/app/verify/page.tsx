@@ -67,7 +67,7 @@ export default function VerifyPage() {
       {err && (
         <ErrorBanner
           kind="outage"
-          detail="Backend not reachable — uvicorn app.api.routes:app --port 8000"
+          detail="Unable to reach the calculation service. Try refreshing in a moment."
         />
       )}
 

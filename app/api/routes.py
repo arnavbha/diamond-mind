@@ -25,6 +25,18 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Tuple
 
+_ET = ZoneInfo("America/New_York")
+
+def _to_et_str(dt_utc) -> Optional[str]:
+    """Convert a UTC datetime to an ET time string like '7:10 PM'."""
+    if dt_utc is None:
+        return None
+    try:
+        et = dt_utc.replace(tzinfo=timezone.utc).astimezone(_ET)
+        return et.strftime("%-I:%M %p")
+    except Exception:
+        return None
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -502,6 +514,7 @@ def list_games(
             "game_id": g.id,
             "game_date": g.game_date.isoformat(),
             "game_time_utc": g.game_time_utc.isoformat() if g.game_time_utc else None,
+            "start_time_et": _to_et_str(g.game_time_utc),
             "status": g.status,
             "home_team_id": g.home_team_id,
             "home_team_abbr": home.abbr,
@@ -1794,7 +1807,28 @@ def slate(
             analysis = _build_analysis_cached(meta["game_id"], game_date, thread_db)
             home_bp = _bp(meta["home_team_id"], meta["home_probable_starter_id"])
             away_bp = _bp(meta["away_team_id"], meta["away_probable_starter_id"])
-        return {**meta, "home_bullpen": home_bp, "away_bullpen": away_bp, "analysis": analysis}
+
+            # Starter names + ERA for the slate card display
+            _home_sp = _starter_form_or_announced(
+                thread_db,
+                pitcher_id=meta["home_probable_starter_id"],
+                window=WindowKey.LAST_5_STARTS,
+                as_of=game_date,
+            )
+            _away_sp = _starter_form_or_announced(
+                thread_db,
+                pitcher_id=meta["away_probable_starter_id"],
+                window=WindowKey.LAST_5_STARTS,
+                as_of=game_date,
+            )
+
+        result = {**meta, "home_bullpen": home_bp, "away_bullpen": away_bp, "analysis": analysis}
+        result["start_time_et"] = _to_et_str(meta.get("game_time_utc"))
+        result["home_starter_name"] = _home_sp.pitcher_name if _home_sp else None
+        result["away_starter_name"] = _away_sp.pitcher_name if _away_sp else None
+        result["home_starter_era"] = _home_sp.era if _home_sp else None
+        result["away_starter_era"] = _away_sp.era if _away_sp else None
+        return result
 
     if not game_meta:
         return []

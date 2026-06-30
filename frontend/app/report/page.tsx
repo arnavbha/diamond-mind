@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, todayET } from "@/lib/api";
+import { fmtDateHuman, isToday } from "@/lib/date";
 import {
   Card,
   Button,
@@ -46,7 +47,7 @@ export default function ReportPage() {
       if (md === null) throw new Error("not found");
       setMarkdown(md);
     } catch {
-      setError(`No report for ${d}. Run: python scripts/run_daily_report.py`);
+      setError(`No report found for this date.`);
     } finally {
       setLoading(false);
     }
@@ -114,9 +115,18 @@ export default function ReportPage() {
           </h1>
           <div
             className="num"
-            style={{ fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: "var(--sp-1)" }}
+            style={{ fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: "var(--sp-1)", display: "flex", alignItems: "center", gap: "var(--sp-2)" }}
           >
-            {date}
+            {fmtDateHuman(date)}
+            {isToday(date) && (
+              <span style={{
+                fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)",
+                fontWeight: "var(--weight-bold)", textTransform: "uppercase",
+                letterSpacing: "var(--tracking-label)", color: "var(--clay)",
+                border: "1px solid var(--clay)", borderRadius: "var(--r-sm)",
+                padding: "1px 6px",
+              }}>Today</span>
+            )}
           </div>
         </div>
 

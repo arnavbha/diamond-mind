@@ -9,6 +9,7 @@ import {
   type TrackRecordResult,
   type TrackRecordClv,
 } from "@/lib/api";
+// fmtDateHuman/isToday used for range display if needed (date range uses DateField, not raw ISO in subtitle)
 import { ExplainTooltip } from "@/components/explain";
 import { tierColor } from "@/lib/visual-tokens";
 import {

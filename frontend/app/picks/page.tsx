@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { api, todayET, getAdminToken, type GameAnalysis } from "@/lib/api";
+import { fmtDateHuman, isToday } from "@/lib/date";
 import { Gauge, DuelBar, MethodCompare, GrowthReadout, tierColor } from "@/components/quant";
 import { ExplainTooltip } from "@/components/explain";
 import {
@@ -661,6 +662,18 @@ function PickCard({
           />
         </div>
 
+        {/* Key factors — always visible, above the math toggle */}
+        {(pick.key_factors.length > 0 || pick.cautions.length > 0) && (
+          <div style={{ padding: "var(--sp-2) var(--sp-4) 0", display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+            {pick.key_factors.slice(0, 2).map((f, i) => (
+              <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--pos)" }}>↑ {f}</div>
+            ))}
+            {pick.cautions.slice(0, 1).map((c, i) => (
+              <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--warn)" }}>⚠ {c}</div>
+            ))}
+          </div>
+        )}
+
         {/* ── Quant panel — collapsed by default so the verdict above leads.
             Expand for bankroll math + devig engine + key factors. ── */}
         <div style={{ borderTop: "1px solid var(--border)" }}>
@@ -685,7 +698,7 @@ function PickCard({
             }}
           >
             <span style={{ color: "var(--text-muted)", width: "10px" }}>{mathOpen ? "▾" : "▸"}</span>
-            Bankroll math &amp; devig engine
+            Kelly math &amp; devig details
             <span style={{ marginLeft: "auto" }}><ExplainTooltip term="uncertainty-kelly" /></span>
           </button>
 
@@ -717,6 +730,9 @@ function PickCard({
   );
 }
 
+type TierFilter = "all" | "sl" | "lean";
+type SortBy = "kelly" | "conf";
+
 export default function PicksPage() {
   const today = todayET();
   const [date, setDate] = useState(today);
@@ -725,6 +741,8 @@ export default function PicksPage() {
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [trackModal, setTrackModal] = useState<TrackCtx | null>(null);
   const [unlocked] = useState(() => Boolean(getAdminToken()));
+  const [tierFilter, setTierFilter] = useState<TierFilter>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("kelly");
 
   useEffect(() => {
     let alive = true;
@@ -775,6 +793,21 @@ export default function PicksPage() {
   const actionable = actionableAll.filter((p) => p.game_id !== potdId);
   const rest = picks?.filter((p) => !isAction(p)) ?? [];
 
+  // Filtered + sorted picks for the filter bar
+  const visiblePicks = picks
+    ? picks
+      .filter(p => {
+        if (tierFilter === "sl") return p.ml_tier === "STRONG LEAN" || p.total_tier === "STRONG LEAN";
+        if (tierFilter === "lean") return p.ml_tier === "LEAN" || p.total_tier === "LEAN";
+        return true;
+      })
+      .sort((a, b) => {
+        const aVal = sortBy === "kelly" ? (a.ml_kelly_fraction ?? 0) : (a.ml_confidence ?? 0);
+        const bVal = sortBy === "kelly" ? (b.ml_kelly_fraction ?? 0) : (b.ml_confidence ?? 0);
+        return bVal - aVal;
+      })
+    : null;
+
   return (
     <div>
       {trackModal && (
@@ -798,13 +831,73 @@ export default function PicksPage() {
                   <span style={{ color: "var(--border-strong)" }}>·</span>
                   <span>Shin + Bayesian quant</span>
                   <span style={{ color: "var(--border-strong)" }}>·</span>
-                  <span>{date}</span>
+                  <span>{fmtDateHuman(date)}</span>
+                  {isToday(date) && (
+                    <span style={{
+                      fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)",
+                      fontWeight: "var(--weight-bold)", textTransform: "uppercase",
+                      letterSpacing: "var(--tracking-label)", color: "var(--clay)",
+                      border: "1px solid var(--clay)", borderRadius: "var(--r-sm)",
+                      padding: "1px 6px",
+                    }}>Today</span>
+                  )}
                 </>
-              : <><span>Shin + Bayesian quant model</span><span style={{ color: "var(--border-strong)" }}>·</span><span>{date}</span></>}
+              : <><span>Shin + Bayesian quant model</span><span style={{ color: "var(--border-strong)" }}>·</span><span>{fmtDateHuman(date)}</span></>}
           </>
         }
         action={<DateNav value={date} onChange={changeDate} />}
       />
+
+      {/* Filter bar */}
+      {picks && picks.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "var(--sp-3)",
+          marginBottom: "var(--sp-4)", flexWrap: "wrap",
+        }}>
+          {/* Tier filter */}
+          <div style={{ display: "flex", gap: "2px" }}>
+            {(["all", "sl", "lean"] as TierFilter[]).map(f => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setTierFilter(f)}
+                style={{
+                  background: tierFilter === f ? "var(--surface-2)" : "transparent",
+                  border: `1px solid ${tierFilter === f ? "var(--border-2)" : "var(--border)"}`,
+                  color: tierFilter === f ? "var(--text)" : "var(--text-2)",
+                  fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)",
+                  borderRadius: "var(--r-sm)", padding: "3px 10px", cursor: "pointer",
+                  textTransform: "uppercase", letterSpacing: "var(--tracking-label)",
+                }}
+              >
+                {f === "all" ? "All" : f === "sl" ? "Strong Lean" : "Lean"}
+              </button>
+            ))}
+          </div>
+          <span style={{ color: "var(--border-2)" }}>|</span>
+          {/* Sort */}
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+            <span>Sort:</span>
+            {(["kelly", "conf"] as SortBy[]).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSortBy(s)}
+                style={{
+                  background: "transparent", border: "none",
+                  color: sortBy === s ? "var(--text)" : "var(--text-2)",
+                  fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)",
+                  fontWeight: sortBy === s ? "var(--weight-bold)" : "var(--weight-medium)",
+                  cursor: "pointer", padding: "0 var(--sp-1)",
+                  textDecoration: sortBy === s ? "underline" : "none",
+                }}
+              >
+                {s === "kelly" ? "Kelly ▾" : "Conf ▾"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <ErrorBanner

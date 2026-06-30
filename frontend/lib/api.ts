@@ -775,6 +775,12 @@ export type SlateGame = {
   // Per-market +EV edge (model vig-free prob − book no-vig prob). Additive;
   // null only when the game has no analysis at all. See ModelEdge above.
   model_edge?: ModelEdgeBundle | null;
+  // ET display time ("7:10 PM") and starter info. Additive — older payloads may omit.
+  start_time_et?: string | null;
+  home_starter_name?: string | null;
+  away_starter_name?: string | null;
+  home_starter_era?: number | null;
+  away_starter_era?: number | null;
 };
 
 export type CalibrationBucket = {

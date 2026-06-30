@@ -11,7 +11,7 @@ type NavLink = { href: string; label: string; shortLabel?: string };
 const PRIMARY_CORE: NavLink[] = [
   { href: "/", label: "Slate" },
   { href: "/picks", label: "Picks" },
-  { href: "/edge", label: "Edge" },
+  { href: "/chat", label: "ACE" },
   { href: "/tracker", label: "Tracker" },
 ];
 
@@ -20,15 +20,15 @@ const PRIMARY_CORE: NavLink[] = [
 // inline row, which pushed the 7-link row past the phone width and shoved the
 // ••• overflow button (and everything in it) off-screen / unreachable.
 const PRIMARY_OVERFLOW: NavLink[] = [
-  { href: "/chat", label: "ACE" },
+  { href: "/edge", label: "Edge" },
   { href: "/report", label: "Report" },
   { href: "/track-record", label: "Track Record", shortLabel: "Record" },
+  { href: "/verify", label: "Verifier" },
+  { href: "/tools", label: "Tools" },
 ];
 
 // Low-frequency pages. Inline on desktop, behind the ••• popover on mobile.
 const SECONDARY_LINKS: NavLink[] = [
-  { href: "/verify", label: "Verifier" },
-  { href: "/tools", label: "Tools" },
   { href: "/admin", label: "Admin" },
 ];
 
@@ -45,6 +45,7 @@ function NavLinkPill({
 }) {
   const active =
     link.href === "/" ? path === "/" : path.startsWith(link.href);
+  const isAce = link.href === "/chat";
   return (
     <Link
       href={link.href}
@@ -52,16 +53,15 @@ function NavLinkPill({
       aria-current={active ? "page" : undefined}
       className={`nav-link${active ? " nav-link-active" : ""}${extraClass ? " " + extraClass : ""}`}
       style={{
-        // Active = a surface-2 chip in the clay identity color (not a bottom
-        // underline). The pill gives the current page a solid, hit-area-sized
-        // anchor in the row instead of a 2px hairline.
         fontFamily: "var(--font-ui)",
         fontWeight: active ? 700 : 500,
         fontSize: "12px",
-        color: active ? "var(--clay)" : "var(--text-2)",
-        background: active ? "var(--surface-2)" : "transparent",
-        borderRadius: "var(--r-sm)",
-        padding: "6px 10px",
+        color: active ? "var(--clay)" : isAce ? "var(--purple)" : "var(--text-2)",
+        background: "transparent",
+        borderRadius: 0,
+        borderBottom: active ? "2px solid var(--clay)" : "2px solid transparent",
+        paddingBottom: "4px",
+        padding: "6px 10px 4px",
         textDecoration: "none",
         whiteSpace: "nowrap",
         textTransform: "uppercase",

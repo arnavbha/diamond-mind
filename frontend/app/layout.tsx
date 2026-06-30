@@ -90,8 +90,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           // Shell-height tokens so Chat (and anything else) can stop hard-coding
           // the nav(52) + ticker(36) offsets in magic calc() expressions.
           ["--nav-h" as string]: "52px",
-          ["--ticker-h" as string]: "36px",
-          ["--shell-h" as string]: "calc(52px + 36px)",
+          ["--ticker-h" as string]: "22px",
+          ["--shell-h" as string]: "calc(52px + 22px)",
         }}
       >
         <nav className="app-nav" style={{

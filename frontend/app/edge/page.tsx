@@ -8,6 +8,7 @@ import {
   type SlateGame,
   type ModelEdge,
 } from "@/lib/api";
+import { fmtDateHuman, isToday } from "@/lib/date";
 import {
   Card,
   DataTable,
@@ -398,6 +399,18 @@ export default function EdgePage() {
         action={<DateNav value={date} onChange={setDate} />}
       >
         +EV Edge Board
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", fontWeight: "var(--weight-normal)", marginLeft: "var(--sp-3)" }}>
+          {fmtDateHuman(date)}
+          {isToday(date) && (
+            <span style={{
+              fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)",
+              fontWeight: "var(--weight-bold)", textTransform: "uppercase",
+              letterSpacing: "var(--tracking-label)", color: "var(--clay)",
+              border: "1px solid var(--clay)", borderRadius: "var(--r-sm)",
+              padding: "1px 6px", marginLeft: "var(--sp-2)",
+            }}>Today</span>
+          )}
+        </span>
       </SectionHeader>
 
       {/* Credibility / framing note — verification, not guaranteed winners. */}

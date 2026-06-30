@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, todayET, type SlateGame, type BullpenData, type GameAnalysis, type Movement } from "@/lib/api";
+import { fmtDateHuman, isToday } from "@/lib/date";
 import { GameDetailPanel } from "@/components/game-detail-panel";
 import { LiveAlert } from "@/components/live-alert";
 import {
@@ -127,6 +128,84 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
           {game.venue && (
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", marginTop: "var(--sp-1)" }}>{game.venue}</div>
           )}
+          {/* Game time + countdown */}
+          {!gameStarted(game.status) && (game.start_time_et || game.game_time_utc) && (() => {
+            const timeLabel = game.start_time_et ?? null;
+            const utc = game.game_time_utc;
+            let countdown: string | null = null;
+            if (utc) {
+              const diffMs = Date.parse(utc) - Date.now();
+              const diffH = diffMs / 3_600_000;
+              if (diffH > 0 && diffH < 4) {
+                const h = Math.floor(diffMs / 3_600_000);
+                const m = Math.floor((diffMs % 3_600_000) / 60_000);
+                countdown = h > 0 ? `${h}h ${m}m` : `${m}m`;
+              }
+            }
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", marginTop: "var(--sp-1)" }}>
+                {timeLabel && (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+                    {timeLabel} ET
+                  </span>
+                )}
+                {countdown && (
+                  <span style={{
+                    fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)",
+                    fontWeight: "var(--weight-bold)", color: "var(--warn)",
+                    background: "color-mix(in srgb, var(--warn) 12%, transparent)",
+                    borderRadius: "var(--r-sm)", padding: "1px 5px",
+                  }}>
+                    {countdown}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+          {/* Starters */}
+          {!gameStarted(game.status) && (() => {
+            const awayName = game.away_starter_name;
+            const homeName = game.home_starter_name;
+            const awayEra = game.away_starter_era;
+            const homeEra = game.home_starter_era;
+            const hasSomeStarter = awayName || homeName;
+
+            function eraColor(era: number | null): string {
+              if (era === null) return "var(--text-muted)";
+              if (era <= 3.20) return "var(--pos)";
+              if (era <= 4.00) return "var(--warn)";
+              return "var(--neg)";
+            }
+            function eraLabel(era: number | null): string {
+              return era !== null ? era.toFixed(2) : "—";
+            }
+
+            if (!hasSomeStarter) {
+              return (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: "var(--sp-1)" }}>
+                  Starters TBD
+                </div>
+              );
+            }
+            return (
+              <div style={{ marginTop: "var(--sp-1)", display: "flex", flexDirection: "column", gap: "1px" }}>
+                {[
+                  { abbr: game.away_team_abbr, name: awayName, era: awayEra },
+                  { abbr: game.home_team_abbr, name: homeName, era: homeEra },
+                ].map(({ abbr, name, era }) => (
+                  <div key={abbr} style={{ display: "flex", alignItems: "center", gap: "var(--sp-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)" }}>
+                    <span style={{ color: "var(--text-2)", minWidth: "28px" }}>{abbr}</span>
+                    <span style={{ color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {name ?? "TBD"}
+                    </span>
+                    <span className="num" style={{ color: eraColor(era ?? null), flexShrink: 0 }}>
+                      {eraLabel(era ?? null)} ERA
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Model signal */}
@@ -139,22 +218,19 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
                   <TierBadge tier={analysis!.ml_tier} />
                   <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-body)", color: "var(--text)" }}>
                     {leanAbbr} to win
+                    {analysis!.ml_american_odds != null && (
+                      <span className="num" style={{ color: "var(--text-2)", fontSize: "var(--fs-meta)", marginLeft: "var(--sp-1)" }}>
+                        {analysis!.ml_american_odds >= 0 ? `+${analysis!.ml_american_odds}` : analysis!.ml_american_odds}
+                      </span>
+                    )}
                   </div>
                   {/* Confidence + Kelly are the card's key figures — render them
                       at HUD stat size so they read first inside the column. */}
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-3)", fontFamily: "var(--font-mono)" }}>
-                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
-                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
-                        {Math.round(analysis!.ml_confidence * 100)}%
-                      </span>
-                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>conf</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                    <span className="num" style={{ fontSize: "24px", fontWeight: "var(--weight-display)", color: "var(--text)", lineHeight: "var(--lh-tight)", fontFamily: "var(--font-display)" }}>
+                      {Math.round(analysis!.ml_confidence * 100)}%
                     </span>
-                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
-                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
-                        {(analysis!.ml_kelly_fraction * 100).toFixed(1)}%
-                      </span>
-                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>kelly</span>
-                    </span>
+                    <span style={{ fontSize: "var(--fs-caption)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>confidence</span>
                   </div>
                 </div>
               ) : trackedML ? (
@@ -176,19 +252,11 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
                   <div style={{ fontWeight: "var(--weight-semibold)", fontSize: "var(--fs-body)", color: "var(--text)" }}>
                     {totalLabel}
                   </div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-3)", fontFamily: "var(--font-mono)" }}>
-                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
-                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
-                        {Math.round(analysis!.total_confidence * 100)}%
-                      </span>
-                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>conf</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                    <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
+                      {Math.round(analysis!.total_confidence * 100)}%
                     </span>
-                    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "3px" }}>
-                      <span className="num" style={{ fontSize: "var(--fs-stat)", fontWeight: "var(--weight-bold)", color: "var(--text)", lineHeight: "var(--lh-tight)" }}>
-                        {(analysis!.total_kelly_fraction * 100).toFixed(1)}%
-                      </span>
-                      <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>kelly</span>
-                    </span>
+                    <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>confidence</span>
                   </div>
                 </div>
               ) : trackedTotal ? (
@@ -200,7 +268,7 @@ function GameCard({ game, index, onClick, trackedML, trackedTotal, hero = false 
 
         {/* Bullpen */}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
-          <div style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--weight-medium)", color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", marginBottom: "var(--sp-1)" }}>Bullpen vuln</div>
+          <div style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--weight-medium)", color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", marginBottom: "var(--sp-1)" }}>Bullpen risk</div>
           {game.away_bullpen && <VulnBar abbr={game.away_team_abbr} bp={game.away_bullpen} />}
           {game.home_bullpen && <VulnBar abbr={game.home_team_abbr} bp={game.home_bullpen} />}
           {!game.home_bullpen && !game.away_bullpen && <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>—</div>}
@@ -476,6 +544,19 @@ function SlatePageInner() {
   const [sidebar, setSidebar] = useState<{ gameId: number; date: string } | null>(null);
   // Set of "gameId-market" keys for tracked bets on the current date
   const [trackedKeys, setTrackedKeys] = useState<Set<string>>(new Set());
+  const [showPass, setShowPass] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("dm-show-pass");
+    return saved === null ? true : saved === "true";
+  });
+
+  function toggleShowPass() {
+    setShowPass(v => {
+      const next = !v;
+      localStorage.setItem("dm-show-pass", String(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     let alive = true;
@@ -532,10 +613,20 @@ function SlatePageInner() {
 
   function changeDate(d: string) { setGames(null); setError(false); setDate(d); }
 
-  const sortedGames = games ? [...games].sort((a, b) => sortRank(a) - sortRank(b)) : null;
+  const sortedGames = games ? [...games].sort((a, b) => {
+    const ra = sortRank(a), rb = sortRank(b);
+    if (ra !== rb) return ra - rb;
+    // Within same tier, sort by start time (soonest first)
+    const ta = a.game_time_utc ? Date.parse(a.game_time_utc) : Infinity;
+    const tb = b.game_time_utc ? Date.parse(b.game_time_utc) : Infinity;
+    return ta - tb;
+  }) : null;
   // Actionable = any game whose ML or total is a LEAN / STRONG LEAN (sortRank
   // 0 or 1). Surfaced in the header subtitle as the at-a-glance slate summary.
   const actionableCount = games ? games.filter((g) => sortRank(g) <= 1).length : 0;
+
+  // Filter PASS games from display when showPass is false
+  const displayGames = showPass ? sortedGames : sortedGames?.filter(g => sortRank(g) !== 2) ?? null;
 
   // Hero = the single highest-conviction ML pick on the slate (STRONG outranks
   // LEAN; ties broken by Kelly fraction). Only this card gets the loud glow +
@@ -561,7 +652,16 @@ function SlatePageInner() {
         subtitle={
           games
             ? <>
-                <span>{date}</span>
+                <span>{fmtDateHuman(date)}</span>
+                {isToday(date) && (
+                  <span style={{
+                    fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)",
+                    fontWeight: "var(--weight-bold)", textTransform: "uppercase",
+                    letterSpacing: "var(--tracking-label)", color: "var(--clay)",
+                    border: "1px solid var(--clay)", borderRadius: "var(--r-sm)",
+                    padding: "1px 6px",
+                  }}>Today</span>
+                )}
                 <span style={{ color: "var(--border-strong)" }}>·</span>
                 <span>{games.length} games</span>
                 <span style={{ color: "var(--border-strong)" }}>·</span>
@@ -569,7 +669,7 @@ function SlatePageInner() {
                   {actionableCount} actionable
                 </span>
               </>
-            : date
+            : fmtDateHuman(date)
         }
         action={<DateNav value={date} onChange={changeDate} />}
       />
@@ -578,7 +678,7 @@ function SlatePageInner() {
         <ErrorBanner
           kind="outage"
           title="Unable to load slate data"
-          detail="The backend may be starting up — try refreshing in a moment."
+          detail="We're loading today's slate. If this takes a moment, the server may be warming up."
           style={{ marginBottom: "var(--sp-4)" }}
         />
       )}
@@ -595,16 +695,95 @@ function SlatePageInner() {
         <EmptyState title={`No games for ${date}.`} detail="Try another date with the stepper above." />
       )}
 
+      {/* Board sub-header: actionable count + pass toggle */}
+      {sortedGames && sortedGames.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)",
+          marginBottom: "var(--sp-3)", paddingBottom: "var(--sp-2)",
+          borderBottom: "1px solid var(--border)",
+        }}>
+          <span>
+            <span style={{ color: "var(--pos)", fontWeight: "var(--weight-semibold)" }}>{actionableCount} actionable</span>
+            <span style={{ color: "var(--border-strong)", margin: "0 var(--sp-2)" }}>·</span>
+            <span>{(sortedGames.length - actionableCount)} pass</span>
+          </span>
+          <button
+            type="button"
+            onClick={toggleShowPass}
+            style={{
+              background: "transparent", border: "1px solid var(--border-2)",
+              color: "var(--text-2)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)",
+              borderRadius: "var(--r-sm)", padding: "2px 8px", cursor: "pointer",
+              textTransform: "uppercase", letterSpacing: "var(--tracking-label)",
+            }}
+          >
+            {showPass ? "Hide Pass" : "Show Pass"}
+          </button>
+        </div>
+      )}
+
+      {/* Hero card — the slate's single best opportunity */}
+      {heroId !== null && (() => {
+        const heroGame = sortedGames?.find(g => g.game_id === heroId);
+        if (!heroGame || !heroGame.analysis) return null;
+        const a = heroGame.analysis;
+        const leanAbbrHero = a.ml_lean === "HOME" ? heroGame.home_team_abbr : heroGame.away_team_abbr;
+        return (
+          <button
+            type="button"
+            onClick={() => openSidebar(heroGame.game_id, heroGame.game_date)}
+            className="slab fade-up"
+            style={{
+              "--slab-color": "var(--clay)",
+              "--delay": "0ms",
+              width: "100%", textAlign: "left", cursor: "pointer",
+              background: "var(--surface)", border: "1px solid var(--border-2)",
+              borderRadius: "var(--r-md)", padding: "var(--sp-6)",
+              marginBottom: "var(--sp-4)",
+              boxShadow: a.ml_tier === "STRONG LEAN" ? "var(--glow-pos)" : "var(--glow-lean)",
+              color: "var(--text)",
+            } as React.CSSProperties}
+          >
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-caption)", color: "var(--clay)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", marginBottom: "var(--sp-2)" }}>
+              ◆ Today&apos;s Best Opportunity
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--sp-6)", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontFamily: "var(--font-display-serif)", fontSize: "var(--fs-headline)", fontWeight: "var(--weight-display)", color: "var(--text)", marginBottom: "var(--sp-1)" }}>
+                  {heroGame.away_team_abbr} @ {heroGame.home_team_abbr}
+                </div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>
+                  {leanAbbrHero} to win
+                  {heroGame.start_time_et && <span style={{ marginLeft: "var(--sp-3)" }}>· {heroGame.start_time_et} ET</span>}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-hero)", fontWeight: "var(--weight-display)", color: a.ml_tier === "STRONG LEAN" ? "var(--pos)" : "var(--lean)", lineHeight: 1 }}>
+                  {Math.round(a.ml_confidence * 100)}%
+                </div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>Confidence</div>
+              </div>
+            </div>
+            <div style={{ marginTop: "var(--sp-3)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", color: "var(--pos)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)" }}>
+              View analysis →
+            </div>
+          </button>
+        );
+      })()}
+
       {/* One bordered board; each game is a flat row with a hairline divider —
           not nine separate boxes. Click a row to open the detail drawer. */}
-      {sortedGames && sortedGames.length > 0 && (
+      {displayGames && displayGames.length > 0 && (
         <div className="slate-board" style={{ border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-          {sortedGames.map((g, i) => (
+          {displayGames.map((g, i) => (
             <GameCard
               key={g.game_id}
               game={g}
               index={i}
               hero={g.game_id === heroId}
+              trackedML={trackedKeys.has(`${g.game_id}-moneyline`)}
+              trackedTotal={trackedKeys.has(`${g.game_id}-total`)}
               onClick={() => openSidebar(g.game_id, g.game_date)}
             />
           ))}

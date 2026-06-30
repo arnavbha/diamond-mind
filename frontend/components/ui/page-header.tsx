@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { fmtDateHuman, isToday } from "@/lib/date";
 
 /**
  * PageHeader — the canonical page-title block. Replaces the three hand-rolled
@@ -20,11 +21,13 @@ export function PageHeader({
   subtitle,
   action,
   style,
+  date,
 }: {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   action?: React.ReactNode;
   style?: React.CSSProperties;
+  date?: string;
 }) {
   return (
     <header
@@ -63,7 +66,7 @@ export function PageHeader({
         >
           {title}
         </h1>
-        {subtitle != null && (
+        {(subtitle != null || date != null) && (
           <div
             className="num"
             style={{
@@ -79,6 +82,28 @@ export function PageHeader({
             }}
           >
             {subtitle}
+            {date && (
+              <>
+                <span style={{ color: "var(--border-strong)" }}>·</span>
+                <span>{fmtDateHuman(date)}</span>
+                {isToday(date) && (
+                  <span style={{
+                    fontFamily: "var(--font-ui)",
+                    fontSize: "var(--fs-caption)",
+                    fontWeight: "var(--weight-bold)",
+                    textTransform: "uppercase",
+                    letterSpacing: "var(--tracking-label)",
+                    color: "var(--clay)",
+                    border: "1px solid var(--clay)",
+                    borderRadius: "var(--r-sm)",
+                    padding: "1px 6px",
+                    lineHeight: 1.4,
+                  }}>
+                    Today
+                  </span>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
